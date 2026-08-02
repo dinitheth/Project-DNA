@@ -1,0 +1,79 @@
+{
+  "name": "vscode-extension",
+  "displayName": "Project DNA",
+  "description": "Project DNA VS Code Extension",
+  "version": "1.0.0",
+  "publisher": "project-dna",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "project-dna-sidebar",
+          "title": "Project DNA",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "project-dna-sidebar": [
+        {
+          "id": "project-dna.sidebar.webview",
+          "name": "DNA Explorer",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "project-dna.analyzeRepository",
+        "title": "Analyze Repository",
+        "category": "Project DNA"
+      },
+      {
+        "command": "project-dna.refreshDna",
+        "title": "Refresh DNA",
+        "category": "Project DNA"
+      },
+      {
+        "command": "project-dna.openArchitecture",
+        "title": "Open Architecture",
+        "category": "Project DNA"
+      },
+      {
+        "command": "project-dna.openKnowledgeGraph",
+        "title": "Open Knowledge Graph",
+        "category": "Project DNA"
+      },
+      {
+        "command": "project-dna.generateDna",
+        "title": "Generate DNA",
+        "category": "Project DNA"
+      }
+    ]
+  },
+  "scripts": {
+    "build:extension": "node esbuild.mjs",
+    "build:webview": "cd webview && vite build",
+    "build": "npm run build:extension && npm run build:webview",
+    "watch:extension": "node esbuild.mjs --watch",
+    "watch:webview": "cd webview && vite build --watch"
+  },
+  "dependencies": {
+    "@project-dna/shared": "workspace:*",
+    "@project-dna/dna-core": "workspace:*",
+    "@project-dna/ui-components": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.23.0",
+    "typescript": "^5.0.0"
+  }
+}

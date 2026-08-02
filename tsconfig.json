@@ -1,0 +1,15 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/shared" },
+    { "path": "packages/dna-core" },
+    { "path": "packages/repository-scanner" },
+    { "path": "packages/ast-engine" },
+    { "path": "packages/dependency-engine" },
+    { "path": "packages/architecture-engine" },
+    { "path": "packages/knowledge-engine" },
+    { "path": "packages/storage" },
+    { "path": "packages/ui-components" },
+    { "path": "apps/vscode-extension" }
+  ]
+}
