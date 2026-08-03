@@ -398,18 +398,19 @@ pnpm clean
 - Sealed `RepositoryGraph` with internal, aliased, workspace, dynamic, type-only, re-export, and external dependency resolution
 - Linear-time circular dependency detection and module-boundary summaries
 - Architecture inference for MVC, Clean, Hexagonal, DDD, Layered, and Microservice patterns, including confidence scores, evidence, deterministic ranking, inferred layers, stable IDs, and unknown fallback
+- Knowledge generation with deterministic convention, pattern, repository-structure, export, dynamic-loading, dependency-hub, and architecture observations
+- Risk detection for high complexity, large files, excessive imports, circular dependencies, orphan files, unstable modules, and oversized barrel exports
 - DNA synthesis engine with entity, identity, domain, capability, and semantic graph builders
 - Software intelligence engine with health, complexity, risk, criticality, and deterministic narrative analysis
 - Evolution engine with snapshot creation and DNA diffing
 - Typed `Result<T>` error handling, cancellation support, dependency injection, and error-isolated EventBus coordination
 - ESLint 9 flat configuration and production extension/webview build
-- 46 automated tests passing across the implemented analysis packages
+- 50 automated tests passing across the implemented analysis packages
 
 ### Next
 
 - Complete end-to-end `ProjectDNAService` integration and persistence orchestration
 - Add Tree-sitter parsers for non-JavaScript/TypeScript languages
-- Implement KnowledgeEngine generators for conventions, patterns, risks, and code smells
 - Complete SQLite storage operations and evolution snapshot persistence
 - Add incremental file-watcher analysis
 - Expand VS Code webview panels and UI component behavior
