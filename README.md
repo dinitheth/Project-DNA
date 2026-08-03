@@ -421,4 +421,4 @@ pnpm clean
 
 ## License
 
-Proprietary. All rights reserved.
+Project DNA is open-source software licensed under the [MIT License](LICENSE).
