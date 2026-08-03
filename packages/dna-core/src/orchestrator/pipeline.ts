@@ -71,5 +71,7 @@ export const STAGE_WEIGHTS: Record<PipelineStage, { start: number; end: number }
  */
 export function calculateOverallProgress(stage: PipelineStage, stageProgress: number = 0): number {
   const weight = STAGE_WEIGHTS[stage];
-  return Math.round(weight.start + (weight.end - weight.start) * Math.min(1, Math.max(0, stageProgress)));
+  return Math.round(
+    weight.start + (weight.end - weight.start) * Math.min(1, Math.max(0, stageProgress)),
+  );
 }

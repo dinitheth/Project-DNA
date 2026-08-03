@@ -6,12 +6,7 @@
  */
 
 import type { Logger } from '@project-dna/shared';
-import type {
-  RepositoryDNA,
-  FileDNA,
-  Capability,
-  CapabilityCategory,
-} from '@project-dna/dna-core';
+import type { RepositoryDNA, FileDNA, Capability, CapabilityCategory } from '@project-dna/dna-core';
 
 interface CapabilityRule {
   name: string;
@@ -188,7 +183,8 @@ export class CapabilitySynthesizer {
           });
         }
       } else if (indicator.type === 'naming' && indicator.match instanceof RegExp) {
-        for (const file of files.slice(0, 500)) { // Cap to avoid perf issues
+        for (const file of files.slice(0, 500)) {
+          // Cap to avoid perf issues
           if (indicator.match.test(file.path)) {
             evidence.push({
               type: 'naming',

@@ -121,8 +121,5 @@ export interface IProjectDNAEvents {
  * - Evolution views → IProjectDNAEvolution
  * - Progress bars → IProjectDNAEvents
  */
-export interface IProjectDNAService extends
-  IProjectDNAAnalyzer,
-  IProjectDNAQuery,
-  IProjectDNAEvolution,
-  IProjectDNAEvents {}
+export interface IProjectDNAService
+  extends IProjectDNAAnalyzer, IProjectDNAQuery, IProjectDNAEvolution, IProjectDNAEvents {}

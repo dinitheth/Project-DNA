@@ -70,18 +70,23 @@ export class IdentitySynthesizer {
 
   private categorizeFramework(name: string): string {
     const lower = name.toLowerCase();
-    if (['react', 'vue', 'angular', 'svelte', 'next', 'nuxt'].some((f) => lower.includes(f))) return 'frontend';
-    if (['express', 'fastify', 'koa', 'nest', 'hono', 'django', 'flask'].some((f) => lower.includes(f))) return 'backend';
-    if (['jest', 'vitest', 'mocha', 'cypress', 'playwright'].some((f) => lower.includes(f))) return 'testing';
-    if (['webpack', 'vite', 'rollup', 'esbuild', 'turbo'].some((f) => lower.includes(f))) return 'build';
+    if (['react', 'vue', 'angular', 'svelte', 'next', 'nuxt'].some((f) => lower.includes(f)))
+      return 'frontend';
+    if (
+      ['express', 'fastify', 'koa', 'nest', 'hono', 'django', 'flask'].some((f) =>
+        lower.includes(f),
+      )
+    )
+      return 'backend';
+    if (['jest', 'vitest', 'mocha', 'cypress', 'playwright'].some((f) => lower.includes(f)))
+      return 'testing';
+    if (['webpack', 'vite', 'rollup', 'esbuild', 'turbo'].some((f) => lower.includes(f)))
+      return 'build';
     if (['prisma', 'typeorm', 'sequelize', 'drizzle'].some((f) => lower.includes(f))) return 'orm';
     return 'other';
   }
 
-  private inferProjectType(
-    repository: RepositoryDNA,
-    architecture: ArchitectureDNA,
-  ): ProjectType {
+  private inferProjectType(repository: RepositoryDNA, architecture: ArchitectureDNA): ProjectType {
     // Check for monorepo indicators
     const fwNames = repository.frameworks.map((fw) => fw.name.toLowerCase());
 
@@ -122,7 +127,9 @@ export class IdentitySynthesizer {
     const fwNames = repository.frameworks.map((fw) => fw.name.toLowerCase());
     return {
       hasCi: false, // Would need file listing to detect .github/workflows etc.
-      hasTests: fwNames.some((n) => ['jest', 'vitest', 'mocha', 'cypress', 'playwright'].some((t) => n.includes(t))),
+      hasTests: fwNames.some((n) =>
+        ['jest', 'vitest', 'mocha', 'cypress', 'playwright'].some((t) => n.includes(t)),
+      ),
       hasLinting: fwNames.some((n) => n.includes('eslint') || n.includes('prettier')),
       hasDocumentation: repository.metadata.hasReadme,
       hasChangelog: false, // Would need file listing

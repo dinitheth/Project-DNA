@@ -1,35 +1,54 @@
 # Dependencies
 node_modules/
 
-# Build output
+# Build outputs
 dist/
+out/
+build/
+*.vsix
 *.tsbuildinfo
 
-# Turborepo
+# Tool caches
 .turbo/
+.cache/
+.eslintcache
+.nyc_output/
 
-# IDE
-.vscode/
+# Editor and IDE state
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
 .idea/
 *.swp
 *.swo
+*~
 
 # OS
 .DS_Store
 Thumbs.db
+Desktop.ini
 
 # Environment
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
-# Coverage
+# Test output
 coverage/
 
 # Logs
 *.log
 npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# VS Code Extension output
-*.vsix
-out/
+# Local persistence
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Temporary files
+tmp/
+temp/

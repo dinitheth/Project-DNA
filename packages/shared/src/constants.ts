@@ -55,20 +55,20 @@ export const DEFAULT_IGNORE_PATTERNS = [
 export const FILE_SIZE_LIMIT_BYTES = 1_000_000; // 1 MB
 
 /** VS Code extension identifier. */
-export const EXTENSION_ID = 'project-dna.project-dna';
+export const EXTENSION_ID = 'project-dna.vscode-extension';
 
 /** Command identifiers registered by the extension. */
 export const COMMAND_IDS = {
-  analyzeRepository: 'projectDna.analyzeRepository',
-  refreshDna: 'projectDna.refreshDna',
-  openArchitecture: 'projectDna.openArchitecture',
-  openKnowledgeGraph: 'projectDna.openKnowledgeGraph',
-  generateDna: 'projectDna.generateDna',
+  analyzeRepository: 'project-dna.analyzeRepository',
+  refreshDna: 'project-dna.refreshDna',
+  openArchitecture: 'project-dna.openArchitecture',
+  openKnowledgeGraph: 'project-dna.openKnowledgeGraph',
+  generateDna: 'project-dna.generateDna',
 } as const;
 
 /** View identifiers for sidebar panels. */
 export const VIEW_IDS = {
-  sidebar: 'projectDna.sidebar',
+  sidebar: 'project-dna.sidebar.webview',
   overview: 'projectDna.overview',
   architecture: 'projectDna.architecture',
   knowledge: 'projectDna.knowledge',

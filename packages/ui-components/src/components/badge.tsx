@@ -13,9 +13,5 @@ export interface BadgeProps {
 
 export const Badge: React.FC<BadgeProps> = ({ label, variant = 'neutral', className }) => {
   // TODO: implement badge variants
-  return (
-    <span className={cn("badge", `badge-${variant}`, className)}>
-      {label}
-    </span>
-  );
+  return <span className={cn('badge', `badge-${variant}`, className)}>{label}</span>;
 };

@@ -127,7 +127,9 @@ describe('AstEngine', () => {
     });
     expect(result.value.classes[0]?.methods[0]).toMatchObject({
       name: 'run',
-      parameters: expect.arrayContaining([expect.objectContaining({ name: 'name', isOptional: true })]),
+      parameters: expect.arrayContaining([
+        expect.objectContaining({ name: 'name', isOptional: true }),
+      ]),
     });
     expect(result.value.functions).toEqual(
       expect.arrayContaining([expect.objectContaining({ name: 'fetch', isAsync: true })]),
@@ -166,9 +168,7 @@ func Build(name string) *Service {
     });
     if (isErr(result)) throw result.error;
 
-    expect(result.value.fileDna.imports).toContainEqual(
-      expect.objectContaining({ source: 'fmt' }),
-    );
+    expect(result.value.fileDna.imports).toContainEqual(expect.objectContaining({ source: 'fmt' }));
     expect(result.value.fileDna.exports).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: 'Service' }),

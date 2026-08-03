@@ -276,7 +276,8 @@ export class ProjectDNAService implements IProjectDNAService {
       if (signal?.aborted) return Err(new Error('Project DNA analysis cancelled'));
       this.emitProgress(PipelineStage.ComputingEvolution, 'Creating evolution snapshot...', 0);
       const previousHistory = await this.dependencies.evolutionEngine.getHistory();
-      if (isErr(previousHistory)) return this.stageError('ComputingEvolution', previousHistory.error);
+      if (isErr(previousHistory))
+        return this.stageError('ComputingEvolution', previousHistory.error);
       const snapshot = await this.dependencies.evolutionEngine.createSnapshot(dna, signal);
       if (isErr(snapshot)) return this.stageError('ComputingEvolution', snapshot.error);
 

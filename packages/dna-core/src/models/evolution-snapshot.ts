@@ -8,7 +8,12 @@
 
 import { z } from 'zod';
 
-export const SnapshotTriggerSchema = z.enum(['manual', 'incremental', 'scheduled', 'architectural-change']);
+export const SnapshotTriggerSchema = z.enum([
+  'manual',
+  'incremental',
+  'scheduled',
+  'architectural-change',
+]);
 export type SnapshotTrigger = z.infer<typeof SnapshotTriggerSchema>;
 
 export const EvolutionSnapshotSchema = z.object({

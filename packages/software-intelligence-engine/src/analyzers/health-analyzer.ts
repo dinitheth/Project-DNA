@@ -18,7 +18,7 @@ import type {
 /** Weights for each health dimension in the composite score. */
 const DIMENSION_WEIGHTS = {
   architecture: 0.25,
-  dependency: 0.20,
+  dependency: 0.2,
   complexity: 0.25,
   knowledge: 0.15,
   risk: 0.15,
@@ -42,10 +42,10 @@ export class HealthAnalyzer {
 
     const overallScore = Math.round(
       architectureHealth * DIMENSION_WEIGHTS.architecture +
-      dependencyHealth * DIMENSION_WEIGHTS.dependency +
-      complexityHealth * DIMENSION_WEIGHTS.complexity +
-      knowledgeHealth * DIMENSION_WEIGHTS.knowledge +
-      riskHealth * DIMENSION_WEIGHTS.risk,
+        dependencyHealth * DIMENSION_WEIGHTS.dependency +
+        complexityHealth * DIMENSION_WEIGHTS.complexity +
+        knowledgeHealth * DIMENSION_WEIGHTS.knowledge +
+        riskHealth * DIMENSION_WEIGHTS.risk,
     );
 
     const trend: HealthTrend = 'unknown'; // Requires evolution data
@@ -84,7 +84,8 @@ export class HealthAnalyzer {
     if (entities.length === 0) return 100;
 
     // High fan-out entities are a smell
-    const avgDependencies = entities.reduce((sum, e) => sum + e.dependsOn.length, 0) / entities.length;
+    const avgDependencies =
+      entities.reduce((sum, e) => sum + e.dependsOn.length, 0) / entities.length;
     const maxDependencies = Math.max(...entities.map((e) => e.dependsOn.length), 0);
 
     let score = 100;

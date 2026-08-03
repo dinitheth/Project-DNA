@@ -96,8 +96,10 @@
     "build": "npm run build:extension && npm run build:webview",
     "watch:extension": "node esbuild.mjs --watch",
     "watch:webview": "cd webview && vite build --watch",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src/"
+    "lint": "eslint src/ --max-warnings=0",
+    "clean": "rimraf dist"
   }
 }

@@ -12,10 +12,15 @@ export interface SectionHeaderProps {
   className?: string;
 }
 
-export const SectionHeader: React.FC<SectionHeaderProps> = ({ title, action, onAction, className }) => {
+export const SectionHeader: React.FC<SectionHeaderProps> = ({
+  title,
+  action,
+  onAction,
+  className,
+}) => {
   // TODO: implement section header layout
   return (
-    <div className={cn("flex justify-between items-center", className)}>
+    <div className={cn('flex justify-between items-center', className)}>
       <h3>{title}</h3>
       {action && <button onClick={onAction}>{action}</button>}
     </div>

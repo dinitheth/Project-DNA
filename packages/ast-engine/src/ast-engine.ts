@@ -60,7 +60,11 @@ export class AstEngine implements IAstEngine {
 
     try {
       const persistedPath = normalizePath(input.relativePath ?? path.basename(input.path));
-      const parseResult = await this.parserFor(input.language).parse(input.content, input.language, input.path);
+      const parseResult = await this.parserFor(input.language).parse(
+        input.content,
+        input.language,
+        input.path,
+      );
       if (!parseResult.ok) return parseResult;
       if (signal?.aborted) return Err(new Error('AST parsing cancelled'));
 
@@ -121,7 +125,9 @@ export class AstEngine implements IAstEngine {
     }
   }
 
-  private parserFor(language: string): { parse(content: string, language: string, filePath: string): Promise<Result<RawParseTree>> } {
+  private parserFor(language: string): {
+    parse(content: string, language: string, filePath: string): Promise<Result<RawParseTree>>;
+  } {
     return this.treeSitterParser.getSupportedLanguages().includes(language)
       ? this.treeSitterParser
       : this.typescriptParser;

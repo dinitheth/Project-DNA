@@ -10,6 +10,7 @@
   },
   "scripts": {
     "build": "turbo run build",
+    "check:workspace": "node scripts/validate-workspace.mjs",
     "dev": "turbo run dev",
     "test": "turbo run test",
     "test:watch": "turbo run test:watch",
@@ -18,7 +19,8 @@
     "lint:fix": "turbo run lint:fix",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
-    "clean": "turbo run clean && rimraf node_modules"
+    "clean": "turbo run clean && rimraf node_modules",
+    "verify": "pnpm check:workspace && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.0.0",

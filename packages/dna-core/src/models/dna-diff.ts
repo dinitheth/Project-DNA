@@ -11,14 +11,16 @@ export const EntityDiffSchema = z.object({
   /** DNAObject ID that changed. */
   entityId: z.string(),
   /** What changed. */
-  changes: z.array(z.object({
-    /** Field that changed. */
-    field: z.string(),
-    /** Previous value (serialized). */
-    from: z.unknown(),
-    /** New value (serialized). */
-    to: z.unknown(),
-  })),
+  changes: z.array(
+    z.object({
+      /** Field that changed. */
+      field: z.string(),
+      /** Previous value (serialized). */
+      from: z.unknown(),
+      /** New value (serialized). */
+      to: z.unknown(),
+    }),
+  ),
 });
 
 export type EntityDiff = z.infer<typeof EntityDiffSchema>;

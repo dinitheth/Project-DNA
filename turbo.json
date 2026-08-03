@@ -27,11 +27,11 @@
       "outputs": []
     },
     "lint": {
-      "inputs": ["src/**", ".eslintrc.*"],
+      "inputs": ["src/**", ".eslintrc.*", "$TURBO_ROOT$/eslint.config.mjs"],
       "outputs": []
     },
     "lint:fix": {
-      "inputs": ["src/**", ".eslintrc.*"],
+      "inputs": ["src/**", ".eslintrc.*", "$TURBO_ROOT$/eslint.config.mjs"],
       "outputs": []
     },
     "clean": {

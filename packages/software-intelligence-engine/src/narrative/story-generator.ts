@@ -47,7 +47,10 @@ export class StoryGenerator {
   private generateSummary(profile: RepositoryProfile): string {
     const lang = profile.primaryLanguages[0]?.language ?? 'unknown';
     const langCount = profile.primaryLanguages.length;
-    const fwList = profile.frameworks.slice(0, 3).map((f) => f.name).join(', ');
+    const fwList = profile.frameworks
+      .slice(0, 3)
+      .map((f) => f.name)
+      .join(', ');
 
     let summary = `${profile.name} is a ${profile.repositorySize} ${profile.projectType}`;
     if (langCount === 1) {
@@ -69,7 +72,10 @@ export class StoryGenerator {
     return summary;
   }
 
-  private generateArchitectureSummary(architecture: ArchitectureDNA, _profile: RepositoryProfile): string {
+  private generateArchitectureSummary(
+    architecture: ArchitectureDNA,
+    _profile: RepositoryProfile,
+  ): string {
     const pattern = architecture.pattern;
     const confidence = Math.round(architecture.confidence * 100);
     const layerCount = architecture.layers.length;
@@ -117,7 +123,11 @@ export class StoryGenerator {
     const weakest = dimEntries[0];
 
     if (weakest && weakest[1] < 60) {
-      const dimName = weakest[0].replace(/Health$/, '').replace(/([A-Z])/g, ' $1').trim().toLowerCase();
+      const dimName = weakest[0]
+        .replace(/Health$/, '')
+        .replace(/([A-Z])/g, ' $1')
+        .trim()
+        .toLowerCase();
       summary += ` Key concern: ${dimName} health is at ${weakest[1]}/100.`;
     }
 
@@ -130,7 +140,10 @@ export class StoryGenerator {
       return 'No critical-severity components were identified.';
     }
 
-    const names = critical.slice(0, 5).map((c) => c.name).join(' -> ');
+    const names = critical
+      .slice(0, 5)
+      .map((c) => c.name)
+      .join(' -> ');
     return `The critical path runs through ${critical.length} component${critical.length > 1 ? 's' : ''}: ${names}.`;
   }
 

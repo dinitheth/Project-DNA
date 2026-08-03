@@ -25,7 +25,11 @@ export interface IDependencyEngine {
    * @param rootPath - Repository root for resolving relative paths.
    * @returns The constructed RepositoryGraph.
    */
-  buildDependencyGraph(files: FileDNA[], rootPath: string, signal?: AbortSignal): Promise<Result<RepositoryGraph>>;
+  buildDependencyGraph(
+    files: FileDNA[],
+    rootPath: string,
+    signal?: AbortSignal,
+  ): Promise<Result<RepositoryGraph>>;
 
   /**
    * Detect circular dependencies in the graph.

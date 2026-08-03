@@ -13,10 +13,5 @@ export interface IconProps {
 
 export const Icon: React.FC<IconProps> = ({ name, size = 16, className }) => {
   // TODO: map name to codicon class
-  return (
-    <i 
-      className={cn("codicon", `codicon-${name}`, className)} 
-      style={{ fontSize: size }} 
-    />
-  );
+  return <i className={cn('codicon', `codicon-${name}`, className)} style={{ fontSize: size }} />;
 };

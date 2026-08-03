@@ -10,19 +10,12 @@
  */
 
 import { DirectedGraph } from 'graphology';
-import type { Attributes } from 'graphology-types';
+import type { Attributes, SerializedGraph } from 'graphology-types';
 
 // ─── Node Types ─────────────────────────────────────────────────────
 
 export type DNAGraphNodeKind =
-  | 'module'
-  | 'domain'
-  | 'layer'
-  | 'concept'
-  | 'capability'
-  | 'component'
-  | 'risk'
-  | 'entity';
+  'module' | 'domain' | 'layer' | 'concept' | 'capability' | 'component' | 'risk' | 'entity';
 
 export interface DNAGraphNodeAttributes extends Attributes {
   /** What kind of semantic node this is. */
@@ -122,7 +115,12 @@ export class DNAGraph {
   }
 
   forEachEdge(
-    callback: (edgeId: string, attributes: DNAGraphEdgeAttributes, source: string, target: string) => void,
+    callback: (
+      edgeId: string,
+      attributes: DNAGraphEdgeAttributes,
+      source: string,
+      target: string,
+    ) => void,
   ): void {
     this.graph.forEachEdge((edge, attrs, source, target) => callback(edge, attrs, source, target));
   }
@@ -152,8 +150,11 @@ export class DNAGraph {
     return result;
   }
 
-  getEdgesByKind(kind: DNAGraphEdgeKind): Array<{ source: string; target: string; attributes: DNAGraphEdgeAttributes }> {
-    const result: Array<{ source: string; target: string; attributes: DNAGraphEdgeAttributes }> = [];
+  getEdgesByKind(
+    kind: DNAGraphEdgeKind,
+  ): Array<{ source: string; target: string; attributes: DNAGraphEdgeAttributes }> {
+    const result: Array<{ source: string; target: string; attributes: DNAGraphEdgeAttributes }> =
+      [];
     this.graph.forEachEdge((_edge, attrs, source, target) => {
       if (attrs.kind === kind) result.push({ source, target, attributes: attrs });
     });
@@ -178,10 +179,11 @@ export class DNAGraph {
     return this.graph.export();
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   static fromJSON(data: Record<string, unknown>): DNAGraph {
     const dnaGraph = new DNAGraph();
-    dnaGraph.graph.import(data as any);
+    dnaGraph.graph.import(
+      data as Partial<SerializedGraph<DNAGraphNodeAttributes, DNAGraphEdgeAttributes>>,
+    );
     return dnaGraph;
   }
 }

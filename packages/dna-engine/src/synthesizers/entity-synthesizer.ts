@@ -37,7 +37,9 @@ export class EntitySynthesizer {
     const knowledgeIndex = this.indexKnowledgeNodes(knowledgeNodes);
     const riskIndex = this.indexRisks(risks);
 
-    return files.map((file) => this.synthesizeFile(file, graph, architecture, knowledgeIndex, riskIndex));
+    return files.map((file) =>
+      this.synthesizeFile(file, graph, architecture, knowledgeIndex, riskIndex),
+    );
   }
 
   private synthesizeFile(
@@ -119,19 +121,42 @@ export class EntitySynthesizer {
     }
 
     // By path patterns
-    if (pathLower.includes('/controllers/') || pathLower.includes('/controller/')) return 'controller';
+    if (pathLower.includes('/controllers/') || pathLower.includes('/controller/'))
+      return 'controller';
     if (pathLower.includes('/services/') || pathLower.includes('/service/')) return 'service';
-    if (pathLower.includes('/repositories/') || pathLower.includes('/repository/') || pathLower.includes('/repo/')) return 'repository';
-    if (pathLower.includes('/models/') || pathLower.includes('/model/') || pathLower.includes('/entities/')) return 'model';
-    if (pathLower.includes('/views/') || pathLower.includes('/components/') || pathLower.includes('/pages/')) return 'view';
-    if (pathLower.includes('/middleware/') || pathLower.includes('/middlewares/')) return 'middleware';
-    if (pathLower.includes('/utils/') || pathLower.includes('/helpers/') || pathLower.includes('/lib/')) return 'utility';
+    if (
+      pathLower.includes('/repositories/') ||
+      pathLower.includes('/repository/') ||
+      pathLower.includes('/repo/')
+    )
+      return 'repository';
+    if (
+      pathLower.includes('/models/') ||
+      pathLower.includes('/model/') ||
+      pathLower.includes('/entities/')
+    )
+      return 'model';
+    if (
+      pathLower.includes('/views/') ||
+      pathLower.includes('/components/') ||
+      pathLower.includes('/pages/')
+    )
+      return 'view';
+    if (pathLower.includes('/middleware/') || pathLower.includes('/middlewares/'))
+      return 'middleware';
+    if (
+      pathLower.includes('/utils/') ||
+      pathLower.includes('/helpers/') ||
+      pathLower.includes('/lib/')
+    )
+      return 'utility';
 
     // By naming patterns
     if (name.includes('controller')) return 'controller';
     if (name.includes('service')) return 'service';
     if (name.includes('repository') || name.includes('repo')) return 'repository';
-    if (name.includes('model') || name.includes('entity') || name.includes('schema')) return 'model';
+    if (name.includes('model') || name.includes('entity') || name.includes('schema'))
+      return 'model';
     if (name.includes('middleware')) return 'middleware';
     if (name.includes('util') || name.includes('helper')) return 'utility';
 

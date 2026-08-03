@@ -1,26 +1,26 @@
 {
-    "name":  "@project-dna/dna-core",
-    "version":  "0.1.0",
-    "private":  true,
-    "description":  "The heart of Project DNA: domain models, engine interfaces, and analysis orchestrator",
-    "main":  "./src/index.ts",
-    "types":  "./src/index.ts",
-    "scripts":  {
-                    "test":  "vitest run --passWithNoTests",
-                    "test:watch":  "vitest watch",
-                    "typecheck":  "tsc --noEmit",
-                    "lint":  "eslint src/",
-                    "lint:fix":  "eslint src/ --fix",
-                    "clean":  "rimraf dist .turbo"
-                },
-    "dependencies":  {
-                         "@project-dna/shared":  "workspace:*",
-                         "graphology":  "^0.25.0",
-                         "graphology-types":  "^0.24.0",
-                         "zod":  "^3.24.0"
-                     },
-    "devDependencies":  {
-                            "typescript":  "^5.7.0",
-                            "vitest":  "^3.0.0"
-                        }
+  "name": "@project-dna/dna-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The heart of Project DNA: domain models, engine interfaces, and analysis orchestrator",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/ --max-warnings=0",
+    "lint:fix": "eslint src/ --max-warnings=0 --fix",
+    "clean": "rimraf dist .turbo"
+  },
+  "dependencies": {
+    "@project-dna/shared": "workspace:*",
+    "graphology": "^0.25.0",
+    "graphology-types": "^0.24.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
 }

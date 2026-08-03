@@ -82,9 +82,22 @@ export class DomainSynthesizer {
 
   private isInfrastructureDirectory(dirName: string): boolean {
     const infraDirs = new Set([
-      'node_modules', 'dist', 'build', '.git', '.github', '.vscode',
-      'coverage', '__tests__', 'test', 'tests', 'scripts', 'config',
-      'configs', '.turbo', '.cache', '_root',
+      'node_modules',
+      'dist',
+      'build',
+      '.git',
+      '.github',
+      '.vscode',
+      'coverage',
+      '__tests__',
+      'test',
+      'tests',
+      'scripts',
+      'config',
+      'configs',
+      '.turbo',
+      '.cache',
+      '_root',
     ]);
     return infraDirs.has(dirName.toLowerCase());
   }

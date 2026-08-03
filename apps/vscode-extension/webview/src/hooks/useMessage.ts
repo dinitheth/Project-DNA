@@ -5,7 +5,7 @@ export function useMessage(handler: (message: any) => void) {
     const handleMessage = (event: MessageEvent) => {
       handler(event.data);
     };
-    
+
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, [handler]);

@@ -15,12 +15,11 @@ export class ComplexityAnalyzer {
     this.logger.info('Computing complexity profile...');
 
     const complexities = entities.map((e) => e.complexity);
-    const avgComplexity = complexities.length > 0
-      ? complexities.reduce((sum, c) => sum + c, 0) / complexities.length
-      : 0;
-    const maxComplexity = complexities.length > 0
-      ? Math.max(...complexities)
-      : 0;
+    const avgComplexity =
+      complexities.length > 0
+        ? complexities.reduce((sum, c) => sum + c, 0) / complexities.length
+        : 0;
+    const maxComplexity = complexities.length > 0 ? Math.max(...complexities) : 0;
 
     const mostComplexEntity = entities.reduce<DNAObject | null>(
       (max, e) => (!max || e.complexity > max.complexity ? e : max),
@@ -31,9 +30,8 @@ export class ComplexityAnalyzer {
     const couplingMetrics = this.computeCouplingMetrics(entities);
 
     const highComplexityFiles = complexities.filter((c) => c > 15).length;
-    const complexCodePercentage = complexities.length > 0
-      ? (highComplexityFiles / complexities.length) * 100
-      : 0;
+    const complexCodePercentage =
+      complexities.length > 0 ? (highComplexityFiles / complexities.length) * 100 : 0;
 
     return {
       averageComplexity: Math.round(avgComplexity * 100) / 100,
@@ -56,7 +54,10 @@ export class ComplexityAnalyzer {
     high: number;
     critical: number;
   } {
-    let low = 0, medium = 0, high = 0, critical = 0;
+    let low = 0,
+      medium = 0,
+      high = 0,
+      critical = 0;
     for (const c of complexities) {
       if (c <= 5) low++;
       else if (c <= 15) medium++;
@@ -81,7 +82,7 @@ export class ComplexityAnalyzer {
 
     for (const entity of entities) {
       const ca = entity.dependedOnBy.length; // Afferent coupling
-      const ce = entity.dependsOn.length;    // Efferent coupling
+      const ce = entity.dependsOn.length; // Efferent coupling
       totalAfferent += ca;
       totalEfferent += ce;
 

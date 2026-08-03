@@ -19,7 +19,7 @@ export function useVSCodeApi() {
       api = {
         postMessage: (msg: any) => console.log('postMessage:', msg),
         getState: () => ({}),
-        setState: (state: any) => console.log('setState:', state)
+        setState: (state: any) => console.log('setState:', state),
       };
     }
   }

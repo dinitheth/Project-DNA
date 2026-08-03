@@ -10,9 +10,7 @@
  */
 
 import type { Logger } from '@project-dna/shared';
-import {
-  DNAGraph,
-} from '@project-dna/dna-core';
+import { DNAGraph } from '@project-dna/dna-core';
 import type {
   DNAObject,
   BusinessDomain,
@@ -43,9 +41,7 @@ export class DNAGraphBuilder {
     this.addCapabilityEdges(graph, capabilities);
     this.addEntityDependencyEdges(graph, entities);
 
-    this.logger.info(
-      `DNA graph built: ${graph.nodeCount} nodes, ${graph.edgeCount} edges`,
-    );
+    this.logger.info(`DNA graph built: ${graph.nodeCount} nodes, ${graph.edgeCount} edges`);
     return graph;
   }
 
@@ -54,7 +50,12 @@ export class DNAGraphBuilder {
       const attrs: DNAGraphNodeAttributes = {
         kind: 'domain',
         label: domain.name,
-        weight: domain.fileCount / Math.max(1, domains.reduce((s, d) => s + d.fileCount, 0)),
+        weight:
+          domain.fileCount /
+          Math.max(
+            1,
+            domains.reduce((s, d) => s + d.fileCount, 0),
+          ),
         metadata: {
           fileCount: domain.fileCount,
           confidence: domain.confidence,

@@ -1,9 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
       colors: {
@@ -13,9 +10,9 @@ export default {
           button: 'var(--vscode-button-background)',
           buttonHover: 'var(--vscode-button-hoverBackground)',
           buttonForeground: 'var(--vscode-button-foreground)',
-        }
-      }
+        },
+      },
     },
   },
   plugins: [],
-}
+};

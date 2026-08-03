@@ -30,13 +30,23 @@ export class CriticalityAnalyzer {
 
       // Weighted composite score
       const score =
-        centralityScore * 0.30 +
+        centralityScore * 0.3 +
         fanInScore * 0.25 +
         fanOutScore * 0.15 +
-        complexityScore * 0.20 +
-        sizeScore * 0.10;
+        complexityScore * 0.2 +
+        sizeScore * 0.1;
 
-      return { entity, score, factors: { centrality: centralityScore, fanIn: fanInScore, fanOut: fanOutScore, complexity: complexityScore, size: sizeScore } };
+      return {
+        entity,
+        score,
+        factors: {
+          centrality: centralityScore,
+          fanIn: fanInScore,
+          fanOut: fanOutScore,
+          complexity: complexityScore,
+          size: sizeScore,
+        },
+      };
     });
 
     // Sort by score descending and take critical/high

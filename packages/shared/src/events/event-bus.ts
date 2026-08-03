@@ -37,7 +37,6 @@ export class EventBus<TEventMap extends { [K in keyof TEventMap]: unknown }> {
     this.errorHandler = options?.onError;
   }
 
-
   /**
    * Subscribe to an event.
    * @returns An unsubscribe function.
@@ -92,16 +91,12 @@ export class EventBus<TEventMap extends { [K in keyof TEventMap]: unknown }> {
           if (this.errorHandler) {
             this.errorHandler(event, error);
           } else {
-            console.error(
-              `[EventBus] Listener error on "${String(event)}":`,
-              error,
-            );
+            console.error(`[EventBus] Listener error on "${String(event)}":`, error);
           }
         }
       }
     }
   }
-
 
   /**
    * Remove all listeners for a specific event, or all events if none specified.

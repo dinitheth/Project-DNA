@@ -31,7 +31,17 @@ export const ModuleDNASchema = z.object({
   exports: z.array(
     z.object({
       name: z.string(),
-      type: z.enum(['function', 'class', 'interface', 'type', 'variable', 'enum', 'namespace', 'default', 'barrel']),
+      type: z.enum([
+        'function',
+        'class',
+        'interface',
+        'type',
+        'variable',
+        'enum',
+        'namespace',
+        'default',
+        'barrel',
+      ]),
       filePath: z.string(),
     }),
   ),

@@ -21,7 +21,10 @@ export class SqliteStorage implements IStoragePort {
   private readonly database: Database.Database;
   private closed = false;
 
-  constructor(dbPath: string, private readonly logger: Logger) {
+  constructor(
+    dbPath: string,
+    private readonly logger: Logger,
+  ) {
     if (dbPath !== ':memory:') {
       mkdirSync(path.dirname(path.resolve(dbPath)), { recursive: true });
     }

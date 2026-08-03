@@ -16,7 +16,12 @@ export const BusinessDomainSchema = z.object({
   name: z.string(),
 
   /** How the domain was inferred. */
-  inferenceSource: z.enum(['folder-structure', 'naming-convention', 'import-clustering', 'composite']),
+  inferenceSource: z.enum([
+    'folder-structure',
+    'naming-convention',
+    'import-clustering',
+    'composite',
+  ]),
 
   /** Confidence in the domain inference (0-1). */
   confidence: z.number().min(0).max(1),

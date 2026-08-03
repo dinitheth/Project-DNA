@@ -60,12 +60,12 @@ export function createSilentLogger(): Logger {
 /** Wrap a Pino instance to conform to our Logger interface. */
 function wrapPino(instance: pino.Logger): Logger {
   return {
-    trace: (msg, ...args) => instance.trace(args.length > 0 ? args[0] as object : {}, msg),
-    debug: (msg, ...args) => instance.debug(args.length > 0 ? args[0] as object : {}, msg),
-    info: (msg, ...args) => instance.info(args.length > 0 ? args[0] as object : {}, msg),
-    warn: (msg, ...args) => instance.warn(args.length > 0 ? args[0] as object : {}, msg),
-    error: (msg, ...args) => instance.error(args.length > 0 ? args[0] as object : {}, msg),
-    fatal: (msg, ...args) => instance.fatal(args.length > 0 ? args[0] as object : {}, msg),
+    trace: (msg, ...args) => instance.trace(args.length > 0 ? (args[0] as object) : {}, msg),
+    debug: (msg, ...args) => instance.debug(args.length > 0 ? (args[0] as object) : {}, msg),
+    info: (msg, ...args) => instance.info(args.length > 0 ? (args[0] as object) : {}, msg),
+    warn: (msg, ...args) => instance.warn(args.length > 0 ? (args[0] as object) : {}, msg),
+    error: (msg, ...args) => instance.error(args.length > 0 ? (args[0] as object) : {}, msg),
+    fatal: (msg, ...args) => instance.fatal(args.length > 0 ? (args[0] as object) : {}, msg),
     child: (bindings) => wrapPino(instance.child(bindings)),
   };
 }

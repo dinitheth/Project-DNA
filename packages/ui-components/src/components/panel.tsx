@@ -13,7 +13,13 @@ export interface PanelProps {
   className?: string;
 }
 
-export const Panel: React.FC<PanelProps> = ({ title, children, collapsible = false, defaultOpen = true, className }) => {
+export const Panel: React.FC<PanelProps> = ({
+  title,
+  children,
+  collapsible = false,
+  defaultOpen = true,
+  className,
+}) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   // TODO: Implement full collapsible panel with animation

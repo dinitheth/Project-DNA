@@ -48,7 +48,9 @@ export class SnapshotCreator {
     this.lastSnapshotId = snapshotId;
     this.nextVersion++;
 
-    this.logger.info(`Snapshot v${snapshot.version} created (${snapshot.isFullSnapshot ? 'full' : 'incremental'})`);
+    this.logger.info(
+      `Snapshot v${snapshot.version} created (${snapshot.isFullSnapshot ? 'full' : 'incremental'})`,
+    );
     return snapshot;
   }
 

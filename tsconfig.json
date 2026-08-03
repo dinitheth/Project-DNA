@@ -8,6 +8,9 @@
     { "path": "packages/dependency-engine" },
     { "path": "packages/architecture-engine" },
     { "path": "packages/knowledge-engine" },
+    { "path": "packages/dna-engine" },
+    { "path": "packages/software-intelligence-engine" },
+    { "path": "packages/evolution-engine" },
     { "path": "packages/storage" },
     { "path": "packages/ui-components" },
     { "path": "apps/vscode-extension" }

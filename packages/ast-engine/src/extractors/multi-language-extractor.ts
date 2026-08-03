@@ -82,7 +82,7 @@ function extractGo(
         return names.map((fieldName) => ({
           name: fieldName.text,
           ...(fieldType ? { type: fieldType } : {}),
-          visibility: goPublic(fieldName.text) ? 'public' as const : 'private' as const,
+          visibility: goPublic(fieldName.text) ? ('public' as const) : ('private' as const),
           isStatic: false,
           isReadonly: false,
           isOptional: false,
@@ -101,7 +101,7 @@ function extractGo(
         implements: [],
         isAbstract: false,
         isExported: goPublic(name),
-        visibility: goPublic(name) ? 'public' as const : 'private' as const,
+        visibility: goPublic(name) ? ('public' as const) : ('private' as const),
       },
     ];
   });
@@ -110,7 +110,9 @@ function extractGo(
     .map((node) => extractGoFunction(node, filePath));
   const imports = root.descendantsOfType('import_spec').map((node) => {
     const source = stripQuotes(node.childForFieldName('path')?.text ?? '');
-    const alias = node.namedChildren.find((child) => child !== node.childForFieldName('path'))?.text;
+    const alias = node.namedChildren.find(
+      (child) => child !== node.childForFieldName('path'),
+    )?.text;
     return importEntry(source, source.split('/').at(-1) ?? source, alias);
   });
   return {
@@ -132,7 +134,9 @@ function extractGoFunction(node: Node, filePath: string): FunctionDNA {
     filePath,
     ...lineRange(node),
     parameters: extractGoParameters(node.childForFieldName('parameters')),
-    ...(node.childForFieldName('result') ? { returnType: node.childForFieldName('result')?.text } : {}),
+    ...(node.childForFieldName('result')
+      ? { returnType: node.childForFieldName('result')?.text }
+      : {}),
     isAsync: false,
     isExported: goPublic(name),
     isGenerator: false,
@@ -144,7 +148,10 @@ function extractGoFunction(node: Node, filePath: string): FunctionDNA {
 
 function extractGoParameters(parameters: Node | null): ParameterDNA[] {
   return (parameters?.namedChildren ?? []).flatMap((parameter) => {
-    if (parameter.type !== 'parameter_declaration' && parameter.type !== 'variadic_parameter_declaration') {
+    if (
+      parameter.type !== 'parameter_declaration' &&
+      parameter.type !== 'variadic_parameter_declaration'
+    ) {
       return [];
     }
     const type = parameter.childForFieldName('type')?.text;
@@ -167,7 +174,9 @@ function extractJava(
     const name = node.childForFieldName('name')?.text ?? '';
     const body = node.childForFieldName('body');
     const methods = (body?.namedChildren ?? [])
-      .filter((child) => child.type === 'method_declaration' || child.type === 'constructor_declaration')
+      .filter(
+        (child) => child.type === 'method_declaration' || child.type === 'constructor_declaration',
+      )
       .map((method) => asMethod(extractJavaFunction(method, filePath)));
     const properties: ClassDNA['properties'] = (body?.namedChildren ?? [])
       .filter((child) => child.type === 'field_declaration')
@@ -185,10 +194,11 @@ function extractJava(
         }));
       });
     const superClass = node.childForFieldName('superclass')?.namedChildren[0]?.text;
-    const implementsTypes = node
-      .childForFieldName('interfaces')
-      ?.descendantsOfType('type_identifier')
-      .map((item) => item.text) ?? [];
+    const implementsTypes =
+      node
+        .childForFieldName('interfaces')
+        ?.descendantsOfType('type_identifier')
+        .map((item) => item.text) ?? [];
     const visibility = classVisibility(node);
     return {
       id: createDnaId('class', filePath, name, node.startIndex),
@@ -206,7 +216,10 @@ function extractJava(
     } satisfies ClassDNA;
   });
   const imports = root.descendantsOfType('import_declaration').map((node) => {
-    const source = node.text.replace(/^import\s+(?:static\s+)?/u, '').replace(/;$/u, '').trim();
+    const source = node.text
+      .replace(/^import\s+(?:static\s+)?/u, '')
+      .replace(/;$/u, '')
+      .trim();
     return importEntry(source, source.split('.').at(-1) ?? source);
   });
   return {
@@ -246,10 +259,11 @@ function extractRust(
   for (const implementation of root.descendantsOfType('impl_item')) {
     const typeName = implementation.childForFieldName('type')?.text;
     if (!typeName) continue;
-    const methods = implementation
-      .childForFieldName('body')
-      ?.namedChildren.filter((item) => item.type === 'function_item')
-      .map((item) => asMethod(extractRustFunction(item, filePath), true)) ?? [];
+    const methods =
+      implementation
+        .childForFieldName('body')
+        ?.namedChildren.filter((item) => item.type === 'function_item')
+        .map((item) => asMethod(extractRustFunction(item, filePath), true)) ?? [];
     methodsByType.set(typeName, methods);
   }
   const classes = root.descendantsOfType('struct_item').map((node) => {
@@ -259,7 +273,9 @@ function extractRust(
       .map((field) => ({
         name: field.childForFieldName('name')?.text ?? '',
         ...(field.childForFieldName('type') ? { type: field.childForFieldName('type')?.text } : {}),
-        visibility: hasChildType(field, 'visibility_modifier') ? 'public' as const : 'private' as const,
+        visibility: hasChildType(field, 'visibility_modifier')
+          ? ('public' as const)
+          : ('private' as const),
         isStatic: false,
         isReadonly: false,
         isOptional: false,
@@ -277,7 +293,7 @@ function extractRust(
       implements: [],
       isAbstract: false,
       isExported: exported,
-      visibility: exported ? 'public' as const : 'private' as const,
+      visibility: exported ? ('public' as const) : ('private' as const),
     };
   });
   const functions = root
@@ -312,7 +328,9 @@ function extractRustFunction(node: Node, filePath: string): FunctionDNA {
       }
       return parameterFromFields(item, false, 'pattern');
     }),
-    ...(node.childForFieldName('return_type') ? { returnType: node.childForFieldName('return_type')?.text } : {}),
+    ...(node.childForFieldName('return_type')
+      ? { returnType: node.childForFieldName('return_type')?.text }
+      : {}),
     isAsync: hasChildText(node, 'async'),
     isExported: hasChildType(node, 'visibility_modifier'),
     isGenerator: node.descendantsOfType('yield_expression').length > 0,
@@ -326,46 +344,59 @@ function extractCSharp(
   root: Node,
   filePath: string,
 ): Omit<TreeSitterExtraction, 'comments' | 'complexity' | 'linesOfCode'> {
-  const classes = root.descendantsOfType(['class_declaration', 'interface_declaration']).map((node) => {
-    const name = node.childForFieldName('name')?.text ?? '';
-    const body = node.childForFieldName('body');
-    const methods = (body?.namedChildren ?? [])
-      .filter((item) => item.type === 'method_declaration' || item.type === 'constructor_declaration')
-      .map((item) => asMethod(extractCSharpFunction(item, filePath)));
-    const properties: ClassDNA['properties'] = (body?.namedChildren ?? [])
-      .filter((item) => item.type === 'field_declaration')
-      .flatMap((field) => {
-        const declaration = field.namedChildren.find((child) => child.type === 'variable_declaration');
-        const type = declaration?.childForFieldName('type')?.text ?? declaration?.namedChildren[0]?.text;
-        return (declaration?.descendantsOfType('variable_declarator') ?? []).map((item) => ({
-          name: item.childForFieldName('name')?.text ?? item.namedChildren[0]?.text ?? '',
-          ...(type ? { type } : {}),
-          visibility: csharpVisibility(field),
-          isStatic: hasModifier(field, 'static'),
-          isReadonly: hasModifier(field, 'readonly'),
-          isOptional: false,
-          hasDefaultValue: extractDefaultValue(item) !== undefined,
-        }));
-      });
-    const baseTypes = node.childForFieldName('bases')?.namedChildren.map((item) => item.text) ?? [];
-    const exported = hasModifier(node, 'public');
-    return {
-      id: createDnaId('class', filePath, name, node.startIndex),
-      name,
-      filePath,
-      ...lineRange(node),
-      methods,
-      properties,
-      decorators: node.namedChildren.filter((item) => item.type === 'attribute_list').map((item) => item.text),
-      implements: node.type === 'interface_declaration' ? [] : baseTypes.slice(1),
-      ...(baseTypes[0] ? { extends: baseTypes[0] } : {}),
-      isAbstract: node.type === 'interface_declaration' || hasModifier(node, 'abstract'),
-      isExported: exported,
-      visibility: exported ? 'public' as const : classVisibility(node),
-    } satisfies ClassDNA;
-  });
+  const classes = root
+    .descendantsOfType(['class_declaration', 'interface_declaration'])
+    .map((node) => {
+      const name = node.childForFieldName('name')?.text ?? '';
+      const body = node.childForFieldName('body');
+      const methods = (body?.namedChildren ?? [])
+        .filter(
+          (item) => item.type === 'method_declaration' || item.type === 'constructor_declaration',
+        )
+        .map((item) => asMethod(extractCSharpFunction(item, filePath)));
+      const properties: ClassDNA['properties'] = (body?.namedChildren ?? [])
+        .filter((item) => item.type === 'field_declaration')
+        .flatMap((field) => {
+          const declaration = field.namedChildren.find(
+            (child) => child.type === 'variable_declaration',
+          );
+          const type =
+            declaration?.childForFieldName('type')?.text ?? declaration?.namedChildren[0]?.text;
+          return (declaration?.descendantsOfType('variable_declarator') ?? []).map((item) => ({
+            name: item.childForFieldName('name')?.text ?? item.namedChildren[0]?.text ?? '',
+            ...(type ? { type } : {}),
+            visibility: csharpVisibility(field),
+            isStatic: hasModifier(field, 'static'),
+            isReadonly: hasModifier(field, 'readonly'),
+            isOptional: false,
+            hasDefaultValue: extractDefaultValue(item) !== undefined,
+          }));
+        });
+      const baseTypes =
+        node.childForFieldName('bases')?.namedChildren.map((item) => item.text) ?? [];
+      const exported = hasModifier(node, 'public');
+      return {
+        id: createDnaId('class', filePath, name, node.startIndex),
+        name,
+        filePath,
+        ...lineRange(node),
+        methods,
+        properties,
+        decorators: node.namedChildren
+          .filter((item) => item.type === 'attribute_list')
+          .map((item) => item.text),
+        implements: node.type === 'interface_declaration' ? [] : baseTypes.slice(1),
+        ...(baseTypes[0] ? { extends: baseTypes[0] } : {}),
+        isAbstract: node.type === 'interface_declaration' || hasModifier(node, 'abstract'),
+        isExported: exported,
+        visibility: exported ? ('public' as const) : classVisibility(node),
+      } satisfies ClassDNA;
+    });
   const imports = root.descendantsOfType('using_directive').map((node) => {
-    const source = node.text.replace(/^using\s+/u, '').replace(/;$/u, '').trim();
+    const source = node.text
+      .replace(/^using\s+/u, '')
+      .replace(/;$/u, '')
+      .trim();
     return importEntry(source, source.split('.').at(-1) ?? source);
   });
   return {
@@ -396,11 +427,7 @@ function extractCSharpFunction(node: Node, filePath: string): FunctionDNA {
   };
 }
 
-function parameterFromFields(
-  node: Node,
-  isRest = false,
-  nameField = 'name',
-): ParameterDNA {
+function parameterFromFields(node: Node, isRest = false, nameField = 'name'): ParameterDNA {
   const name = node.childForFieldName(nameField)?.text ?? node.namedChildren[0]?.text ?? '';
   const type = node.childForFieldName('type')?.text;
   const defaultValue = extractDefaultValue(node);
@@ -457,7 +484,7 @@ function extractComments(root: Node): FileDNA['comments'] {
     .filter((node, index, all) => all.findIndex((candidate) => candidate.id === node.id) === index)
     .map((node) => ({
       text: cleanComment(node.text),
-      type: node.text.startsWith('/*') ? 'block' as const : 'line' as const,
+      type: node.text.startsWith('/*') ? ('block' as const) : ('line' as const),
       startLine: node.startPosition.row + 1,
       endLine: node.endPosition.row + 1,
     }));

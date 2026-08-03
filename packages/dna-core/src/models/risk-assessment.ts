@@ -25,18 +25,20 @@ export const RiskAssessmentSchema = z.object({
   }),
 
   /** Top risks sorted by severity (highest first). */
-  topRisks: z.array(z.object({
-    /** Risk ID. */
-    riskId: z.string(),
-    /** Risk type. */
-    type: z.string(),
-    /** Severity. */
-    severity: RiskSeveritySchema,
-    /** Brief description. */
-    description: z.string(),
-    /** Affected entities. */
-    affectedEntityCount: z.number().int().nonnegative(),
-  })),
+  topRisks: z.array(
+    z.object({
+      /** Risk ID. */
+      riskId: z.string(),
+      /** Risk type. */
+      type: z.string(),
+      /** Severity. */
+      severity: RiskSeveritySchema,
+      /** Brief description. */
+      description: z.string(),
+      /** Affected entities. */
+      affectedEntityCount: z.number().int().nonnegative(),
+    }),
+  ),
 
   /** Risk categories with counts. */
   byCategory: z.record(z.string(), z.number().int().nonnegative()),

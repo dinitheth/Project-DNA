@@ -1,22 +1,22 @@
 {
-    "name": "@project-dna/dna-engine",
-    "version": "0.1.0",
-    "main": "./src/index.ts",
-    "types": "./src/index.ts",
-    "scripts": {
-        "test": "vitest run --passWithNoTests",
-        "test:watch": "vitest watch",
-        "typecheck": "tsc --noEmit",
-        "lint": "eslint src/",
-        "lint:fix": "eslint src/ --fix",
-        "clean": "rm -rf dist tsconfig.tsbuildinfo"
-    },
-    "dependencies": {
-        "@project-dna/shared": "workspace:*",
-        "@project-dna/dna-core": "workspace:*"
-    },
-    "devDependencies": {
-        "typescript": "^5.7.0",
-        "vitest": "^3.0.0"
-    }
+  "name": "@project-dna/dna-engine",
+  "version": "0.1.0",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/ --max-warnings=0",
+    "lint:fix": "eslint src/ --max-warnings=0 --fix",
+    "clean": "rimraf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@project-dna/shared": "workspace:*",
+    "@project-dna/dna-core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
 }

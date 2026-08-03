@@ -1,5 +1,8 @@
 import * as vscode from 'vscode';
 
+type SidebarMessage =
+  | { readonly type: 'onInfo'; readonly value: string }
+  | { readonly type: 'onError'; readonly value: string };
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
   constructor(private readonly _extensionUri: vscode.Uri) {}
@@ -7,7 +10,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   public resolveWebviewView(
     _webviewView: vscode.WebviewView,
     _context: vscode.WebviewViewResolveContext,
-    _token: vscode.CancellationToken
+    _token: vscode.CancellationToken,
   ) {
     _webviewView.webview.options = {
       enableScripts: true,
@@ -15,8 +18,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     };
 
     _webviewView.webview.html = this._getHtmlForWebview(_webviewView.webview);
-    
-    _webviewView.webview.onDidReceiveMessage((data: any) => {
+
+    _webviewView.webview.onDidReceiveMessage((data: unknown) => {
+      if (!isSidebarMessage(data)) return;
+
       switch (data.type) {
         case 'onInfo': {
           if (!data.value) return;
@@ -34,10 +39,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   private _getHtmlForWebview(webview: vscode.Webview) {
     const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview', 'assets', 'index.js')
+      vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview', 'assets', 'index.js'),
     );
     const styleUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview', 'assets', 'index.css')
+      vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview', 'assets', 'index.css'),
     );
 
     const nonce = getNonce();
@@ -57,6 +62,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       </body>
       </html>`;
   }
+}
+
+function isSidebarMessage(value: unknown): value is SidebarMessage {
+  if (typeof value !== 'object' || value === null) return false;
+
+  const candidate = value as Record<string, unknown>;
+  return (
+    (candidate['type'] === 'onInfo' || candidate['type'] === 'onError') &&
+    typeof candidate['value'] === 'string'
+  );
 }
 
 function getNonce() {

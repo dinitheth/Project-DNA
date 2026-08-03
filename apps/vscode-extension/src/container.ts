@@ -44,8 +44,7 @@ export function createContainer(options: ContainerOptions | Logger = {}): Contai
   container.register(TOKENS.EventBus, () => new EventBus<DNAEventMap>());
   container.register(
     TOKENS.StoragePort,
-    (current) =>
-      new SqliteStorage(storagePath, current.resolve<Logger>(TOKENS.Logger)),
+    (current) => new SqliteStorage(storagePath, current.resolve<Logger>(TOKENS.Logger)),
   );
   container.register(
     TOKENS.RepositoryScanner,

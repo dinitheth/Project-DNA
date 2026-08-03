@@ -17,8 +17,18 @@ export type { FunctionDNA } from './function-dna.js';
 export { DependencyDNASchema } from './dependency-dna.js';
 export type { DependencyDNA } from './dependency-dna.js';
 
-export { ArchitectureDNASchema, ArchitecturePatternSchema, ArchitectureLayerSchema, ArchitectureEvidenceSchema } from './architecture-dna.js';
-export type { ArchitectureDNA, ArchitecturePattern, ArchitectureLayer, ArchitectureEvidence } from './architecture-dna.js';
+export {
+  ArchitectureDNASchema,
+  ArchitecturePatternSchema,
+  ArchitectureLayerSchema,
+  ArchitectureEvidenceSchema,
+} from './architecture-dna.js';
+export type {
+  ArchitectureDNA,
+  ArchitecturePattern,
+  ArchitectureLayer,
+  ArchitectureEvidence,
+} from './architecture-dna.js';
 
 export { KnowledgeNodeSchema, KnowledgeNodeTypeSchema } from './knowledge-node.js';
 export type { KnowledgeNode, KnowledgeNodeType } from './knowledge-node.js';
@@ -30,7 +40,12 @@ export { RepositoryGraph } from './repository-graph.js';
 export type { GraphNodeAttributes, GraphEdgeAttributes } from './repository-graph.js';
 
 // ─── New Domain Models (Layer 3/4) ─────────────────────────────────
-export { DNAObjectSchema, DNAObjectKindSchema, ArchitectureRoleSchema, CriticalityLevelSchema } from './dna-object.js';
+export {
+  DNAObjectSchema,
+  DNAObjectKindSchema,
+  ArchitectureRoleSchema,
+  CriticalityLevelSchema,
+} from './dna-object.js';
 export type { DNAObject, DNAObjectKind, ArchitectureRole, CriticalityLevel } from './dna-object.js';
 
 export { DNAGraph } from './dna-graph.js';
@@ -44,10 +59,28 @@ export type {
 export { ProjectDNASchema, AnalysisConfigSchema } from './project-dna.js';
 export type { ProjectDNA, AnalysisConfig } from './project-dna.js';
 
-export { RepositoryProfileSchema, ProjectTypeSchema, RepositorySizeSchema, LanguageBreakdownSchema, FrameworkDetectionSchema, MaturityIndicatorsSchema } from './repository-profile.js';
-export type { RepositoryProfile, ProjectType, RepositorySize, LanguageBreakdown, FrameworkDetection, MaturityIndicators } from './repository-profile.js';
+export {
+  RepositoryProfileSchema,
+  ProjectTypeSchema,
+  RepositorySizeSchema,
+  LanguageBreakdownSchema,
+  FrameworkDetectionSchema,
+  MaturityIndicatorsSchema,
+} from './repository-profile.js';
+export type {
+  RepositoryProfile,
+  ProjectType,
+  RepositorySize,
+  LanguageBreakdown,
+  FrameworkDetection,
+  MaturityIndicators,
+} from './repository-profile.js';
 
-export { RepositoryHealthSchema, HealthTrendSchema, HealthDimensionsSchema } from './repository-health.js';
+export {
+  RepositoryHealthSchema,
+  HealthTrendSchema,
+  HealthDimensionsSchema,
+} from './repository-health.js';
 export type { RepositoryHealth, HealthTrend, HealthDimensions } from './repository-health.js';
 
 export { BusinessDomainSchema } from './business-domain.js';

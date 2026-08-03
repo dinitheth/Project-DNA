@@ -18,6 +18,7 @@ Project DNA is a software intelligence engine that understands what a repository
 - [Design Principles](#design-principles)
 - [Project Structure](#project-structure)
 - [Development](#development)
+- [Contributing](#contributing)
 - [Technology Stack](#technology-stack)
 - [Status](#status)
 
@@ -90,7 +91,7 @@ Infrastructure: Shared Kernel (shared)
 | `@project-dna/shared`                       | Infrastructure | Result type, EventBus, DI container, logging, common types                                              |
 | `@project-dna/dna-core`                     | 1              | Domain models (22 models), engine interfaces (9 interfaces), pipeline orchestrator                      |
 | `@project-dna/repository-scanner`           | 2              | File system scanning, language detection, framework detection                                           |
-| `@project-dna/ast-engine`                   | 2              | TypeScript/JavaScript extraction plus Tree-sitter WASM parsing for Python, Go, Java, Rust, and C#      |
+| `@project-dna/ast-engine`                   | 2              | TypeScript/JavaScript extraction plus Tree-sitter WASM parsing for Python, Go, Java, Rust, and C#       |
 | `@project-dna/dependency-engine`            | 2              | Dependency graph construction, circular dependency detection                                            |
 | `@project-dna/architecture-engine`          | 2              | Deterministic architecture inference via heuristics (MVC, Clean, Hexagonal, DDD, Layered, Microservice) |
 | `@project-dna/knowledge-engine`             | 2              | Structured knowledge generation, code smell detection                                                   |
@@ -324,8 +325,8 @@ Project DNA/
 
 ### Prerequisites
 
-- Node.js >= 20
-- PNPM 9.x
+- Node.js 20
+- pnpm 9.15.4
 
 ### Setup
 
@@ -336,8 +337,11 @@ pnpm install
 ### Commands
 
 ```bash
-# Install workspace dependencies
-pnpm install
+# Validate workspace structure and package scripts
+pnpm check:workspace
+
+# Run the complete sequential verification pipeline
+pnpm verify
 
 # Run all tests
 pnpm test
@@ -348,11 +352,24 @@ pnpm typecheck
 # Lint all packages
 pnpm lint
 
+# Check formatting without modifying files
+pnpm format:check
+
 # Build packages and the VS Code extension/webview
 pnpm build
 
 # Clean all build artifacts
 pnpm clean
+```
+
+`pnpm verify` runs workspace validation, formatting checks, ESLint, TypeScript, tests, and the
+production build in that order. The sequence is deliberate: inexpensive structural failures are
+reported before compilation and packaging work begins.
+
+When changing a file, format only that file instead of applying repository-wide formatting:
+
+```bash
+pnpm exec prettier --write path/to/changed-file
 ```
 
 ### Adding a new domain model
@@ -369,6 +386,13 @@ pnpm clean
 3. Add a DI token in `packages/shared/src/di/tokens.ts`
 4. Create the implementation package under `packages/`
 5. Wire it in the composition root (`vscode-extension/src/container.ts`)
+
+---
+
+## Contributing
+
+Development standards, package-boundary rules, testing expectations, and the pull request checklist
+are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
@@ -410,7 +434,10 @@ pnpm clean
 - VS Code composition root wired to all concrete engines, with functional Analyze, Refresh, and Generate DNA commands
 - Typed `Result<T>` error handling, cancellation support, dependency injection, and error-isolated EventBus coordination
 - ESLint 9 flat configuration and production extension/webview build
-- 60 automated tests passing across the implemented analysis and storage packages
+- 67 automated tests across shared infrastructure, analysis engines, storage, and the VS Code
+  extension
+- M0 developer-experience hardening in progress: deterministic workspace validation, zero-warning
+  linting, cross-platform scripts, and a sequential verification pipeline
 
 ### Next
 

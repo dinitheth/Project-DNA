@@ -46,14 +46,16 @@ export const CapabilitySchema = z.object({
   confidence: z.number().min(0).max(1),
 
   /** Evidence supporting this capability detection. */
-  evidence: z.array(z.object({
-    /** Type of evidence. */
-    type: z.enum(['framework', 'pattern', 'import', 'config', 'naming']),
-    /** What was detected. */
-    indicator: z.string(),
-    /** Where it was detected. */
-    location: z.string(),
-  })),
+  evidence: z.array(
+    z.object({
+      /** Type of evidence. */
+      type: z.enum(['framework', 'pattern', 'import', 'config', 'naming']),
+      /** What was detected. */
+      indicator: z.string(),
+      /** Where it was detected. */
+      location: z.string(),
+    }),
+  ),
 
   /** DNAObject IDs that implement this capability. */
   implementedBy: z.array(z.string()),

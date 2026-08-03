@@ -11,7 +11,7 @@
  */
 
 import { DirectedGraph } from 'graphology';
-import type { Attributes } from 'graphology-types';
+import type { Attributes, SerializedGraph } from 'graphology-types';
 
 // ─── Graph Node/Edge Attribute Types ────────────────────────────────
 
@@ -284,10 +284,11 @@ export class RepositoryGraph {
   /**
    * Deserialize a graph from a JSON-compatible object.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   static fromJSON(data: Record<string, unknown>): RepositoryGraph {
     const repoGraph = new RepositoryGraph();
-    repoGraph.graph.import(data as any);
+    repoGraph.graph.import(
+      data as Partial<SerializedGraph<GraphNodeAttributes, GraphEdgeAttributes>>,
+    );
     return repoGraph;
   }
 }

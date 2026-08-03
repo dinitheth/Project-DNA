@@ -35,7 +35,11 @@ export class Container {
    * @param factory - Factory function that receives the container for recursive resolution.
    * @param lifetime - 'singleton' caches after first resolution; 'transient' creates new each time.
    */
-  register<T>(token: symbol, factory: (container: Container) => T, lifetime: Lifetime = 'singleton'): void {
+  register<T>(
+    token: symbol,
+    factory: (container: Container) => T,
+    lifetime: Lifetime = 'singleton',
+  ): void {
     this.registrations.set(token, { factory, lifetime } as Registration);
   }
 
@@ -49,7 +53,7 @@ export class Container {
     if (!registration) {
       throw new Error(
         `[Container] No registration found for token: ${token.toString()}. ` +
-        `Did you forget to call container.register()?`
+          `Did you forget to call container.register()?`,
       );
     }
 

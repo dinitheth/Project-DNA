@@ -41,9 +41,8 @@ export class RiskAggregator {
 
     // Normalize to 0-100 scale (0 = no risk, 100 = extreme risk)
     const maxPossibleScore = risks.length * (SEVERITY_WEIGHTS['critical'] ?? 10);
-    const overallRiskScore = maxPossibleScore > 0
-      ? Math.round((totalWeightedScore / maxPossibleScore) * 100)
-      : 0;
+    const overallRiskScore =
+      maxPossibleScore > 0 ? Math.round((totalWeightedScore / maxPossibleScore) * 100) : 0;
 
     // Top risks sorted by severity
     const sortedRisks = [...risks].sort((a, b) => {

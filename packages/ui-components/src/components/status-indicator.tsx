@@ -14,7 +14,7 @@ export interface StatusIndicatorProps {
 export const StatusIndicator: React.FC<StatusIndicatorProps> = ({ status, label, className }) => {
   // TODO: implement status indicator colors/icons
   return (
-    <div className={cn("flex items-center gap-2", className)}>
+    <div className={cn('flex items-center gap-2', className)}>
       <span className={`status-dot-${status}`} />
       <span>{label}</span>
     </div>
