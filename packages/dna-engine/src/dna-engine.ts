@@ -34,8 +34,9 @@ export class DNAEngine implements IDNAEngine {
     this.graphBuilder = new DNAGraphBuilder(logger);
   }
 
-  async synthesize(input: SynthesisInput, _signal?: AbortSignal): Promise<Result<SynthesisOutput>> {
+  async synthesize(input: SynthesisInput, signal?: AbortSignal): Promise<Result<SynthesisOutput>> {
     try {
+      if (signal?.aborted) return Err(new Error('DNA synthesis cancelled'));
       this.logger.info('Starting DNA synthesis...');
       const startTime = Date.now();
 
@@ -47,6 +48,7 @@ export class DNAEngine implements IDNAEngine {
         input.knowledgeNodes,
         input.risks,
       );
+      if (signal?.aborted) return Err(new Error('DNA synthesis cancelled'));
 
       // Step 2: Infer repository identity
       const profile = this.identitySynthesizer.synthesize(
@@ -54,12 +56,15 @@ export class DNAEngine implements IDNAEngine {
         input.files,
         input.architecture,
       );
+      if (signal?.aborted) return Err(new Error('DNA synthesis cancelled'));
 
       // Step 3: Infer business domains (mutates entity domain assignments)
       const domains = this.domainSynthesizer.synthesize(input.files, entities);
+      if (signal?.aborted) return Err(new Error('DNA synthesis cancelled'));
 
       // Step 4: Detect capabilities
       const capabilities = this.capabilitySynthesizer.synthesize(input.repository, input.files);
+      if (signal?.aborted) return Err(new Error('DNA synthesis cancelled'));
 
       // Step 5: Build semantic DNA graph
       const dnaGraph = this.graphBuilder.build(entities, domains, capabilities, input.architecture);
@@ -67,7 +72,7 @@ export class DNAEngine implements IDNAEngine {
       const durationMs = Date.now() - startTime;
       this.logger.info(
         `DNA synthesis complete: ${entities.length} entities, ${domains.length} domains, ` +
-        `${capabilities.length} capabilities, ${dnaGraph.nodeCount} graph nodes (${durationMs}ms)`,
+          `${capabilities.length} capabilities, ${dnaGraph.nodeCount} graph nodes (${durationMs}ms)`,
       );
 
       return Ok({

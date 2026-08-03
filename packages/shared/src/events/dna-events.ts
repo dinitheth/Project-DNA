@@ -153,6 +153,8 @@ export interface AnalysisProgressPayload {
   readonly stage: string;
   readonly message: string;
   readonly percent: number;
+  readonly startedAt: number;
+  readonly detail?: string;
 }
 
 // ─── Event Map ──────────────────────────────────────────────────────

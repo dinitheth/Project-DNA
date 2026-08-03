@@ -403,15 +403,17 @@ pnpm clean
 - DNA synthesis engine with entity, identity, domain, capability, and semantic graph builders
 - Software intelligence engine with health, complexity, risk, criticality, and deterministic narrative analysis
 - Evolution engine with snapshot creation and DNA diffing
+- End-to-end `ProjectDNAService` orchestration across analysis, synthesis, intelligence, aggregate assembly, refresh, queries, and evolution snapshots
+- SQLite persistence for versioned Project DNA aggregates, heavyweight collections, graphs, repository indexes, and evolution history
+- Automatic VS Code workspace restoration with version continuity across extension restarts
+- VS Code composition root wired to all concrete engines, with functional Analyze, Refresh, and Generate DNA commands
 - Typed `Result<T>` error handling, cancellation support, dependency injection, and error-isolated EventBus coordination
 - ESLint 9 flat configuration and production extension/webview build
-- 50 automated tests passing across the implemented analysis packages
+- 55 automated tests passing across the implemented analysis and storage packages
 
 ### Next
 
-- Complete end-to-end `ProjectDNAService` integration and persistence orchestration
 - Add Tree-sitter parsers for non-JavaScript/TypeScript languages
-- Complete SQLite storage operations and evolution snapshot persistence
 - Add incremental file-watcher analysis
 - Expand VS Code webview panels and UI component behavior
 

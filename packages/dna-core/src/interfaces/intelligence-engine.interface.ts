@@ -14,6 +14,7 @@ import type { DNAGraph } from '../models/dna-graph.js';
 import type { RepositoryProfile } from '../models/repository-profile.js';
 import type { ArchitectureDNA } from '../models/architecture-dna.js';
 import type { KnowledgeNode } from '../models/knowledge-node.js';
+import type { RiskNode } from '../models/risk-node.js';
 import type { RepositoryHealth } from '../models/repository-health.js';
 import type { ComplexityProfile } from '../models/complexity-profile.js';
 import type { RiskAssessment } from '../models/risk-assessment.js';
@@ -27,6 +28,7 @@ export interface IntelligenceInput {
   readonly profile: RepositoryProfile;
   readonly architecture: ArchitectureDNA;
   readonly knowledgeNodes: KnowledgeNode[];
+  readonly risks: RiskNode[];
 }
 
 /** Complete output of the intelligence process. */
@@ -46,5 +48,8 @@ export interface ISoftwareIntelligenceEngine {
    * @param signal - Optional cancellation signal.
    * @returns Health, complexity, risk, criticality, and narrative intelligence.
    */
-  computeIntelligence(input: IntelligenceInput, signal?: AbortSignal): Promise<Result<IntelligenceOutput>>;
+  computeIntelligence(
+    input: IntelligenceInput,
+    signal?: AbortSignal,
+  ): Promise<Result<IntelligenceOutput>>;
 }

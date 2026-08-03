@@ -41,15 +41,45 @@ importers:
 
   apps/vscode-extension:
     dependencies:
+      '@project-dna/architecture-engine':
+        specifier: workspace:*
+        version: link:../../packages/architecture-engine
+      '@project-dna/ast-engine':
+        specifier: workspace:*
+        version: link:../../packages/ast-engine
+      '@project-dna/dependency-engine':
+        specifier: workspace:*
+        version: link:../../packages/dependency-engine
       '@project-dna/dna-core':
         specifier: workspace:*
         version: link:../../packages/dna-core
+      '@project-dna/dna-engine':
+        specifier: workspace:*
+        version: link:../../packages/dna-engine
+      '@project-dna/evolution-engine':
+        specifier: workspace:*
+        version: link:../../packages/evolution-engine
+      '@project-dna/knowledge-engine':
+        specifier: workspace:*
+        version: link:../../packages/knowledge-engine
+      '@project-dna/repository-scanner':
+        specifier: workspace:*
+        version: link:../../packages/repository-scanner
       '@project-dna/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@project-dna/software-intelligence-engine':
+        specifier: workspace:*
+        version: link:../../packages/software-intelligence-engine
+      '@project-dna/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
       '@project-dna/ui-components':
         specifier: workspace:*
         version: link:../../packages/ui-components
+      better-sqlite3:
+        specifier: ^11.0.0
+        version: 11.10.0
       react:
         specifier: ^18.3.1
         version: 18.3.1

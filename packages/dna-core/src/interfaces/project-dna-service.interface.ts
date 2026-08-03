@@ -54,6 +54,8 @@ export interface EntityFilter {
  * Consumer: Commands, CLI.
  */
 export interface IProjectDNAAnalyzer {
+  /** Restore the latest persisted analysis for a repository, if one exists. */
+  restore(rootPath: string): Promise<Result<ProjectDNA | null>>;
   /** Run the complete analysis pipeline and produce ProjectDNA. */
   analyze(rootPath: string, signal?: AbortSignal): Promise<Result<ProjectDNA>>;
   /** Re-analyze incrementally (only changed files). */

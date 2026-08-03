@@ -16,6 +16,15 @@ export class SnapshotCreator {
 
   constructor(private readonly logger: Logger) {}
 
+  restore(snapshots: readonly EvolutionSnapshot[]): void {
+    const latest = snapshots.reduce<EvolutionSnapshot | null>(
+      (current, snapshot) => (!current || snapshot.version > current.version ? snapshot : current),
+      null,
+    );
+    this.nextVersion = (latest?.version ?? 0) + 1;
+    this.lastSnapshotId = latest?.id ?? null;
+  }
+
   create(dna: ProjectDNA, trigger: SnapshotTrigger = 'manual'): EvolutionSnapshot {
     this.logger.info(`Creating evolution snapshot v${this.nextVersion}...`);
 

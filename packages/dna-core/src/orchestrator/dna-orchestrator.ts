@@ -216,8 +216,8 @@ export class DNAOrchestrator {
 
     // ── Complete ──────────────────────────────────────────────────
     const durationMs = Date.now() - startTime;
-    this.emitProgress(PipelineStage.Complete, 'Analysis complete.', 1);
-    this.logger.info(`Analysis complete in ${durationMs}ms`);
+    this.emitProgress(PipelineStage.GeneratingKnowledge, 'Core analysis complete.', 1);
+    this.logger.info(`Core analysis complete in ${durationMs}ms`);
 
     return Ok({
       repository,
@@ -244,6 +244,7 @@ export class DNAOrchestrator {
       stage,
       message,
       percent: calculateOverallProgress(stage, stageProgress),
+      startedAt: Date.now(),
     });
   }
 

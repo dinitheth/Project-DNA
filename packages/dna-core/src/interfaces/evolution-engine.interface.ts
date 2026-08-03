@@ -12,6 +12,9 @@ import type { EvolutionSnapshot } from '../models/evolution-snapshot.js';
 import type { DNADiff } from '../models/dna-diff.js';
 
 export interface IEvolutionEngine {
+  /** Replace in-memory history with previously persisted snapshots. */
+  restoreSnapshots(snapshots: EvolutionSnapshot[]): Promise<Result<void>>;
+
   /**
    * Create a snapshot from the current ProjectDNA.
    * Determines whether to create a full or incremental snapshot

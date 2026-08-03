@@ -1,23 +1,15 @@
-/**
- * SoftwareIntelligenceEngine — The reasoning layer implementation.
- *
- * Implements ISoftwareIntelligenceEngine. Takes synthesized DNA and produces
- * actionable intelligence through deterministic heuristics.
- * No AI. No ML. No probabilistic models.
- */
+/** Deterministic software intelligence computation. */
 
-import { Ok, Err } from '@project-dna/shared';
-import type { Logger, Result } from '@project-dna/shared';
+import { Err, Ok, type Logger, type Result } from '@project-dna/shared';
 import type {
-  ISoftwareIntelligenceEngine,
   IntelligenceInput,
   IntelligenceOutput,
-  RiskNode,
+  ISoftwareIntelligenceEngine,
 } from '@project-dna/dna-core';
-import { HealthAnalyzer } from './analyzers/health-analyzer.js';
 import { ComplexityAnalyzer } from './analyzers/complexity-analyzer.js';
-import { RiskAggregator } from './analyzers/risk-aggregator.js';
 import { CriticalityAnalyzer } from './analyzers/criticality-analyzer.js';
+import { HealthAnalyzer } from './analyzers/health-analyzer.js';
+import { RiskAggregator } from './analyzers/risk-aggregator.js';
 import { StoryGenerator } from './narrative/story-generator.js';
 
 export class SoftwareIntelligenceEngine implements ISoftwareIntelligenceEngine {
@@ -37,35 +29,32 @@ export class SoftwareIntelligenceEngine implements ISoftwareIntelligenceEngine {
 
   async computeIntelligence(
     input: IntelligenceInput,
-    _signal?: AbortSignal,
+    signal?: AbortSignal,
   ): Promise<Result<IntelligenceOutput>> {
     try {
+      if (signal?.aborted) return Err(new Error('Intelligence computation cancelled'));
       this.logger.info('Starting intelligence computation...');
       const startTime = Date.now();
 
-      // Step 1: Compute health across 5 dimensions
       const health = this.healthAnalyzer.compute(
         input.entities,
         input.architecture,
         input.knowledgeNodes,
       );
+      if (signal?.aborted) return Err(new Error('Intelligence computation cancelled'));
 
-      // Step 2: Compute complexity profile
       const complexity = this.complexityAnalyzer.compute(input.entities);
+      if (signal?.aborted) return Err(new Error('Intelligence computation cancelled'));
 
-      // Step 3: Aggregate risks
-      // Extract risk nodes from entity risk IDs (simplified: create stubs)
-      const riskNodes = this.extractRiskNodes(input.entities);
-      const risks = this.riskAggregator.aggregate(riskNodes);
+      const risks = this.riskAggregator.aggregate(input.risks);
+      if (signal?.aborted) return Err(new Error('Intelligence computation cancelled'));
 
-      // Step 4: Identify critical components
       const criticalComponents = this.criticalityAnalyzer.identify(input.entities);
+      if (signal?.aborted) return Err(new Error('Intelligence computation cancelled'));
 
-      // Step 5: Generate deterministic narrative
       const domainCount = new Set(
-        input.entities.map((e) => e.businessDomain).filter(Boolean),
+        input.entities.map((entity) => entity.businessDomain).filter(Boolean),
       ).size;
-
       const story = this.storyGenerator.generate(
         input.profile,
         health,
@@ -78,44 +67,14 @@ export class SoftwareIntelligenceEngine implements ISoftwareIntelligenceEngine {
       const durationMs = Date.now() - startTime;
       this.logger.info(
         `Intelligence computation complete: health=${health.overallScore}/100, ` +
-        `${criticalComponents.length} critical components, ` +
-        `${risks.totalRisks} risks (${durationMs}ms)`,
+          `${criticalComponents.length} critical components, ` +
+          `${risks.totalRisks} risks (${durationMs}ms)`,
       );
-
-      return Ok({
-        health,
-        complexity,
-        risks,
-        criticalComponents,
-        story,
-      });
+      return Ok({ health, complexity, risks, criticalComponents, story });
     } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      this.logger.error(`Intelligence computation failed: ${err.message}`);
-      return Err(err);
+      const resolvedError = error instanceof Error ? error : new Error(String(error));
+      this.logger.error(`Intelligence computation failed: ${resolvedError.message}`);
+      return Err(resolvedError);
     }
-  }
-
-  /**
-   * Extract risk node stubs from entity risk IDs.
-   * In the full pipeline, actual RiskNode objects flow through from the KnowledgeEngine.
-   * This provides a fallback for when only entity-level risk IDs are available.
-   */
-  private extractRiskNodes(entities: readonly { risks: string[] }[]): RiskNode[] {
-    const riskIds = new Set<string>();
-    for (const entity of entities) {
-      for (const riskId of entity.risks) {
-        riskIds.add(riskId);
-      }
-    }
-    // Return minimal stubs — the real pipeline passes full RiskNode objects
-    return Array.from(riskIds).map((id) => ({
-      id,
-      type: 'high-complexity' as const,
-      severity: 'medium' as const,
-      affectedEntities: [] as string[],
-      description: `Risk ${id}`,
-      detectedAt: Date.now(),
-    }));
   }
 }
