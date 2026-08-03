@@ -83,20 +83,59 @@ describe('AstEngine', () => {
     });
   });
 
-  it('streams results and reports unsupported languages without throwing', async () => {
+  it('streams supported results and reports unsupported languages without throwing', async () => {
     const engine = new AstEngine(createSilentLogger());
     const results = [];
 
     for await (const result of engine.parseFiles([
       { path: 'one.ts', content: 'export const one = 1;', language: 'typescript' },
       { path: 'two.py', content: 'value = 2', language: 'python' },
+      { path: 'three.java', content: 'class Three {}', language: 'java' },
     ])) {
       results.push(result);
     }
 
-    expect(results).toHaveLength(2);
+    expect(results).toHaveLength(3);
     expect(results[0]?.ok).toBe(true);
-    expect(results[1]?.ok).toBe(false);
+    expect(results[1]?.ok).toBe(true);
+    expect(results[2]?.ok).toBe(false);
+  });
+
+  it('extracts Python structure through the Tree-sitter WASM parser', async () => {
+    const result = await new AstEngine(createSilentLogger()).parseFile({
+      path: 'C:/repo/service.py',
+      relativePath: 'service.py',
+      language: 'python',
+      content: `from pathlib import Path as FilePath\n\nclass Service(Base):\n    value: str = "ready"\n\n    def run(self, name: str = "world") -> str:\n        if name:\n            return name\n        return self.value\n\nasync def fetch(url: str):\n    # fetch the resource\n    return await request(url)\n`,
+    });
+    if (isErr(result)) throw result.error;
+
+    expect(result.value.fileDna.language).toBe('python');
+    expect(result.value.fileDna.imports).toEqual(
+      expect.arrayContaining([expect.objectContaining({ source: 'pathlib' })]),
+    );
+    expect(result.value.fileDna.exports).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'Service' }),
+        expect.objectContaining({ name: 'fetch' }),
+      ]),
+    );
+    expect(result.value.classes[0]).toMatchObject({
+      name: 'Service',
+      extends: 'Base',
+      isExported: true,
+    });
+    expect(result.value.classes[0]?.methods[0]).toMatchObject({
+      name: 'run',
+      parameters: expect.arrayContaining([expect.objectContaining({ name: 'name', isOptional: true })]),
+    });
+    expect(result.value.functions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'fetch', isAsync: true })]),
+    );
+    expect(result.value.fileDna.comments).toContainEqual(
+      expect.objectContaining({ text: 'fetch the resource', type: 'line' }),
+    );
+    expect(result.value.fileDna.complexity).toBeGreaterThan(1);
   });
 
   it('honors cancellation', async () => {

@@ -3,7 +3,7 @@
 import { Node } from 'ts-morph';
 import type { FunctionDNA } from '@project-dna/dna-core';
 import type { IExtractor } from './extractor.interface.js';
-import type { RawParseTree } from '../parsers/parser.interface.js';
+import type { TypeScriptParseTree } from '../parsers/parser.interface.js';
 import {
   calculateComplexity,
   createDnaId,
@@ -12,8 +12,8 @@ import {
   readJsDocDescription,
 } from './utils.js';
 
-export class FunctionExtractor implements IExtractor<FunctionDNA> {
-  public extract(parseTree: RawParseTree, filePath: string): FunctionDNA[] {
+export class FunctionExtractor implements IExtractor<FunctionDNA, TypeScriptParseTree> {
+  public extract(parseTree: TypeScriptParseTree, filePath: string): FunctionDNA[] {
     const declarations = parseTree.sourceFile.getFunctions().map((declaration) => {
       const name = declaration.getName() ?? '';
       return {

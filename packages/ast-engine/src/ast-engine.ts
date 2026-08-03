@@ -13,10 +13,13 @@ import {
 import { Err, Ok, type Logger, type Result } from '@project-dna/shared';
 import { ClassExtractor } from './extractors/class-extractor.js';
 import { CommentExtractor } from './extractors/comment-extractor.js';
+import { PythonExtractor } from './extractors/python-extractor.js';
 import { ExportExtractor } from './extractors/export-extractor.js';
 import { FunctionExtractor } from './extractors/function-extractor.js';
 import { ImportExtractor } from './extractors/import-extractor.js';
 import { calculateComplexity, countCodeLines } from './extractors/utils.js';
+import { isTypeScriptParseTree, type RawParseTree } from './parsers/parser.interface.js';
+import { TreeSitterParser } from './parsers/tree-sitter-parser.js';
 import { TypeScriptParser } from './parsers/typescript-parser.js';
 
 const SUPPORTED_LANGUAGES = [
@@ -24,10 +27,13 @@ const SUPPORTED_LANGUAGES = [
   'typescriptreact',
   'javascript',
   'javascriptreact',
+  'python',
 ] as const;
 
 export class AstEngine implements IAstEngine {
-  private readonly parser = new TypeScriptParser();
+  private readonly typescriptParser = new TypeScriptParser();
+  private readonly treeSitterParser = new TreeSitterParser();
+  private readonly pythonExtractor = new PythonExtractor();
   private readonly classExtractor = new ClassExtractor();
   private readonly functionExtractor = new FunctionExtractor();
   private readonly importExtractor = new ImportExtractor();
@@ -48,11 +54,34 @@ export class AstEngine implements IAstEngine {
 
     try {
       const persistedPath = normalizePath(input.relativePath ?? path.basename(input.path));
-      const parseResult = await this.parser.parse(input.content, input.language, input.path);
+      const parseResult = await this.parserFor(input.language).parse(input.content, input.language, input.path);
       if (!parseResult.ok) return parseResult;
       if (signal?.aborted) return Err(new Error('AST parsing cancelled'));
 
       const tree = parseResult.value;
+      if (!isTypeScriptParseTree(tree)) {
+        try {
+          const extracted = this.pythonExtractor.extract(tree, persistedPath);
+          const contentHash = createHash('sha256').update(input.content).digest('hex');
+          const fileDna = FileDNASchema.parse({
+            id: createHash('sha256').update(`${persistedPath}:${contentHash}`).digest('hex'),
+            path: persistedPath,
+            language: input.language,
+            hash: contentHash,
+            size: Buffer.byteLength(input.content, 'utf8'),
+            linesOfCode: extracted.linesOfCode,
+            classIds: extracted.classes.map((classDna) => classDna.id),
+            functionIds: extracted.functions.map((functionDna) => functionDna.id),
+            imports: extracted.imports,
+            exports: extracted.exports,
+            comments: extracted.comments,
+            complexity: extracted.complexity,
+          });
+          return Ok({ fileDna, classes: extracted.classes, functions: extracted.functions });
+        } finally {
+          tree.tree.delete();
+        }
+      }
       const classes = this.classExtractor
         .extract(tree, persistedPath)
         .map((classDna) => ClassDNASchema.parse(classDna));
@@ -81,6 +110,10 @@ export class AstEngine implements IAstEngine {
       this.logger.warn(`Failed to parse ${input.path}: ${resolvedError.message}`);
       return Err(resolvedError);
     }
+  }
+
+  private parserFor(language: string): { parse(content: string, language: string, filePath: string): Promise<Result<RawParseTree>> } {
+    return language === 'python' ? this.treeSitterParser : this.typescriptParser;
   }
 
   public async *parseFiles(

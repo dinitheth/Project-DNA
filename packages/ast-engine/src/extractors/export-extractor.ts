@@ -1,11 +1,11 @@
 /** Extracts explicit exports and exported declarations. */
 
 import type { IExtractor } from './extractor.interface.js';
-import type { RawParseTree } from '../parsers/parser.interface.js';
+import type { TypeScriptParseTree } from '../parsers/parser.interface.js';
 import type { ExportDNA } from './types.js';
 
-export class ExportExtractor implements IExtractor<ExportDNA> {
-  public extract(parseTree: RawParseTree): ExportDNA[] {
+export class ExportExtractor implements IExtractor<ExportDNA, TypeScriptParseTree> {
+  public extract(parseTree: TypeScriptParseTree): ExportDNA[] {
     const exports: ExportDNA[] = [];
 
     for (const declaration of parseTree.sourceFile.getExportDeclarations()) {

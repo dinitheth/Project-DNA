@@ -2,11 +2,11 @@
 
 import { Node } from 'ts-morph';
 import type { IExtractor } from './extractor.interface.js';
-import type { RawParseTree } from '../parsers/parser.interface.js';
+import type { TypeScriptParseTree } from '../parsers/parser.interface.js';
 import type { DecoratorDNA } from './types.js';
 
-export class DecoratorExtractor implements IExtractor<DecoratorDNA> {
-  public extract(parseTree: RawParseTree): DecoratorDNA[] {
+export class DecoratorExtractor implements IExtractor<DecoratorDNA, TypeScriptParseTree> {
+  public extract(parseTree: TypeScriptParseTree): DecoratorDNA[] {
     return parseTree.sourceFile.getDescendants().flatMap((node) => {
       if (!Node.isDecorator(node)) return [];
       const target = node.getParent();

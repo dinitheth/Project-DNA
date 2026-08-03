@@ -1,12 +1,12 @@
 /** Extracts line, block, and documentation comments from source text. */
 
 import type { IExtractor } from './extractor.interface.js';
-import type { RawParseTree } from '../parsers/parser.interface.js';
+import type { TypeScriptParseTree } from '../parsers/parser.interface.js';
 import type { CommentDNA } from './types.js';
 import { ts } from 'ts-morph';
 
-export class CommentExtractor implements IExtractor<CommentDNA> {
-  public extract(parseTree: RawParseTree): CommentDNA[] {
+export class CommentExtractor implements IExtractor<CommentDNA, TypeScriptParseTree> {
+  public extract(parseTree: TypeScriptParseTree): CommentDNA[] {
     const comments: CommentDNA[] = [];
     const scanner = ts.createScanner(
       ts.ScriptTarget.ES2022,

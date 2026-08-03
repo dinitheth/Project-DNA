@@ -2,11 +2,11 @@
 
 import type { ClassDNA } from '@project-dna/dna-core';
 import type { IExtractor } from './extractor.interface.js';
-import type { RawParseTree } from '../parsers/parser.interface.js';
+import type { TypeScriptParseTree } from '../parsers/parser.interface.js';
 import { calculateComplexity, createDnaId, getLineRange } from './utils.js';
 
-export class ClassExtractor implements IExtractor<ClassDNA> {
-  public extract(parseTree: RawParseTree, filePath: string): ClassDNA[] {
+export class ClassExtractor implements IExtractor<ClassDNA, TypeScriptParseTree> {
+  public extract(parseTree: TypeScriptParseTree, filePath: string): ClassDNA[] {
     return parseTree.sourceFile.getClasses().map((classDeclaration) => {
       const name = classDeclaration.getName() ?? 'default';
       const range = getLineRange(classDeclaration);

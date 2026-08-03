@@ -2,11 +2,11 @@
 
 import { Node, SyntaxKind } from 'ts-morph';
 import type { IExtractor } from './extractor.interface.js';
-import type { RawParseTree } from '../parsers/parser.interface.js';
+import type { TypeScriptParseTree } from '../parsers/parser.interface.js';
 import type { ImportDNA } from './types.js';
 
-export class ImportExtractor implements IExtractor<ImportDNA> {
-  public extract(parseTree: RawParseTree): ImportDNA[] {
+export class ImportExtractor implements IExtractor<ImportDNA, TypeScriptParseTree> {
+  public extract(parseTree: TypeScriptParseTree): ImportDNA[] {
     const staticImports = parseTree.sourceFile.getImportDeclarations().map((declaration) => {
       const defaultImport = declaration.getDefaultImport();
       const namespaceImport = declaration.getNamespaceImport();

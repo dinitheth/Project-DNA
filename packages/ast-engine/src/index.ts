@@ -13,4 +13,5 @@ export * from './extractors/function-extractor.js';
 export * from './extractors/import-extractor.js';
 export * from './extractors/export-extractor.js';
 export * from './extractors/comment-extractor.js';
+export * from './extractors/python-extractor.js';
 export * from './extractors/decorator-extractor.js';

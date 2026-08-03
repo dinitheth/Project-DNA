@@ -90,7 +90,7 @@ Infrastructure: Shared Kernel (shared)
 | `@project-dna/shared`                       | Infrastructure | Result type, EventBus, DI container, logging, common types                                              |
 | `@project-dna/dna-core`                     | 1              | Domain models (22 models), engine interfaces (9 interfaces), pipeline orchestrator                      |
 | `@project-dna/repository-scanner`           | 2              | File system scanning, language detection, framework detection                                           |
-| `@project-dna/ast-engine`                   | 2              | Source code parsing, structural extraction (classes, functions, imports, exports)                       |
+| `@project-dna/ast-engine`                   | 2              | TypeScript/JavaScript extraction plus Tree-sitter WASM parsing for Python                              |
 | `@project-dna/dependency-engine`            | 2              | Dependency graph construction, circular dependency detection                                            |
 | `@project-dna/architecture-engine`          | 2              | Deterministic architecture inference via heuristics (MVC, Clean, Hexagonal, DDD, Layered, Microservice) |
 | `@project-dna/knowledge-engine`             | 2              | Structured knowledge generation, code smell detection                                                   |
@@ -395,6 +395,7 @@ pnpm clean
 - Domain models and engine interfaces validated with Zod schemas
 - Repository scanner with recursive traversal, `.gitignore` support, metadata detection, language/framework detection, source manifests, limits, and cancellation
 - TypeScript/TSX/JavaScript/JSX AST extraction for imports, exports, re-exports, dynamic imports, comments, classes, methods, properties, decorators, functions, LOC, complexity, and deterministic hashes
+- Tree-sitter WASM parser path with Python structural extraction for classes, methods, functions, imports, exports, comments, and complexity
 - Sealed `RepositoryGraph` with internal, aliased, workspace, dynamic, type-only, re-export, and external dependency resolution
 - Linear-time circular dependency detection and module-boundary summaries
 - Architecture inference for MVC, Clean, Hexagonal, DDD, Layered, and Microservice patterns, including confidence scores, evidence, deterministic ranking, inferred layers, stable IDs, and unknown fallback
@@ -409,11 +410,11 @@ pnpm clean
 - VS Code composition root wired to all concrete engines, with functional Analyze, Refresh, and Generate DNA commands
 - Typed `Result<T>` error handling, cancellation support, dependency injection, and error-isolated EventBus coordination
 - ESLint 9 flat configuration and production extension/webview build
-- 55 automated tests passing across the implemented analysis and storage packages
+- 56 automated tests passing across the implemented analysis and storage packages
 
 ### Next
 
-- Add Tree-sitter parsers for non-JavaScript/TypeScript languages
+- Expand Tree-sitter extraction to additional detected languages (Go, Java, Rust, and C#)
 - Add incremental file-watcher analysis
 - Expand VS Code webview panels and UI component behavior
 
