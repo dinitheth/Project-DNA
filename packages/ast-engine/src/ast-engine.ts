@@ -13,6 +13,7 @@ import {
 import { Err, Ok, type Logger, type Result } from '@project-dna/shared';
 import { ClassExtractor } from './extractors/class-extractor.js';
 import { CommentExtractor } from './extractors/comment-extractor.js';
+import { MultiLanguageExtractor } from './extractors/multi-language-extractor.js';
 import { PythonExtractor } from './extractors/python-extractor.js';
 import { ExportExtractor } from './extractors/export-extractor.js';
 import { FunctionExtractor } from './extractors/function-extractor.js';
@@ -27,12 +28,17 @@ const SUPPORTED_LANGUAGES = [
   'typescriptreact',
   'javascript',
   'javascriptreact',
+  'csharp',
+  'go',
+  'java',
   'python',
+  'rust',
 ] as const;
 
 export class AstEngine implements IAstEngine {
   private readonly typescriptParser = new TypeScriptParser();
   private readonly treeSitterParser = new TreeSitterParser();
+  private readonly multiLanguageExtractor = new MultiLanguageExtractor();
   private readonly pythonExtractor = new PythonExtractor();
   private readonly classExtractor = new ClassExtractor();
   private readonly functionExtractor = new FunctionExtractor();
@@ -61,7 +67,10 @@ export class AstEngine implements IAstEngine {
       const tree = parseResult.value;
       if (!isTypeScriptParseTree(tree)) {
         try {
-          const extracted = this.pythonExtractor.extract(tree, persistedPath);
+          const extracted =
+            tree.language === 'python'
+              ? this.pythonExtractor.extract(tree, persistedPath)
+              : this.multiLanguageExtractor.extract(tree, persistedPath);
           const contentHash = createHash('sha256').update(input.content).digest('hex');
           const fileDna = FileDNASchema.parse({
             id: createHash('sha256').update(`${persistedPath}:${contentHash}`).digest('hex'),
@@ -113,7 +122,9 @@ export class AstEngine implements IAstEngine {
   }
 
   private parserFor(language: string): { parse(content: string, language: string, filePath: string): Promise<Result<RawParseTree>> } {
-    return language === 'python' ? this.treeSitterParser : this.typescriptParser;
+    return this.treeSitterParser.getSupportedLanguages().includes(language)
+      ? this.treeSitterParser
+      : this.typescriptParser;
   }
 
   public async *parseFiles(

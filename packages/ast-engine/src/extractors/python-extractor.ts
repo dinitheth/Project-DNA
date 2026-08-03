@@ -1,23 +1,14 @@
 import type { ClassDNA, FileDNA, FunctionDNA } from '@project-dna/dna-core';
 import type { TreeSitterParseTree } from '../parsers/parser.interface.js';
 import { createDnaId } from './utils.js';
+import type { TreeSitterExtraction } from './tree-sitter-extraction.js';
 
 type ImportDNA = FileDNA['imports'][number];
 type ExportDNA = FileDNA['exports'][number];
 type CommentDNA = FileDNA['comments'][number];
 
-export interface PythonExtraction {
-  readonly classes: ClassDNA[];
-  readonly functions: FunctionDNA[];
-  readonly imports: ImportDNA[];
-  readonly exports: ExportDNA[];
-  readonly comments: CommentDNA[];
-  readonly complexity: number;
-  readonly linesOfCode: number;
-}
-
 export class PythonExtractor {
-  extract(parseTree: TreeSitterParseTree, filePath: string): PythonExtraction {
+  extract(parseTree: TreeSitterParseTree, filePath: string): TreeSitterExtraction {
     const root = parseTree.tree.rootNode;
     const classes: ClassDNA[] = [];
     const functions: FunctionDNA[] = [];

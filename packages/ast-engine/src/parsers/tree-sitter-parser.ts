@@ -8,7 +8,11 @@ import Parser from 'web-tree-sitter';
 import { Err, Ok, type Result } from '@project-dna/shared';
 
 const WASM_BY_LANGUAGE: Readonly<Record<string, string>> = {
+  csharp: 'tree-sitter-wasms/out/tree-sitter-c_sharp.wasm',
+  go: 'tree-sitter-wasms/out/tree-sitter-go.wasm',
+  java: 'tree-sitter-wasms/out/tree-sitter-java.wasm',
   python: 'tree-sitter-wasms/out/tree-sitter-python.wasm',
+  rust: 'tree-sitter-wasms/out/tree-sitter-rust.wasm',
 };
 
 let initialization: Promise<void> | null = null;
