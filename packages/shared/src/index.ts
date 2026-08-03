@@ -13,19 +13,12 @@ export { Ok, Err, isOk, isErr } from './result/result.js';
 export type { Result } from './result/result.js';
 
 // ─── Logger ────────────────────────────────────────────────────────
-export { createLogger } from './logger/logger.js';
+export { createLogger, createSilentLogger } from './logger/logger.js';
 export type { Logger } from './logger/logger.js';
 
 // ─── Protocol ──────────────────────────────────────────────────────
-export type {
-  ExtensionMessage,
-  WebviewMessage,
-  MessageEnvelope,
-} from './protocol/messages.js';
-export {
-  ExtensionMessageSchema,
-  WebviewMessageSchema,
-} from './protocol/messages.js';
+export type { ExtensionMessage, WebviewMessage, MessageEnvelope } from './protocol/messages.js';
+export { ExtensionMessageSchema, WebviewMessageSchema } from './protocol/messages.js';
 
 // ─── Constants ─────────────────────────────────────────────────────
 export {

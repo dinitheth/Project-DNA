@@ -1,48 +1,66 @@
-/**
- * @module ConfigReader
- * Provides utility methods to read common repository configuration files.
- */
+/** Readers for common repository configuration files. */
 
-import type { Result } from '@project-dna/shared';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { Err, Ok, type Result } from '@project-dna/shared';
+
+export type JsonRecord = Record<string, unknown>;
 
 export class ConfigReader {
-    /**
-     * Reads and parses package.json.
-     * @param rootPath - The root path.
-     * @returns A Result containing parsed package.json data.
-     */
-    public async readPackageJson(_rootPath: string): Promise<Result<any>> {
-        // TODO: Implement readPackageJson
-        // 1. Construct path to package.json.
-        // 2. Read file content and parse JSON.
-        // 3. Handle errors and return Result.
-        throw new Error('Not implemented');
-    }
+  public readPackageJson(rootPath: string): Promise<Result<JsonRecord | null>> {
+    return this.readJsonFile(path.join(rootPath, 'package.json'));
+  }
 
-    /**
-     * Reads and parses tsconfig.json.
-     * @param rootPath - The root path.
-     * @returns A Result containing parsed tsconfig.json data.
-     */
-    public async readConfig(_rootPath: string): Promise<Result<any>> {
-        // TODO: Implement readTsConfig
-        // 1. Construct path to tsconfig.json.
-        // 2. Read file content and parse JSON (handle comments if necessary).
-        // 3. Handle errors and return Result.
-        throw new Error('Not implemented');
-    }
+  public readConfig(rootPath: string): Promise<Result<JsonRecord | null>> {
+    return this.readJsonFile(path.join(rootPath, 'tsconfig.json'), true);
+  }
 
-    /**
-     * Reads and parses .gitignore.
-     * @param rootPath - The root path.
-     * @returns A Result containing a list of ignored patterns.
-     */
-    public async readGitIgnore(_rootPath: string): Promise<Result<string[]>> {
-        // TODO: Implement readGitIgnore
-        // 1. Construct path to .gitignore.
-        // 2. Read file content and parse lines.
-        // 3. Filter out comments and empty lines.
-        // 4. Return Result with patterns.
-        throw new Error('Not implemented');
+  public async readGitIgnore(rootPath: string): Promise<Result<string[]>> {
+    try {
+      const content = await readFile(path.join(rootPath, '.gitignore'), 'utf8');
+      return Ok(
+        content
+          .split(/\r?\n/u)
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0 && !line.startsWith('#')),
+      );
+    } catch (error) {
+      if (isMissingFileError(error)) return Ok([]);
+      return Err(toError(error));
     }
+  }
+
+  private async readJsonFile(
+    filePath: string,
+    allowComments = false,
+  ): Promise<Result<JsonRecord | null>> {
+    try {
+      const content = await readFile(filePath, 'utf8');
+      const json = JSON.parse(allowComments ? stripJsonComments(content) : content) as unknown;
+      if (!isJsonRecord(json)) return Err(new Error(`${filePath} must contain a JSON object`));
+      return Ok(json);
+    } catch (error) {
+      if (isMissingFileError(error)) return Ok(null);
+      return Err(toError(error));
+    }
+  }
+}
+
+function stripJsonComments(content: string): string {
+  return content
+    .replace(/\/\*[\s\S]*?\*\//gu, '')
+    .replace(/^\s*\/\/.*$/gmu, '')
+    .replace(/,\s*([}\]])/gu, '$1');
+}
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
+}
+
+function toError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
 }

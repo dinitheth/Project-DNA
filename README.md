@@ -85,21 +85,21 @@ Infrastructure: Shared Kernel (shared)
 
 ## Package Map
 
-| Package | Layer | Responsibility |
-|---------|-------|----------------|
-| `@project-dna/shared` | Infrastructure | Result type, EventBus, DI container, logging, common types |
-| `@project-dna/dna-core` | 1 | Domain models (22 models), engine interfaces (9 interfaces), pipeline orchestrator |
-| `@project-dna/repository-scanner` | 2 | File system scanning, language detection, framework detection |
-| `@project-dna/ast-engine` | 2 | Source code parsing, structural extraction (classes, functions, imports, exports) |
-| `@project-dna/dependency-engine` | 2 | Dependency graph construction, circular dependency detection |
-| `@project-dna/architecture-engine` | 2 | Architecture pattern inference via heuristics (MVC, Clean, Hexagonal, DDD, Layered) |
-| `@project-dna/knowledge-engine` | 2 | Structured knowledge generation, code smell detection |
-| `@project-dna/dna-engine` | 3 | Entity synthesis, identity inference, domain clustering, capability detection, semantic graph |
-| `@project-dna/software-intelligence-engine` | 4 | Health scoring, complexity analysis, risk aggregation, criticality ranking, narrative story |
-| `@project-dna/evolution-engine` | 5 | Snapshot versioning, diffing, trend analysis |
-| `@project-dna/storage` | 6 | Hybrid SQLite + Graphology persistence |
-| `@project-dna/ui-components` | 7 | Webview UI components |
-| `vscode-extension` | 7 | VS Code extension host |
+| Package                                     | Layer          | Responsibility                                                                                          |
+| ------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------- |
+| `@project-dna/shared`                       | Infrastructure | Result type, EventBus, DI container, logging, common types                                              |
+| `@project-dna/dna-core`                     | 1              | Domain models (22 models), engine interfaces (9 interfaces), pipeline orchestrator                      |
+| `@project-dna/repository-scanner`           | 2              | File system scanning, language detection, framework detection                                           |
+| `@project-dna/ast-engine`                   | 2              | Source code parsing, structural extraction (classes, functions, imports, exports)                       |
+| `@project-dna/dependency-engine`            | 2              | Dependency graph construction, circular dependency detection                                            |
+| `@project-dna/architecture-engine`          | 2              | Deterministic architecture inference via heuristics (MVC, Clean, Hexagonal, DDD, Layered, Microservice) |
+| `@project-dna/knowledge-engine`             | 2              | Structured knowledge generation, code smell detection                                                   |
+| `@project-dna/dna-engine`                   | 3              | Entity synthesis, identity inference, domain clustering, capability detection, semantic graph           |
+| `@project-dna/software-intelligence-engine` | 4              | Health scoring, complexity analysis, risk aggregation, criticality ranking, narrative story             |
+| `@project-dna/evolution-engine`             | 5              | Snapshot versioning, diffing, trend analysis                                                            |
+| `@project-dna/storage`                      | 6              | Hybrid SQLite + Graphology persistence                                                                  |
+| `@project-dna/ui-components`                | 7              | Webview UI components                                                                                   |
+| `vscode-extension`                          | 7              | VS Code extension host                                                                                  |
 
 ---
 
@@ -167,50 +167,50 @@ Every stage emits typed events through the EventBus. Every stage supports cancel
 
 ### Core Analysis Models (Layer 2 outputs)
 
-| Model | Purpose |
-|-------|---------|
-| `RepositoryDNA` | Raw repository metadata: languages, frameworks, config files |
-| `FileDNA` | Per-file structure: imports, exports, symbols |
-| `ClassDNA` | Class metadata: methods, properties, inheritance |
-| `FunctionDNA` | Function metadata: parameters, return type, complexity |
-| `DependencyDNA` | Import/export dependency information |
-| `ModuleDNA` | Logical module groupings |
-| `ArchitectureDNA` | Detected architecture pattern, layers, confidence scores |
-| `KnowledgeNode` | Structured knowledge observations |
-| `RiskNode` | Detected code risks and smells |
+| Model             | Purpose                                                              |
+| ----------------- | -------------------------------------------------------------------- |
+| `RepositoryDNA`   | Raw repository metadata: languages, frameworks, config files         |
+| `FileDNA`         | Per-file structure: imports, exports, symbols                        |
+| `ClassDNA`        | Class metadata: methods, properties, inheritance                     |
+| `FunctionDNA`     | Function metadata: parameters, return type, complexity               |
+| `DependencyDNA`   | Import/export dependency information                                 |
+| `ModuleDNA`       | Logical module groupings                                             |
+| `ArchitectureDNA` | Detected architecture pattern, layers, confidence scores             |
+| `KnowledgeNode`   | Structured knowledge observations                                    |
+| `RiskNode`        | Detected code risks and smells                                       |
 | `RepositoryGraph` | Structural dependency graph (Graphology wrapper, sealed abstraction) |
 
 ### Synthesis Models (Layer 3 outputs)
 
-| Model | Purpose |
-|-------|---------|
-| `DNAObject` | Universal enriched entity with purpose, role, criticality, health, and relationships |
-| `DNAGraph` | Semantic knowledge graph (domains, capabilities, layers, concepts -- distinct from RepositoryGraph) |
-| `RepositoryProfile` | Software identity: project type, maturity, technology stack, size classification |
-| `BusinessDomain` | Inferred business domain cluster (e.g., "authentication", "billing") |
-| `Capability` | Detected functional ability (e.g., "REST API serving", "SQL database access") |
+| Model               | Purpose                                                                                             |
+| ------------------- | --------------------------------------------------------------------------------------------------- |
+| `DNAObject`         | Universal enriched entity with purpose, role, criticality, health, and relationships                |
+| `DNAGraph`          | Semantic knowledge graph (domains, capabilities, layers, concepts -- distinct from RepositoryGraph) |
+| `RepositoryProfile` | Software identity: project type, maturity, technology stack, size classification                    |
+| `BusinessDomain`    | Inferred business domain cluster (e.g., "authentication", "billing")                                |
+| `Capability`        | Detected functional ability (e.g., "REST API serving", "SQL database access")                       |
 
 ### Intelligence Models (Layer 4 outputs)
 
-| Model | Purpose |
-|-------|---------|
-| `RepositoryHealth` | Composite health score across 5 dimensions (0-100) |
-| `ComplexityProfile` | Complexity distribution, coupling metrics, instability indices |
-| `RiskAssessment` | Aggregated risk picture with severity distribution and top risks |
-| `CriticalComponent` | High blast-radius entities identified via multi-factor scoring |
-| `RepositoryStory` | Deterministic narrative assembled from structured data |
+| Model               | Purpose                                                          |
+| ------------------- | ---------------------------------------------------------------- |
+| `RepositoryHealth`  | Composite health score across 5 dimensions (0-100)               |
+| `ComplexityProfile` | Complexity distribution, coupling metrics, instability indices   |
+| `RiskAssessment`    | Aggregated risk picture with severity distribution and top risks |
+| `CriticalComponent` | High blast-radius entities identified via multi-factor scoring   |
+| `RepositoryStory`   | Deterministic narrative assembled from structured data           |
 
 ### Evolution Models (Layer 5 outputs)
 
-| Model | Purpose |
-|-------|---------|
-| `EvolutionSnapshot` | Point-in-time capture with extracted metrics for fast trending |
-| `DNADiff` | What changed between two versions: entities, health, risks, topology |
+| Model               | Purpose                                                              |
+| ------------------- | -------------------------------------------------------------------- |
+| `EvolutionSnapshot` | Point-in-time capture with extracted metrics for fast trending       |
+| `DNADiff`           | What changed between two versions: entities, health, risks, topology |
 
 ### The Aggregate Root
 
-| Model | Purpose |
-|-------|---------|
+| Model        | Purpose                                                                                                                     |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------- |
 | `ProjectDNA` | The single entry point for querying. Lightweight: holds identity, summaries, and counts. Full collections loaded on demand. |
 
 ---
@@ -234,27 +234,35 @@ Consumers depend on the narrowest sub-interface they need. Commands use `IProjec
 ## Design Principles
 
 ### Everything works offline
+
 No cloud services. No API keys. No telemetry. The entire system runs on the local machine with zero network dependencies.
 
 ### AI is never the source of truth
+
 All analysis is deterministic. The system uses heuristics, not machine learning. When AI is eventually integrated, it will ENHANCE the intelligence layer, never REPLACE it. Every fact in ProjectDNA maps to a measurable observation.
 
 ### Dependency inversion everywhere
+
 The orchestrator depends on interfaces, never implementations. The composition root (VS Code extension's `container.ts`) wires concrete implementations. Engines can be swapped, mocked, or upgraded independently.
 
 ### Result type for all fallible operations
+
 No thrown exceptions for expected failures. Every async operation returns `Result<T, E>`. The `isErr()` guard provides type-safe error handling at every pipeline stage.
 
 ### Event-driven coordination
+
 The pipeline uses a typed EventBus for all cross-engine communication. Listeners are error-isolated -- a failing UI listener cannot crash the analysis pipeline. Events are the only mechanism for progress reporting.
 
 ### Lightweight aggregate root
+
 The `ProjectDNA` aggregate contains only identity, summaries, and counts. Heavyweight collections (entities, knowledge nodes, graphs) are not embedded. They are loaded on demand via `IProjectDNAQuery` methods. This prevents memory issues on repositories with 50,000+ files.
 
 ### Zod schemas at every boundary
+
 All domain models use Zod schemas for runtime validation. Types are inferred from schemas, ensuring the type system and runtime validation stay in sync.
 
 ### Cancellation support
+
 Every async engine method accepts an optional `AbortSignal`. The orchestrator checks for cancellation at every stage boundary. This enables the VS Code extension to cancel long-running analyses when the user switches workspaces.
 
 ---
@@ -316,8 +324,8 @@ Project DNA/
 
 ### Prerequisites
 
-- Node.js >= 18
-- PNPM >= 8
+- Node.js >= 20
+- PNPM 9.x
 
 ### Setup
 
@@ -328,17 +336,23 @@ pnpm install
 ### Commands
 
 ```bash
-# Type-check all packages
-pnpm turbo run typecheck
+# Install workspace dependencies
+pnpm install
 
 # Run all tests
-pnpm turbo run test
+pnpm test
 
-# Type-check and test in parallel
-pnpm turbo run typecheck test
+# Type-check all packages
+pnpm typecheck
+
+# Lint all packages
+pnpm lint
+
+# Build packages and the VS Code extension/webview
+pnpm build
 
 # Clean all build artifacts
-pnpm turbo run clean
+pnpm clean
 ```
 
 ### Adding a new domain model
@@ -360,16 +374,16 @@ pnpm turbo run clean
 
 ## Technology Stack
 
-| Component | Technology | Rationale |
-|-----------|-----------|-----------|
-| Language | TypeScript 5.7+ | Type safety, ecosystem, VS Code integration |
-| Monorepo | Turborepo + PNPM | Fast builds, workspace dependencies, cache |
-| Validation | Zod | Runtime schema validation with type inference |
-| Graph | Graphology | In-memory directed graph with traversal algorithms |
-| Storage | better-sqlite3 | Embedded, zero-config, single-file persistence |
-| Testing | Vitest | Fast, TypeScript-native, watch mode |
-| Extension | VS Code Extension API | Target platform for the initial product |
-| Build | tsc (no bundler for packages) | Simplicity, type-checking as the build step |
+| Component  | Technology                | Rationale                                                                |
+| ---------- | ------------------------- | ------------------------------------------------------------------------ |
+| Language   | TypeScript 5.7+           | Type safety, ecosystem, VS Code integration                              |
+| Monorepo   | Turborepo + PNPM          | Fast builds, workspace dependencies, cache                               |
+| Validation | Zod                       | Runtime schema validation with type inference                            |
+| Graph      | Graphology                | In-memory directed graph with traversal algorithms                       |
+| Storage    | better-sqlite3            | Embedded, zero-config, single-file persistence                           |
+| Testing    | Vitest                    | Fast, TypeScript-native, watch mode                                      |
+| Extension  | VS Code Extension API     | Target platform for the initial product                                  |
+| Build      | TypeScript, esbuild, Vite | Type checking for packages plus extension and webview production bundles |
 
 ---
 
@@ -377,30 +391,28 @@ pnpm turbo run clean
 
 ### Implemented
 
-- 13 packages in the monorepo with clean dependency graph
-- 22 domain models with Zod schemas and runtime validation
-- 9 engine interfaces with cancellation support (AbortSignal)
-- Composed public API (IProjectDNAService) with 4 ISP-compliant sub-interfaces
-- Full analysis pipeline orchestrator with stage-by-stage progress reporting
-- Error-isolated EventBus with 25 typed event payloads
-- Sealed RepositoryGraph abstraction (no internal leaks)
-- Dependency injection container with typed tokens
-- Result type with typed error handling
-- Architecture pattern inference (MVC, Clean, Hexagonal, DDD, Layered, Microservice)
-- DNA synthesis engine (entity, identity, domain, capability synthesizers + graph builder)
-- Software intelligence engine (health, complexity, risk, criticality analyzers + story generator)
-- Evolution engine (snapshot creator, DNA differ)
-- 27 unit tests passing across the shared kernel
+- 13 packages in the monorepo with a clean dependency graph
+- Domain models and engine interfaces validated with Zod schemas
+- Repository scanner with recursive traversal, `.gitignore` support, metadata detection, language/framework detection, source manifests, limits, and cancellation
+- TypeScript/TSX/JavaScript/JSX AST extraction for imports, exports, re-exports, dynamic imports, comments, classes, methods, properties, decorators, functions, LOC, complexity, and deterministic hashes
+- Sealed `RepositoryGraph` with internal, aliased, workspace, dynamic, type-only, re-export, and external dependency resolution
+- Linear-time circular dependency detection and module-boundary summaries
+- Architecture inference for MVC, Clean, Hexagonal, DDD, Layered, and Microservice patterns, including confidence scores, evidence, deterministic ranking, inferred layers, stable IDs, and unknown fallback
+- DNA synthesis engine with entity, identity, domain, capability, and semantic graph builders
+- Software intelligence engine with health, complexity, risk, criticality, and deterministic narrative analysis
+- Evolution engine with snapshot creation and DNA diffing
+- Typed `Result<T>` error handling, cancellation support, dependency injection, and error-isolated EventBus coordination
+- ESLint 9 flat configuration and production extension/webview build
+- 46 automated tests passing across the implemented analysis packages
 
 ### Next
 
-- End-to-end pipeline integration (ProjectDNAService implementation)
-- AST engine implementation with Tree-sitter
-- Repository scanner implementation with file system traversal
-- Storage adapter implementation
-- VS Code extension webview panels
-- Incremental analysis (file watcher integration)
-- Persistence layer for evolution snapshots
+- Complete end-to-end `ProjectDNAService` integration and persistence orchestration
+- Add Tree-sitter parsers for non-JavaScript/TypeScript languages
+- Implement KnowledgeEngine generators for conventions, patterns, risks, and code smells
+- Complete SQLite storage operations and evolution snapshot persistence
+- Add incremental file-watcher analysis
+- Expand VS Code webview panels and UI component behavior
 
 ---
 

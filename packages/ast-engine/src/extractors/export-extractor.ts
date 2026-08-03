@@ -1,18 +1,56 @@
-/**
- * @module export-extractor
- * @description Extractor for export statements from a parse tree.
- */
+/** Extracts explicit exports and exported declarations. */
 
-import type { IExtractor } from './extractor.interface';
-import type { RawParseTree } from '../parsers/parser.interface';
+import type { IExtractor } from './extractor.interface.js';
+import type { RawParseTree } from '../parsers/parser.interface.js';
+import type { ExportDNA } from './types.js';
 
+export class ExportExtractor implements IExtractor<ExportDNA> {
+  public extract(parseTree: RawParseTree): ExportDNA[] {
+    const exports: ExportDNA[] = [];
 
-export class ExportExtractor implements IExtractor<any> {
-  public extract(_parseTree: RawParseTree, _filePath: string): any[] {
-    // TODO: Traverse the parse tree to find export statements
-    // TODO: Extract exported symbols, re-exports, default exports, etc.
-    // TODO: Map extracted data to ExportDNA structures
-    // TODO: Return an array of ExportDNA objects
-    throw new Error('Method not implemented.');
+    for (const declaration of parseTree.sourceFile.getExportDeclarations()) {
+      const source = declaration.getModuleSpecifierValue();
+      const namedExports = declaration.getNamedExports();
+      if (namedExports.length === 0 && source) {
+        exports.push({
+          name: '*',
+          type: 'barrel',
+          isTypeOnly: declaration.isTypeOnly(),
+          source,
+        });
+        continue;
+      }
+
+      for (const namedExport of namedExports) {
+        exports.push({
+          name: namedExport.getAliasNode()?.getText() ?? namedExport.getName(),
+          type: source ? 're-export' : 'named',
+          isTypeOnly: declaration.isTypeOnly() || namedExport.isTypeOnly(),
+          ...(source ? { source } : {}),
+        });
+      }
+    }
+
+    for (const declaration of parseTree.sourceFile.getExportAssignments()) {
+      exports.push({
+        name: declaration.getExpression().getText(),
+        type: declaration.isExportEquals() ? 'namespace' : 'default',
+        isTypeOnly: false,
+      });
+    }
+
+    for (const [name, declarations] of parseTree.sourceFile.getExportedDeclarations()) {
+      if (exports.some((entry) => entry.name === name)) continue;
+      const isDefault = name === 'default';
+      exports.push({
+        name,
+        type: isDefault ? 'default' : 'named',
+        isTypeOnly: declarations.every((declaration) =>
+          ['InterfaceDeclaration', 'TypeAliasDeclaration'].includes(declaration.getKindName()),
+        ),
+      });
+    }
+
+    return exports;
   }
 }

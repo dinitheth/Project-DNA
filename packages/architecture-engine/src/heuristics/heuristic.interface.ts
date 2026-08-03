@@ -3,13 +3,18 @@
  * @description Defines the interface for architecture heuristics.
  */
 
-import { RepositoryGraph, RepositoryDNA } from '@project-dna/dna-core';
-import { Result } from '@project-dna/shared';
+import type {
+  ArchitectureEvidence,
+  ArchitecturePattern,
+  RepositoryDNA,
+  RepositoryGraph,
+} from '@project-dna/dna-core';
+import type { Result } from '@project-dna/shared';
 
 export interface HeuristicResult {
-  pattern: string;
+  pattern: ArchitecturePattern;
   confidence: number; // 0 to 1
-  evidence: string[];
+  evidence: ArchitectureEvidence[];
 }
 
 export interface IArchitectureHeuristic {

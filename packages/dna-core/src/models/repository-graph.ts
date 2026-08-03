@@ -94,13 +94,19 @@ export class RepositoryGraph {
   /**
    * Add a dependency edge between two nodes.
    */
-  addDependency(
-    sourceId: string,
-    targetId: string,
-    attributes: GraphEdgeAttributes,
-  ): void {
+  addDependency(sourceId: string, targetId: string, attributes: GraphEdgeAttributes): void {
     if (this.graph.hasNode(sourceId) && this.graph.hasNode(targetId)) {
-      if (!this.graph.hasEdge(sourceId, targetId)) {
+      if (this.graph.hasEdge(sourceId, targetId)) {
+        const edgeId = this.graph.edge(sourceId, targetId);
+        if (!edgeId) return;
+        const existing = this.graph.getEdgeAttributes(edgeId);
+        this.graph.replaceEdgeAttributes(edgeId, {
+          type: selectDependencyType(existing.type, attributes.type),
+          isTypeOnly: existing.isTypeOnly && attributes.isTypeOnly,
+          specifierCount: existing.specifierCount + attributes.specifierCount,
+          isExternal: existing.isExternal && attributes.isExternal,
+        });
+      } else {
         this.graph.addEdge(sourceId, targetId, attributes);
       }
     }
@@ -166,9 +172,7 @@ export class RepositoryGraph {
       targetId: string,
     ) => void,
   ): void {
-    this.graph.forEachEdge((edge, attrs, source, target) =>
-      callback(edge, attrs, source, target),
-    );
+    this.graph.forEachEdge((edge, attrs, source, target) => callback(edge, attrs, source, target));
   }
 
   /**
@@ -258,7 +262,9 @@ export class RepositoryGraph {
   /**
    * Get all edges of a specific type.
    */
-  getEdgesByType(type: GraphEdgeAttributes['type']): Array<{ source: string; target: string; attributes: GraphEdgeAttributes }> {
+  getEdgesByType(
+    type: GraphEdgeAttributes['type'],
+  ): Array<{ source: string; target: string; attributes: GraphEdgeAttributes }> {
     const result: Array<{ source: string; target: string; attributes: GraphEdgeAttributes }> = [];
     this.graph.forEachEdge((_edge, attrs, source, target) => {
       if (attrs.type === type) result.push({ source, target, attributes: attrs });
@@ -286,3 +292,17 @@ export class RepositoryGraph {
   }
 }
 
+const DEPENDENCY_TYPE_PRIORITY: Record<GraphEdgeAttributes['type'], number> = {
+  'dynamic-import': 1,
+  'type-import': 2,
+  're-export': 3,
+  require: 4,
+  import: 5,
+};
+
+function selectDependencyType(
+  left: GraphEdgeAttributes['type'],
+  right: GraphEdgeAttributes['type'],
+): GraphEdgeAttributes['type'] {
+  return DEPENDENCY_TYPE_PRIORITY[left] >= DEPENDENCY_TYPE_PRIORITY[right] ? left : right;
+}

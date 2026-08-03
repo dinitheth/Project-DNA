@@ -14,6 +14,8 @@ import type { FunctionDNA } from '../models/function-dna.js';
 export interface FileInput {
   /** Absolute file path. */
   path: string;
+  /** Repository-relative path used in persisted DNA. */
+  relativePath?: string;
   /** File content as a string. */
   content: string;
   /** Language identifier. */

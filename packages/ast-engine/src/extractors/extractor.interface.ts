@@ -3,7 +3,7 @@
  * @description Internal interface for extracting specific structural elements from a raw parse tree.
  */
 
-import type { RawParseTree } from '../parsers/parser.interface';
+import type { RawParseTree } from '../parsers/parser.interface.js';
 
 export interface IExtractor<T> {
   /**

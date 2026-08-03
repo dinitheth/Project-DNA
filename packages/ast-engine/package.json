@@ -1,25 +1,25 @@
-﻿{
-    "name":  "@project-dna/ast-engine",
-    "version":  "0.1.0",
-    "description":  "Parse source code and extract structural information for Project DNA",
-    "main":  "./src/index.ts",
-    "types":  "./src/index.ts",
-    "scripts":  {
-                    "test":  "vitest run --passWithNoTests",
-                    "test:watch":  "vitest",
-                    "typecheck":  "tsc --noEmit",
-                    "lint":  "eslint src/",
-                    "lint:fix":  "eslint src/ --fix",
-                    "clean":  "rimraf dist coverage *.tsbuildinfo"
-                },
-    "dependencies":  {
-                         "@project-dna/shared":  "workspace:*",
-                         "@project-dna/dna-core":  "workspace:*",
-                         "web-tree-sitter":  "^0.24.0",
-                         "ts-morph":  "^24.0.0"
-                     },
-    "devDependencies":  {
-                            "typescript":  "^5.7.0",
-                            "vitest":  "^3.0.0"
-                        }
+{
+  "name": "@project-dna/ast-engine",
+  "version": "0.1.0",
+  "description": "Parse source code and extract structural information for Project DNA",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "clean": "rimraf dist coverage *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@project-dna/shared": "workspace:*",
+    "@project-dna/dna-core": "workspace:*",
+    "web-tree-sitter": "^0.24.0",
+    "ts-morph": "^24.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
 }

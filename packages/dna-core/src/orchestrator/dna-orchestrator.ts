@@ -16,10 +16,14 @@ import type { EventBus, Logger, Result } from '@project-dna/shared';
 import { Ok, Err, isErr, DNAEventNames } from '@project-dna/shared';
 import type { DNAEventMap } from '@project-dna/shared';
 import type { IRepositoryScanner } from '../interfaces/scanner.interface.js';
+import { readFile } from 'node:fs/promises';
 import type { IAstEngine, FileInput } from '../interfaces/ast-engine.interface.js';
 import type { IDependencyEngine } from '../interfaces/dependency-engine.interface.js';
 import type { IArchitectureEngine } from '../interfaces/architecture-engine.interface.js';
-import type { IKnowledgeEngine, KnowledgeResult } from '../interfaces/knowledge-engine.interface.js';
+import type {
+  IKnowledgeEngine,
+  KnowledgeResult,
+} from '../interfaces/knowledge-engine.interface.js';
 import type { RepositoryDNA } from '../models/repository-dna.js';
 import type { FileDNA } from '../models/file-dna.js';
 import type { RepositoryGraph } from '../models/repository-graph.js';
@@ -90,7 +94,7 @@ export class DNAOrchestrator {
       return this.handleStageError('Scanning', scanResult.error);
     }
 
-    const repository = scanResult.value;
+    const { repository, files: scannedFiles } = scanResult.value;
     this.eventBus.emit(DNAEventNames.ScanComplete, {
       rootPath,
       fileCount: repository.totalFiles,
@@ -104,15 +108,22 @@ export class DNAOrchestrator {
 
     this.emitProgress(PipelineStage.Parsing, 'Parsing source files...', 0);
 
-    // TODO: Implement file reading and create FileInput[] from scanned files.
-    // This requires the scanner to provide file paths, which the orchestrator
-    // reads from disk and passes to the AST engine.
     const fileInputs: FileInput[] = [];
-    // TODO: Read file contents from disk for each file discovered by scanner.
-    // for (const filePath of repository.filePaths) {
-    //   const content = await fs.readFile(filePath, 'utf-8');
-    //   fileInputs.push({ path: filePath, content, language: detectLanguage(filePath) });
-    // }
+    for (const file of scannedFiles) {
+      cancelled = this.checkCancelled(signal);
+      if (cancelled) return cancelled as Result<AnalysisResult>;
+
+      try {
+        fileInputs.push({
+          path: file.path,
+          relativePath: file.relativePath,
+          content: await readFile(file.path, 'utf8'),
+          language: file.language,
+        });
+      } catch (error) {
+        this.logger.warn(`Failed to read ${file.relativePath}: ${String(error)}`);
+      }
+    }
 
     this.eventBus.emit(DNAEventNames.AstParseStarted, {
       totalFiles: fileInputs.length,

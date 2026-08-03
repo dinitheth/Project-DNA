@@ -1,4 +1,4 @@
-﻿{
+{
     "name":  "@project-dna/knowledge-engine",
     "version":  "1.0.0",
     "main":  "./src/index.ts",

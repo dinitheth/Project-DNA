@@ -1,16 +1,196 @@
-/**
- * @module graph-builder
- * @description Builds a repository graph from file information.
- */
+/** Builds repository dependency graphs from parsed FileDNA imports and re-exports. */
 
-import { FileDNA, RepositoryGraph } from '@project-dna/dna-core';
-import { Result } from '@project-dna/shared';
+import path from 'node:path';
+import { RepositoryGraph, type FileDNA } from '@project-dna/dna-core';
+import { Err, Ok, type Logger, type Result } from '@project-dna/shared';
+
+const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'] as const;
 
 export class GraphBuilder {
-  public build(_files: FileDNA[], _rootPath: string): Result<RepositoryGraph> {
-    // TODO: Implement graph building
-    // 1. Create nodes for files
-    // 2. Create edges for imports
-    throw new Error('Not implemented');
+  constructor(private readonly logger?: Logger) {}
+
+  public build(files: FileDNA[], rootPath: string, signal?: AbortSignal): Result<RepositoryGraph> {
+    const graph = new RepositoryGraph();
+    const normalizedFiles = new Map<string, FileDNA>();
+
+    for (const file of files) {
+      if (signal?.aborted) return Err(new Error('Dependency analysis cancelled'));
+      const normalizedPath = normalizeFilePath(file.path, rootPath);
+      normalizedFiles.set(normalizedPath, file);
+      graph.addFileNode(normalizedPath, {
+        label: path.posix.basename(normalizedPath),
+        path: normalizedPath,
+        language: file.language,
+        complexity: file.complexity,
+        linesOfCode: file.linesOfCode,
+      });
+    }
+
+    const knownPaths = new Set(normalizedFiles.keys());
+    for (const [sourcePath, file] of normalizedFiles) {
+      if (signal?.aborted) return Err(new Error('Dependency analysis cancelled'));
+
+      for (const imported of file.imports) {
+        const resolution = resolveSpecifier(sourcePath, imported.source, knownPaths);
+        if (resolution.kind === 'internal') {
+          graph.addDependency(sourcePath, resolution.target, {
+            type: imported.isDynamic
+              ? 'dynamic-import'
+              : imported.isTypeOnly
+                ? 'type-import'
+                : 'import',
+            isTypeOnly: imported.isTypeOnly,
+            specifierCount: imported.specifiers.length,
+            isExternal: false,
+          });
+        } else if (resolution.kind === 'external') {
+          const externalId = `external:${resolution.packageName}`;
+          graph.addExternalNode(externalId, resolution.packageName);
+          graph.addDependency(sourcePath, externalId, {
+            type: imported.isDynamic
+              ? 'dynamic-import'
+              : imported.isTypeOnly
+                ? 'type-import'
+                : 'import',
+            isTypeOnly: imported.isTypeOnly,
+            specifierCount: imported.specifiers.length,
+            isExternal: true,
+          });
+        } else {
+          this.logger?.debug(`Unresolved internal import ${imported.source} from ${sourcePath}`);
+        }
+      }
+
+      for (const exported of file.exports) {
+        if (!exported.source) continue;
+        const resolution = resolveSpecifier(sourcePath, exported.source, knownPaths);
+        if (resolution.kind === 'internal') {
+          graph.addDependency(sourcePath, resolution.target, {
+            type: 're-export',
+            isTypeOnly: exported.isTypeOnly,
+            specifierCount: exported.name === '*' ? 0 : 1,
+            isExternal: false,
+          });
+        } else if (resolution.kind === 'external') {
+          const externalId = `external:${resolution.packageName}`;
+          graph.addExternalNode(externalId, resolution.packageName);
+          graph.addDependency(sourcePath, externalId, {
+            type: 're-export',
+            isTypeOnly: exported.isTypeOnly,
+            specifierCount: exported.name === '*' ? 0 : 1,
+            isExternal: true,
+          });
+        }
+      }
+    }
+
+    return Ok(graph);
   }
+}
+
+type Resolution =
+  | { readonly kind: 'internal'; readonly target: string }
+  | { readonly kind: 'external'; readonly packageName: string }
+  | { readonly kind: 'unresolved' };
+
+function resolveSpecifier(
+  sourcePath: string,
+  specifier: string,
+  knownPaths: Set<string>,
+): Resolution {
+  if (isRelativeSpecifier(specifier)) {
+    const base = path.posix.normalize(path.posix.join(path.posix.dirname(sourcePath), specifier));
+    const target = findKnownFile(base, knownPaths);
+    return target ? { kind: 'internal', target } : { kind: 'unresolved' };
+  }
+
+  for (const aliasCandidate of aliasCandidates(specifier)) {
+    const target = findKnownFile(aliasCandidate, knownPaths);
+    if (target) return { kind: 'internal', target };
+  }
+
+  const workspaceTarget = resolveWorkspacePackage(specifier, knownPaths);
+  if (workspaceTarget) return { kind: 'internal', target: workspaceTarget };
+
+  return { kind: 'external', packageName: packageRoot(specifier) };
+}
+
+function findKnownFile(base: string, knownPaths: Set<string>): string | null {
+  const normalizedBase = normalizePath(base).replace(/^\.\//u, '');
+  const candidates = new Set<string>([normalizedBase]);
+  const extension = path.posix.extname(normalizedBase);
+
+  if (extension) {
+    const withoutExtension = normalizedBase.slice(0, -extension.length);
+    for (const sourceExtension of SOURCE_EXTENSIONS)
+      candidates.add(`${withoutExtension}${sourceExtension}`);
+  } else {
+    for (const sourceExtension of SOURCE_EXTENSIONS) {
+      candidates.add(`${normalizedBase}${sourceExtension}`);
+      candidates.add(`${normalizedBase}/index${sourceExtension}`);
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (knownPaths.has(candidate)) return candidate;
+  }
+  return null;
+}
+
+function aliasCandidates(specifier: string): string[] {
+  if (specifier.startsWith('@/') || specifier.startsWith('~/')) {
+    const suffix = specifier.slice(2);
+    return [`src/${suffix}`, suffix];
+  }
+  if (specifier.startsWith('/')) return [specifier.slice(1)];
+  return [];
+}
+
+function resolveWorkspacePackage(specifier: string, knownPaths: Set<string>): string | null {
+  const parts = specifier.split('/');
+  const packageName = specifier.startsWith('@') ? parts[1] : parts[0];
+  if (!packageName) return null;
+  const subpath = specifier.startsWith('@') ? parts.slice(2).join('/') : parts.slice(1).join('/');
+
+  for (const root of [`packages/${packageName}`, `apps/${packageName}`]) {
+    const bases = subpath
+      ? [`${root}/${subpath}`, `${root}/src/${subpath}`]
+      : [`${root}/src/index`, `${root}/index`];
+    for (const base of bases) {
+      const target = findKnownFile(base, knownPaths);
+      if (target) return target;
+    }
+  }
+  return null;
+}
+
+function packageRoot(specifier: string): string {
+  if (specifier.startsWith('node:')) return specifier;
+  const parts = specifier.split('/');
+  return specifier.startsWith('@') ? parts.slice(0, 2).join('/') : (parts[0] ?? specifier);
+}
+
+function normalizeFilePath(filePath: string, rootPath: string): string {
+  const normalized = normalizePath(filePath);
+  const normalizedRoot = normalizePath(rootPath).replace(/\/$/u, '');
+  if (
+    path.isAbsolute(filePath) &&
+    normalized.toLowerCase().startsWith(`${normalizedRoot.toLowerCase()}/`)
+  ) {
+    return normalized.slice(normalizedRoot.length + 1);
+  }
+  return normalized.replace(/^\.\//u, '');
+}
+
+function normalizePath(value: string): string {
+  return value.replace(/\\/gu, '/');
+}
+
+function isRelativeSpecifier(specifier: string): boolean {
+  return (
+    specifier === '.' ||
+    specifier === '..' ||
+    specifier.startsWith('./') ||
+    specifier.startsWith('../')
+  );
 }
