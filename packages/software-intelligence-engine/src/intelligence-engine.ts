@@ -40,6 +40,7 @@ export class SoftwareIntelligenceEngine implements ISoftwareIntelligenceEngine {
         input.entities,
         input.architecture,
         input.knowledgeNodes,
+        input.risks,
       );
       if (signal?.aborted) return Err(new Error('Intelligence computation cancelled'));
 

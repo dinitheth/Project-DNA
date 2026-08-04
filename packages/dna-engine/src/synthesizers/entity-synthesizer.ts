@@ -19,6 +19,7 @@ import type {
   ArchitectureRole,
   CriticalityLevel,
 } from '@project-dna/dna-core';
+import { toFileEntityId } from '../utils/entity-id.js';
 
 export class EntitySynthesizer {
   constructor(private readonly logger: Logger) {}
@@ -64,15 +65,19 @@ export class EntitySynthesizer {
     const dependedOnBy: string[] = [];
     if (graph.hasNode(file.path)) {
       graph.forEachOutEdge(file.path, (_edgeId, _attrs, _source, target) => {
-        dependsOn.push(target);
+        if (graph.getNodeAttributes(target)?.kind === 'file') {
+          dependsOn.push(toFileEntityId(target));
+        }
       });
       graph.forEachInEdge(file.path, (_edgeId, _attrs, source) => {
-        dependedOnBy.push(source);
+        if (graph.getNodeAttributes(source)?.kind === 'file') {
+          dependedOnBy.push(toFileEntityId(source));
+        }
       });
     }
 
     return {
-      id: `file:${file.path}`,
+      id: toFileEntityId(file.path),
       kind: 'file',
       name: this.extractFileName(file.path),
       path: file.path,

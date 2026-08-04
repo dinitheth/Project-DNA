@@ -56,8 +56,8 @@ export type {
   DNAGraphEdgeAttributes,
 } from './dna-graph.js';
 
-export { ProjectDNASchema, AnalysisConfigSchema } from './project-dna.js';
-export type { ProjectDNA, AnalysisConfig } from './project-dna.js';
+export { ProjectDNASchema, AnalysisConfigSchema, AnalysisCoverageSchema } from './project-dna.js';
+export type { ProjectDNA, AnalysisConfig, AnalysisCoverage } from './project-dna.js';
 
 export {
   RepositoryProfileSchema,

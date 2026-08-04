@@ -11,9 +11,11 @@ import type {
   DNAObject,
   ArchitectureDNA,
   KnowledgeNode,
+  RiskNode,
   RepositoryHealth,
   HealthTrend,
 } from '@project-dna/dna-core';
+import { calculateRiskExposureScore } from './risk-exposure.js';
 
 /** Weights for each health dimension in the composite score. */
 const DIMENSION_WEIGHTS = {
@@ -31,14 +33,30 @@ export class HealthAnalyzer {
     entities: DNAObject[],
     architecture: ArchitectureDNA,
     knowledgeNodes: KnowledgeNode[],
+    risks: RiskNode[] = [],
   ): RepositoryHealth {
     this.logger.info('Computing repository health...');
+
+    if (entities.length === 0) {
+      return {
+        overallScore: 0,
+        dimensions: {
+          architectureHealth: 0,
+          dependencyHealth: 0,
+          complexityHealth: 0,
+          knowledgeHealth: 0,
+          riskHealth: 0,
+        },
+        trend: 'unknown',
+        lastComputedAt: Date.now(),
+      };
+    }
 
     const architectureHealth = this.computeArchitectureHealth(architecture);
     const dependencyHealth = this.computeDependencyHealth(entities);
     const complexityHealth = this.computeComplexityHealth(entities);
     const knowledgeHealth = this.computeKnowledgeHealth(entities, knowledgeNodes);
-    const riskHealth = this.computeRiskHealth(entities);
+    const riskHealth = this.computeRiskHealth(entities, risks);
 
     const overallScore = Math.round(
       architectureHealth * DIMENSION_WEIGHTS.architecture +
@@ -67,17 +85,9 @@ export class HealthAnalyzer {
   }
 
   private computeArchitectureHealth(architecture: ArchitectureDNA): number {
-    // Higher confidence in detected pattern = better architecture health
-    let score = 50; // Base score
-
-    if (architecture.confidence > 0.8) score += 30;
-    else if (architecture.confidence > 0.5) score += 15;
-
-    // Clear layer separation is positive
-    if (architecture.layers.length >= 2) score += 10;
-    if (architecture.layers.length >= 3) score += 10;
-
-    return Math.min(100, Math.max(0, score));
+    const patternEvidence = architecture.confidence * 70;
+    const layerEvidence = Math.min(1, architecture.layers.length / 3) * 30;
+    return Math.round(Math.min(100, patternEvidence + layerEvidence));
   }
 
   private computeDependencyHealth(entities: DNAObject[]): number {
@@ -123,8 +133,8 @@ export class HealthAnalyzer {
     return Math.min(100, Math.max(0, score));
   }
 
-  private computeKnowledgeHealth(entities: DNAObject[], _knowledgeNodes: KnowledgeNode[]): number {
-    if (entities.length === 0) return 100;
+  private computeKnowledgeHealth(entities: DNAObject[], knowledgeNodes: KnowledgeNode[]): number {
+    if (entities.length === 0) return 0;
 
     // Knowledge density across all entities
     const avgDensity = entities.reduce((sum, e) => sum + e.knowledgeDensity, 0) / entities.length;
@@ -133,26 +143,18 @@ export class HealthAnalyzer {
     const entitiesWithKnowledge = entities.filter((e) => e.knowledgeNodeIds.length > 0).length;
     const coverageRatio = entitiesWithKnowledge / entities.length;
 
-    let score = 50; // Base
-    score += Math.round(avgDensity * 25);
-    score += Math.round(coverageRatio * 25);
-
-    return Math.min(100, Math.max(0, score));
+    const entityReferences = new Set(entities.flatMap((entity) => [entity.id, entity.path]));
+    const attributedKnowledge = knowledgeNodes.filter(
+      (node) => node.sourceRef !== undefined && entityReferences.has(node.sourceRef),
+    ).length;
+    const nodeDensity = Math.min(1, attributedKnowledge / entities.length);
+    return Math.round(avgDensity * 50 + coverageRatio * 30 + nodeDensity * 20);
   }
 
-  private computeRiskHealth(entities: DNAObject[]): number {
-    if (entities.length === 0) return 100;
+  private computeRiskHealth(entities: DNAObject[], risks: RiskNode[]): number {
+    if (entities.length === 0) return 0;
+    if (risks.length === 0) return 100;
 
-    // Lower risk count = higher health
-    const totalRisks = entities.reduce((sum, e) => sum + e.risks.length, 0);
-    const riskRatio = totalRisks / entities.length;
-
-    let score = 100;
-    if (riskRatio > 3) score -= 40;
-    else if (riskRatio > 2) score -= 25;
-    else if (riskRatio > 1) score -= 15;
-    else if (riskRatio > 0.5) score -= 5;
-
-    return Math.min(100, Math.max(0, score));
+    return 100 - calculateRiskExposureScore(risks);
   }
 }

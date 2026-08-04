@@ -98,6 +98,8 @@ export class ProjectDNAService implements IProjectDNAService {
   private rootPath: string | null = null;
   private readonly readyListeners = new Set<(dna: ProjectDNA) => void>();
   private readonly analysisConfig: AnalysisConfig;
+  private analysisOperation: Promise<Result<ProjectDNA>> | null = null;
+  private activeAnalysisRoot: string | null = null;
 
   constructor(private readonly dependencies: ProjectDNAServiceDependencies) {
     this.analysisConfig = mergeAnalysisConfig(dependencies.analysisConfig);
@@ -180,6 +182,35 @@ export class ProjectDNAService implements IProjectDNAService {
   }
 
   async analyze(rootPath: string, signal?: AbortSignal): Promise<Result<ProjectDNA>> {
+    const normalizedRoot = normalizeRootPath(rootPath);
+    if (this.analysisOperation) {
+      return this.activeAnalysisRoot === normalizedRoot
+        ? this.analysisOperation
+        : Err(
+            new Error(
+              `Analysis already in progress for ${this.activeAnalysisRoot ?? 'another repository'}`,
+            ),
+          );
+    }
+    this.activeAnalysisRoot = normalizedRoot;
+    const operation = Promise.resolve()
+      .then(() => this.runAnalysis(rootPath, signal))
+      .then((result) => {
+        if (isErr(result)) {
+          this.emitProgress(PipelineStage.Failed, result.error.message, 0);
+        }
+        return result;
+      })
+      .finally(() => {
+        this.analysisOperation = null;
+        this.activeAnalysisRoot = null;
+      });
+    this.analysisOperation = operation;
+    this.emitProgress(PipelineStage.Scanning, 'Preparing repository analysis...', 0);
+    return operation;
+  }
+
+  private async runAnalysis(rootPath: string, signal?: AbortSignal): Promise<Result<ProjectDNA>> {
     const startTime = Date.now();
     try {
       if (signal?.aborted) return Err(new Error('Project DNA analysis cancelled'));
@@ -269,6 +300,12 @@ export class ProjectDNAService implements IProjectDNAService {
           ? `${STORAGE_NAMESPACES.dnaGraph}:${versionKey}`
           : `memory:dna-graph:${analysis.value.repository.id}:v${version}`,
         story: intelligence.value.story,
+        analysisCoverage: analysis.value.coverage ?? {
+          scanned: analysis.value.repository.totalFiles,
+          parsed: analysis.value.files.length,
+          skipped: Math.max(0, analysis.value.repository.totalFiles - analysis.value.files.length),
+          failed: 0,
+        },
         analysisConfig: this.analysisConfig,
         durationMs: Date.now() - startTime,
       });
@@ -325,6 +362,7 @@ export class ProjectDNAService implements IProjectDNAService {
   }
 
   async refresh(signal?: AbortSignal): Promise<Result<ProjectDNA>> {
+    if (this.analysisOperation) return this.analysisOperation;
     if (!this.rootPath) return Err(new Error('No repository has been analyzed'));
     return this.analyze(this.rootPath, signal);
   }

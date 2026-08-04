@@ -23,12 +23,12 @@ export class IdentitySynthesizer {
 
   synthesize(
     repository: RepositoryDNA,
-    _files: FileDNA[],
+    files: FileDNA[],
     architecture: ArchitectureDNA,
   ): RepositoryProfile {
     this.logger.info('Synthesizing repository identity...');
 
-    const primaryLanguages = this.computeLanguageBreakdown(repository);
+    const primaryLanguages = this.computeLanguageBreakdown(repository, files);
     const frameworks = this.detectFrameworks(repository);
     const projectType = this.inferProjectType(repository, architecture);
     const repositorySize = this.classifySize(repository.totalFiles);
@@ -48,15 +48,39 @@ export class IdentitySynthesizer {
     };
   }
 
-  private computeLanguageBreakdown(repository: RepositoryDNA): LanguageBreakdown[] {
-    return repository.languages
-      .map((lang) => ({
-        language: lang.name,
-        percentage: Math.round(lang.percentage * 10) / 10,
-        fileCount: lang.fileCount,
-        linesOfCode: 0, // Not available in RepositoryDNA per-language
+  private computeLanguageBreakdown(
+    repository: RepositoryDNA,
+    files: FileDNA[],
+  ): LanguageBreakdown[] {
+    const languageNames = new Map(
+      repository.languages.map((language) => [language.id, language.name] as const),
+    );
+    const breakdownByLanguage = new Map<string, { fileCount: number; linesOfCode: number }>();
+    for (const file of files) {
+      const current = breakdownByLanguage.get(file.language) ?? {
+        fileCount: 0,
+        linesOfCode: 0,
+      };
+      current.fileCount++;
+      current.linesOfCode += file.linesOfCode;
+      breakdownByLanguage.set(file.language, current);
+    }
+    const totalLinesOfCode = files.reduce((sum, file) => sum + file.linesOfCode, 0);
+
+    return Array.from(breakdownByLanguage.entries())
+      .map(([languageId, breakdown]) => ({
+        language: languageNames.get(languageId) ?? languageId,
+        percentage:
+          totalLinesOfCode === 0
+            ? 0
+            : Math.round((breakdown.linesOfCode / totalLinesOfCode) * 1000) / 10,
+        fileCount: breakdown.fileCount,
+        linesOfCode: breakdown.linesOfCode,
       }))
-      .sort((a, b) => b.percentage - a.percentage);
+      .sort(
+        (left, right) =>
+          right.linesOfCode - left.linesOfCode || left.language.localeCompare(right.language),
+      );
   }
 
   private detectFrameworks(repository: RepositoryDNA): FrameworkDetection[] {

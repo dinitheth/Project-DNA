@@ -19,7 +19,7 @@ export const HealthDimensionsSchema = z.object({
   complexityHealth: z.number().min(0).max(100),
   /** How well-understood is the codebase? Doc coverage, naming quality. */
   knowledgeHealth: z.number().min(0).max(100),
-  /** Severity-weighted aggregate risk score. */
+  /** Resilience derived from severity and affected-entity-weighted risk exposure. */
   riskHealth: z.number().min(0).max(100),
 });
 

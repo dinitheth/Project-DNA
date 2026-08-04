@@ -7,6 +7,7 @@
 
 import type { Logger } from '@project-dna/shared';
 import type { RepositoryDNA, FileDNA, Capability, CapabilityCategory } from '@project-dna/dna-core';
+import { toFileEntityId } from '../utils/entity-id.js';
 
 interface CapabilityRule {
   name: string;
@@ -142,9 +143,11 @@ export class CapabilitySynthesizer {
   synthesize(repository: RepositoryDNA, files: FileDNA[]): Capability[] {
     this.logger.info('Detecting software capabilities...');
     const capabilities: Capability[] = [];
+    const orderedFiles = [...files].sort((left, right) => left.path.localeCompare(right.path));
+    const filePaths = new Set(orderedFiles.map((file) => file.path));
 
     for (const rule of CAPABILITY_RULES) {
-      const evidence = this.matchRule(rule, repository, files);
+      const evidence = this.matchRule(rule, repository, orderedFiles);
       if (evidence.length > 0) {
         capabilities.push({
           id: `capability:${rule.name.toLowerCase().replace(/\s+/g, '-')}`,
@@ -153,7 +156,14 @@ export class CapabilitySynthesizer {
           description: rule.description,
           confidence: Math.min(1, evidence.length * 0.3),
           evidence,
-          implementedBy: [], // Will be linked by the DNA Engine
+          implementedBy: Array.from(
+            new Set(
+              evidence
+                .map((item) => item.location)
+                .filter((location) => filePaths.has(location))
+                .map(toFileEntityId),
+            ),
+          ),
           detectedAt: Date.now(),
         });
       }
@@ -181,21 +191,28 @@ export class CapabilitySynthesizer {
             indicator: fw.name,
             location: 'package.json',
           });
+          for (const file of files) {
+            if (file.imports.some((item) => item.source.includes(indicator.match as string))) {
+              evidence.push({
+                type: 'framework',
+                indicator: fw.name,
+                location: file.path,
+              });
+            }
+          }
         }
       } else if (indicator.type === 'naming' && indicator.match instanceof RegExp) {
-        for (const file of files.slice(0, 500)) {
-          // Cap to avoid perf issues
+        for (const file of files) {
           if (indicator.match.test(file.path)) {
             evidence.push({
               type: 'naming',
               indicator: file.path.split(/[/\\]/).pop() ?? file.path,
               location: file.path,
             });
-            break; // One match per indicator is enough
           }
         }
       } else if (indicator.type === 'import') {
-        for (const file of files.slice(0, 500)) {
+        for (const file of files) {
           const hasImport = file.imports.some((imp) =>
             imp.source.includes(indicator.match as string),
           );
@@ -205,12 +222,17 @@ export class CapabilitySynthesizer {
               indicator: indicator.match as string,
               location: file.path,
             });
-            break;
           }
         }
       }
     }
 
-    return evidence;
+    const evidenceKeys = new Set<string>();
+    return evidence.filter((item) => {
+      const key = `${item.type}\0${item.indicator}\0${item.location}`;
+      if (evidenceKeys.has(key)) return false;
+      evidenceKeys.add(key);
+      return true;
+    });
   }
 }

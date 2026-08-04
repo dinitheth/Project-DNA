@@ -2,14 +2,14 @@
  * RiskAssessment — Aggregated risk model for the entire repository.
  *
  * Aggregates individual RiskNodes into a comprehensive risk picture
- * with severity distribution, top risks, and an overall risk score.
+ * with severity distribution, top risks, and total repository exposure.
  */
 
 import { z } from 'zod';
 import { RiskSeveritySchema } from './risk-node.js';
 
 export const RiskAssessmentSchema = z.object({
-  /** Overall risk score (0-100, higher = more risk). */
+  /** Total repository risk exposure (0-100, higher = more risk). */
   overallRiskScore: z.number().min(0).max(100),
 
   /** Total number of risks detected. */

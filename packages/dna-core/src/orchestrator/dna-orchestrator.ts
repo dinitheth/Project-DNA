@@ -37,6 +37,12 @@ export interface AnalysisResult {
   graph: RepositoryGraph;
   architecture: ArchitectureDNA;
   knowledge: KnowledgeResult;
+  coverage?: {
+    scanned: number;
+    parsed: number;
+    skipped: number;
+    failed: number;
+  };
   durationMs: number;
 }
 
@@ -109,7 +115,10 @@ export class DNAOrchestrator {
     this.emitProgress(PipelineStage.Parsing, 'Parsing source files...', 0);
 
     const fileInputs: FileInput[] = [];
-    for (const file of scannedFiles) {
+    const supportedLanguages = new Set(this.astEngine.getSupportedLanguages());
+    const supportedFiles = scannedFiles.filter((file) => supportedLanguages.has(file.language));
+    let readFailureCount = 0;
+    for (const file of supportedFiles) {
       cancelled = this.checkCancelled(signal);
       if (cancelled) return cancelled as Result<AnalysisResult>;
 
@@ -121,6 +130,7 @@ export class DNAOrchestrator {
           language: file.language,
         });
       } catch (error) {
+        readFailureCount++;
         this.logger.warn(`Failed to read ${file.relativePath}: ${String(error)}`);
       }
     }
@@ -131,10 +141,12 @@ export class DNAOrchestrator {
 
     const files: FileDNA[] = [];
     let parsedCount = 0;
+    let parseFailureCount = 0;
 
     for await (const parseResult of this.astEngine.parseFiles(fileInputs, signal)) {
       parsedCount++;
       if (isErr(parseResult)) {
+        parseFailureCount++;
         this.logger.warn(`Failed to parse file: ${parseResult.error}`);
         continue;
       }
@@ -225,6 +237,12 @@ export class DNAOrchestrator {
       graph,
       architecture,
       knowledge,
+      coverage: {
+        scanned: repository.totalFiles,
+        parsed: files.length,
+        skipped: Math.max(0, repository.totalFiles - supportedFiles.length),
+        failed: readFailureCount + parseFailureCount + Math.max(0, fileInputs.length - parsedCount),
+      },
       durationMs,
     });
   }

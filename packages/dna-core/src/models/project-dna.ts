@@ -44,6 +44,19 @@ export const AnalysisConfigSchema = z.object({
 
 export type AnalysisConfig = z.infer<typeof AnalysisConfigSchema>;
 
+export const AnalysisCoverageSchema = z.object({
+  /** Files discovered after ignore rules were applied. */
+  scanned: z.number().int().nonnegative().default(0),
+  /** Files successfully parsed into FileDNA. */
+  parsed: z.number().int().nonnegative().default(0),
+  /** Files excluded because they were unsupported or outside analysis limits. */
+  skipped: z.number().int().nonnegative().default(0),
+  /** Supported files that could not be read or parsed. */
+  failed: z.number().int().nonnegative().default(0),
+});
+
+export type AnalysisCoverage = z.infer<typeof AnalysisCoverageSchema>;
+
 export const ProjectDNASchema = z.object({
   // ── Identity ──
   /** Stable repository identifier (hash of rootPath). */
@@ -91,6 +104,14 @@ export const ProjectDNASchema = z.object({
   // ── Story ──
   story: RepositoryStorySchema,
 
+  /** Coverage of the repository analysis that produced this version. */
+  analysisCoverage: AnalysisCoverageSchema.default({
+    scanned: 0,
+    parsed: 0,
+    skipped: 0,
+    failed: 0,
+  }),
+
   // ── Meta ──
   /** Configuration that produced this analysis. */
   analysisConfig: AnalysisConfigSchema,
@@ -98,4 +119,7 @@ export const ProjectDNASchema = z.object({
   durationMs: z.number().nonnegative(),
 });
 
-export type ProjectDNA = z.infer<typeof ProjectDNASchema>;
+export type ProjectDNA = Omit<z.infer<typeof ProjectDNASchema>, 'analysisCoverage'> & {
+  /** Coverage is optional for aggregates written before coverage tracking existed. */
+  readonly analysisCoverage?: AnalysisCoverage;
+};

@@ -33,8 +33,12 @@ export class DomainSynthesizer {
         .filter((e): e is DNAObject => e !== undefined);
 
       const languages = new Set<string>();
-      for (const file of files.filter((f) => filePaths.includes(f.path))) {
+      let linesOfCode = 0;
+      const domainFilePaths = new Set(filePaths);
+      for (const file of files) {
+        if (!domainFilePaths.has(file.path)) continue;
         if (file.language) languages.add(file.language);
+        linesOfCode += file.linesOfCode;
       }
 
       const domain: BusinessDomain = {
@@ -45,7 +49,7 @@ export class DomainSynthesizer {
         rootPaths: [dirName],
         entityIds: domainEntities.map((e) => e.id),
         fileCount: filePaths.length,
-        linesOfCode: 0, // Would need LOC data from files
+        linesOfCode,
         primaryLanguages: Array.from(languages),
         dependsOn: [],
         dependedOnBy: [],

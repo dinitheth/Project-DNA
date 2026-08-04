@@ -80,9 +80,9 @@ export class StoryGenerator {
     const confidence = Math.round(architecture.confidence * 100);
     const layerCount = architecture.layers.length;
 
-    let summary = `The codebase follows a ${pattern} architecture`;
+    let summary = `Heuristic analysis matched a ${pattern} architecture`;
     if (confidence > 0) {
-      summary += ` (${confidence}% confidence)`;
+      summary += ` (${confidence}% heuristic match)`;
     }
 
     if (layerCount > 0) {
@@ -105,6 +105,13 @@ export class StoryGenerator {
   }
 
   private generateHealthSummary(health: RepositoryHealth): string {
+    if (
+      health.overallScore === 0 &&
+      Object.values(health.dimensions).every((dimension) => dimension === 0)
+    ) {
+      return 'Heuristic health is unavailable because no source files were parsed.';
+    }
+
     const score = health.overallScore;
     let rating: string;
 
@@ -114,7 +121,7 @@ export class StoryGenerator {
     else if (score >= 30) rating = 'poor';
     else rating = 'critical';
 
-    let summary = `Overall health: ${score}/100 (${rating}).`;
+    let summary = `Heuristic health: ${score}/100 (${rating}).`;
 
     // Find the weakest dimension
     const dims = health.dimensions;
@@ -128,7 +135,7 @@ export class StoryGenerator {
         .replace(/([A-Z])/g, ' $1')
         .trim()
         .toLowerCase();
-      summary += ` Key concern: ${dimName} health is at ${weakest[1]}/100.`;
+      summary += ` Key concern: the ${dimName} heuristic signal is ${weakest[1]}/100.`;
     }
 
     return summary;
@@ -156,7 +163,7 @@ export class StoryGenerator {
     }
 
     sentences.push(
-      `${risks.totalRisks} risk${risks.totalRisks > 1 ? 's' : ''} detected (overall risk score: ${risks.overallRiskScore}/100).`,
+      `${risks.totalRisks} risk${risks.totalRisks > 1 ? 's' : ''} detected (risk exposure: ${risks.overallRiskScore}/100).`,
     );
 
     if (risks.bySeverity.critical > 0) {
