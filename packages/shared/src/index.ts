@@ -17,8 +17,23 @@ export { createLogger, createSilentLogger } from './logger/logger.js';
 export type { Logger } from './logger/logger.js';
 
 // ─── Protocol ──────────────────────────────────────────────────────
-export type { ExtensionMessage, WebviewMessage, MessageEnvelope } from './protocol/messages.js';
-export { ExtensionMessageSchema, WebviewMessageSchema } from './protocol/messages.js';
+export type {
+  ArchitectureData,
+  DependencyData,
+  ExtensionMessage,
+  KnowledgeData,
+  MessageEnvelope,
+  RepositoryData,
+  WebviewMessage,
+} from './protocol/messages.js';
+export {
+  ArchitectureDataSchema,
+  DependencyDataSchema,
+  ExtensionMessageSchema,
+  KnowledgeDataSchema,
+  RepositoryDataSchema,
+  WebviewMessageSchema,
+} from './protocol/messages.js';
 
 // ─── Constants ─────────────────────────────────────────────────────
 export {

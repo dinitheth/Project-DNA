@@ -1,50 +1,205 @@
 import * as vscode from 'vscode';
+import {
+  WebviewMessageSchema,
+  isErr,
+  type ExtensionMessage,
+  type WebviewMessage,
+} from '@project-dna/shared';
+import type { IProjectDNAService } from '@project-dna/dna-core';
+import { buildSidebarData } from './sidebar-data.js';
 
-type SidebarMessage =
-  | { readonly type: 'onInfo'; readonly value: string }
-  | { readonly type: 'onError'; readonly value: string };
+export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
+  private webviewView: vscode.WebviewView | undefined;
+  private operation: Promise<void> | null = null;
+  private publicationEpoch = 0;
+  private analysisInProgress = false;
+  private activeRootPath: string | null = null;
+  private readonly unsubscribeProgress: () => void;
+  private readonly unsubscribeReady: () => void;
 
-export class SidebarProvider implements vscode.WebviewViewProvider {
-  constructor(private readonly _extensionUri: vscode.Uri) {}
-
-  public resolveWebviewView(
-    _webviewView: vscode.WebviewView,
-    _context: vscode.WebviewViewResolveContext,
-    _token: vscode.CancellationToken,
+  constructor(
+    private readonly extensionUri: vscode.Uri,
+    private readonly service: IProjectDNAService,
+    private readonly getWorkspaceRoot: () => string | undefined,
   ) {
-    _webviewView.webview.options = {
-      enableScripts: true,
-      localResourceRoots: [this._extensionUri],
-    };
-
-    _webviewView.webview.html = this._getHtmlForWebview(_webviewView.webview);
-
-    _webviewView.webview.onDidReceiveMessage((data: unknown) => {
-      if (!isSidebarMessage(data)) return;
-
-      switch (data.type) {
-        case 'onInfo': {
-          if (!data.value) return;
-          vscode.window.showInformationMessage(data.value);
-          break;
-        }
-        case 'onError': {
-          if (!data.value) return;
-          vscode.window.showErrorMessage(data.value);
-          break;
+    this.unsubscribeProgress = service.onProgress((progress) => {
+      if (progress.stage === 'scanning' && !this.analysisInProgress) {
+        const rootPath = this.getWorkspaceRoot();
+        if (rootPath) {
+          this.publicationEpoch++;
+          this.analysisInProgress = true;
+          this.activeRootPath = rootPath;
+          void this.postMessage({ type: 'analysisStarted', rootPath });
         }
       }
+      if (progress.stage === 'failed') {
+        this.analysisInProgress = false;
+        this.activeRootPath = null;
+        void this.postMessage({ type: 'analysisError', message: progress.message });
+        return;
+      }
+      void this.postMessage({
+        type: 'analysisProgress',
+        stage: progress.stage,
+        message: progress.message,
+        percent: progress.percent,
+      });
+    });
+    this.unsubscribeReady = service.onReady(() => {
+      this.analysisInProgress = false;
+      this.activeRootPath = null;
+      void this.publishCurrentData();
     });
   }
 
-  private _getHtmlForWebview(webview: vscode.Webview) {
+  public resolveWebviewView(
+    webviewView: vscode.WebviewView,
+    _context: vscode.WebviewViewResolveContext,
+    _token: vscode.CancellationToken,
+  ): void {
+    this.webviewView = webviewView;
+    webviewView.onDidDispose(() => {
+      if (this.webviewView === webviewView) this.webviewView = undefined;
+    });
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [this.extensionUri],
+    };
+    webviewView.webview.html = this.getHtmlForWebview(webviewView.webview);
+    webviewView.webview.onDidReceiveMessage((candidate: unknown) => {
+      const parsed = WebviewMessageSchema.safeParse(candidate);
+      if (!parsed.success) return;
+      void this.handleMessage(parsed.data);
+    });
+  }
+
+  public dispose(): void {
+    this.unsubscribeProgress();
+    this.unsubscribeReady();
+    this.webviewView = undefined;
+  }
+
+  private async handleMessage(message: WebviewMessage): Promise<void> {
+    switch (message.type) {
+      case 'ready':
+      case 'requestRepositoryData':
+      case 'requestArchitectureData':
+      case 'requestDependencyData':
+      case 'requestKnowledgeData':
+        await this.publishCurrentData();
+        return;
+      case 'requestAnalysis':
+        await this.runExclusive(() => this.analyzeWorkspace());
+        return;
+      case 'requestRefresh':
+        await this.runExclusive(() => this.refreshAnalysis());
+        return;
+      case 'navigateTo':
+        return;
+      case 'updateSettings':
+        await this.postMessage({
+          type: 'analysisError',
+          message: 'Project DNA settings are not configurable in this release.',
+          stage: 'settings',
+        });
+        return;
+    }
+  }
+
+  private async runExclusive(operation: () => Promise<void>): Promise<void> {
+    if (this.operation) return this.operation;
+    this.operation = operation().finally(() => {
+      this.operation = null;
+    });
+    return this.operation;
+  }
+
+  private async analyzeWorkspace(): Promise<void> {
+    const rootPath = this.getWorkspaceRoot();
+    if (!rootPath) {
+      await this.postMessage({
+        type: 'analysisError',
+        message: 'Open a workspace folder before running Project DNA analysis.',
+        stage: 'workspace',
+      });
+      return;
+    }
+
+    await this.service.analyze(rootPath);
+  }
+
+  private async refreshAnalysis(): Promise<void> {
+    const current = this.service.getCurrent();
+    if (isErr(current)) {
+      await this.postMessage({ type: 'analysisError', message: current.error.message });
+      return;
+    }
+    if (!current.value) {
+      await this.analyzeWorkspace();
+      return;
+    }
+
+    await this.service.refresh();
+  }
+
+  private async publishCurrentData(): Promise<void> {
+    if (this.analysisInProgress) {
+      if (this.activeRootPath) {
+        await this.postMessage({ type: 'analysisStarted', rootPath: this.activeRootPath });
+      }
+      return;
+    }
+    const publicationEpoch = this.publicationEpoch;
+    const current = this.service.getCurrent();
+    if (isErr(current)) {
+      await this.postMessage({ type: 'analysisError', message: current.error.message });
+      return;
+    }
+    if (!current.value) {
+      await this.postMessage({
+        type: 'analysisUnavailable',
+        rootPath: this.getWorkspaceRoot() ?? null,
+      });
+      return;
+    }
+
+    try {
+      const data = await buildSidebarData(this.service);
+      if (publicationEpoch !== this.publicationEpoch) return;
+      const version = data.repository.version;
+      await this.postMessage({ type: 'analysisSnapshot', version, data });
+      await this.postMessage({
+        type: 'analysisComplete',
+        version,
+        summary: {
+          fileCount: data.repository.coverage.parsed,
+          languageCount: data.repository.languages.length,
+          architecturePattern: data.architecture.pattern,
+          knowledgeNodeCount: data.repository.counts.knowledgeNodes,
+          durationMs: data.repository.durationMs,
+        },
+      });
+    } catch (error) {
+      if (publicationEpoch !== this.publicationEpoch) return;
+      await this.postMessage({
+        type: 'analysisError',
+        message: error instanceof Error ? error.message : String(error),
+        stage: 'sidebar-data',
+      });
+    }
+  }
+
+  private async postMessage(message: ExtensionMessage): Promise<boolean> {
+    return (await this.webviewView?.webview.postMessage(message)) ?? false;
+  }
+
+  private getHtmlForWebview(webview: vscode.Webview): string {
     const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview', 'assets', 'index.js'),
+      vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'assets', 'index.js'),
     );
     const styleUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview', 'assets', 'index.css'),
+      vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'assets', 'index.css'),
     );
-
     const nonce = getNonce();
 
     return `<!DOCTYPE html>
@@ -64,17 +219,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 }
 
-function isSidebarMessage(value: unknown): value is SidebarMessage {
-  if (typeof value !== 'object' || value === null) return false;
-
-  const candidate = value as Record<string, unknown>;
-  return (
-    (candidate['type'] === 'onInfo' || candidate['type'] === 'onError') &&
-    typeof candidate['value'] === 'string'
-  );
-}
-
-function getNonce() {
+function getNonce(): string {
   let text = '';
   const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   for (let i = 0; i < 32; i++) {

@@ -7,6 +7,9 @@ const ctx = await esbuild.context({
   bundle: true,
   outfile: 'dist/extension.js',
   external: ['vscode', 'better-sqlite3', 'web-tree-sitter', 'tree-sitter-wasms'],
+  define: {
+    'process.env.NODE_ENV': '"production"',
+  },
   format: 'cjs',
   platform: 'node',
   sourcemap: true,

@@ -27,8 +27,13 @@ export async function activate(context: vscode.ExtensionContext) {
 
   registerAllCommands(context, container);
 
-  const sidebarProvider = new SidebarProvider(context.extensionUri);
+  const sidebarProvider = new SidebarProvider(
+    context.extensionUri,
+    container.resolve<IProjectDNAService>(TOKENS.ProjectDNAService),
+    () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+  );
   context.subscriptions.push(
+    sidebarProvider,
     vscode.window.registerWebviewViewProvider('project-dna.sidebar.webview', sidebarProvider),
   );
 }
