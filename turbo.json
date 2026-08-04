@@ -3,7 +3,14 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "inputs": ["src/**", "tsconfig.json", "package.json"],
+      "inputs": [
+        "src/**",
+        "resources/**",
+        "tsconfig.json",
+        "package.json",
+        "esbuild.mjs",
+        "webview/**"
+      ],
       "outputs": ["dist/**"]
     },
     "dev": {
@@ -23,15 +30,15 @@
     },
     "typecheck": {
       "dependsOn": ["^typecheck"],
-      "inputs": ["src/**", "tsconfig.json"],
+      "inputs": ["src/**", "webview/src/**", "tsconfig.json", "webview/tsconfig.json"],
       "outputs": []
     },
     "lint": {
-      "inputs": ["src/**", ".eslintrc.*", "$TURBO_ROOT$/eslint.config.mjs"],
+      "inputs": ["src/**", "webview/src/**", ".eslintrc.*", "$TURBO_ROOT$/eslint.config.mjs"],
       "outputs": []
     },
     "lint:fix": {
-      "inputs": ["src/**", ".eslintrc.*", "$TURBO_ROOT$/eslint.config.mjs"],
+      "inputs": ["src/**", "webview/src/**", ".eslintrc.*", "$TURBO_ROOT$/eslint.config.mjs"],
       "outputs": []
     },
     "clean": {

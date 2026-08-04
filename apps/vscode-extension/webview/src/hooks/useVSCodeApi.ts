@@ -1,25 +1,26 @@
-interface VSCodeApi {
-  postMessage(message: any): void;
-  getState(): any;
-  setState(state: any): void;
+import type { WebviewMessage } from '@project-dna/shared';
+
+interface VSCodeApi<State = unknown> {
+  postMessage(message: WebviewMessage): void;
+  getState(): State | undefined;
+  setState(state: State): void;
 }
 
 declare global {
-  function acquireVsCodeApi(): VSCodeApi;
+  function acquireVsCodeApi<State = unknown>(): VSCodeApi<State>;
 }
 
 let api: VSCodeApi | undefined;
 
-export function useVSCodeApi() {
+export function useVSCodeApi(): VSCodeApi {
   if (!api) {
     try {
       api = acquireVsCodeApi();
-    } catch (e) {
-      // Mock for browser environment
+    } catch {
       api = {
-        postMessage: (msg: any) => console.log('postMessage:', msg),
-        getState: () => ({}),
-        setState: (state: any) => console.log('setState:', state),
+        postMessage: () => undefined,
+        getState: () => undefined,
+        setState: () => undefined,
       };
     }
   }

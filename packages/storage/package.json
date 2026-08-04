@@ -14,7 +14,7 @@
   "dependencies": {
     "@project-dna/shared": "workspace:*",
     "@project-dna/dna-core": "workspace:*",
-    "better-sqlite3": "^11.0.0"
+    "better-sqlite3": "^12.11.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.0.0",

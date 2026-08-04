@@ -71,7 +71,7 @@
     "@project-dna/evolution-engine": "workspace:*",
     "@project-dna/storage": "workspace:*",
     "@project-dna/ui-components": "workspace:*",
-    "better-sqlite3": "^11.0.0",
+    "better-sqlite3": "^12.11.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tree-sitter-wasms": "^0.1.13",
@@ -92,14 +92,15 @@
   },
   "scripts": {
     "build:extension": "node esbuild.mjs",
-    "build:webview": "cd webview && vite build",
+    "build:webview": "tsc -p webview/tsconfig.json --noEmit && cd webview && vite build",
     "build": "npm run build:extension && npm run build:webview",
     "watch:extension": "node esbuild.mjs --watch",
     "watch:webview": "cd webview && vite build --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint src/ --max-warnings=0",
+    "typecheck": "tsc --noEmit && tsc -p webview/tsconfig.json --noEmit",
+    "lint": "eslint src/ webview/src/ --max-warnings=0",
+    "lint:fix": "eslint src/ webview/src/ --max-warnings=0 --fix",
     "clean": "rimraf dist"
   }
 }
