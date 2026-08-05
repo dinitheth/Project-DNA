@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
-import { TOKENS, isErr } from '@project-dna/shared';
+import { TOKENS, isErr, type DNAEventMap, type EventBus } from '@project-dna/shared';
 import type { IProjectDNAService } from '@project-dna/dna-core';
 import { createContainer } from './container';
 import { registerAllCommands } from './commands';
 import { SidebarProvider } from './sidebar/sidebar-provider';
+import { RepositoryWatcher } from './repository-watcher';
 
 let activeContainer: ReturnType<typeof createContainer> | null = null;
 
@@ -36,6 +37,11 @@ export async function activate(context: vscode.ExtensionContext) {
     sidebarProvider,
     vscode.window.registerWebviewViewProvider('project-dna.sidebar.webview', sidebarProvider),
   );
+  const repositoryWatcher = new RepositoryWatcher(
+    container.resolve<EventBus<DNAEventMap>>(TOKENS.EventBus),
+    (rootPath) => sidebarProvider.handleWorkspaceChanged(rootPath),
+  );
+  context.subscriptions.push(repositoryWatcher);
 }
 
 export async function deactivate() {

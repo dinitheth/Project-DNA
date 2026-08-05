@@ -14,6 +14,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
   private publicationEpoch = 0;
   private analysisInProgress = false;
   private activeRootPath: string | null = null;
+  private publicationOperation: Promise<void> | null = null;
+  private publicationRequested = false;
+  private disposed = false;
   private readonly unsubscribeProgress: () => void;
   private readonly unsubscribeReady: () => void;
 
@@ -38,6 +41,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         void this.postMessage({ type: 'analysisError', message: progress.message });
         return;
       }
+      if (progress.stage === 'complete') {
+        this.analysisInProgress = false;
+        this.activeRootPath = null;
+        this.requestPublication();
+        return;
+      }
       void this.postMessage({
         type: 'analysisProgress',
         stage: progress.stage,
@@ -48,8 +57,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     this.unsubscribeReady = service.onReady(() => {
       this.analysisInProgress = false;
       this.activeRootPath = null;
-      void this.publishCurrentData();
+      this.requestPublication();
     });
+  }
+
+  public handleWorkspaceChanged(rootPath: string | null): void {
+    this.publicationEpoch++;
+    this.analysisInProgress = false;
+    this.activeRootPath = null;
+    this.publicationRequested = false;
+    void this.postMessage({ type: 'analysisUnavailable', rootPath });
   }
 
   public resolveWebviewView(
@@ -74,6 +91,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
   }
 
   public dispose(): void {
+    this.disposed = true;
+    this.publicationEpoch++;
     this.unsubscribeProgress();
     this.unsubscribeReady();
     this.webviewView = undefined;
@@ -162,6 +181,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
       });
       return;
     }
+    const workspaceRoot = this.getWorkspaceRoot();
+    if (!workspaceRoot || !samePath(current.value.rootPath, workspaceRoot)) {
+      await this.postMessage({ type: 'analysisUnavailable', rootPath: workspaceRoot ?? null });
+      return;
+    }
 
     try {
       const data = await buildSidebarData(this.service);
@@ -187,6 +211,23 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         stage: 'sidebar-data',
       });
     }
+  }
+
+  private requestPublication(): void {
+    if (this.disposed) return;
+    this.publicationRequested = true;
+    if (this.publicationOperation) return;
+    this.publicationOperation = Promise.resolve()
+      .then(async () => {
+        while (this.publicationRequested && !this.disposed) {
+          this.publicationRequested = false;
+          await this.publishCurrentData();
+        }
+      })
+      .finally(() => {
+        this.publicationOperation = null;
+        if (this.publicationRequested) this.requestPublication();
+      });
   }
 
   private async postMessage(message: ExtensionMessage): Promise<boolean> {
@@ -226,4 +267,13 @@ function getNonce(): string {
     text += possible.charAt(Math.floor(Math.random() * possible.length));
   }
   return text;
+}
+
+function samePath(left: string, right: string): boolean {
+  const normalize = (value: string) => value.replaceAll('\\', '/').replace(/\/+$/u, '');
+  const normalizedLeft = normalize(left);
+  const normalizedRight = normalize(right);
+  return process.platform === 'win32'
+    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+    : normalizedLeft === normalizedRight;
 }
