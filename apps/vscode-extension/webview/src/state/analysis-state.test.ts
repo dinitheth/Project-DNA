@@ -20,7 +20,7 @@ describe('analysis state', () => {
     expect(otherWorkspace).toBe(ready);
   });
 
-  it('clears previous data on a new analysis or error and ignores partial payloads', () => {
+  it('retains same-workspace data during refresh and restores it after failure', () => {
     const ready = reduceAnalysisState(initialAnalysisState, createSnapshot(1, 1));
     const partial = ExtensionMessageSchema.parse({
       type: 'repositoryData',
@@ -33,14 +33,22 @@ describe('analysis state', () => {
       ExtensionMessageSchema.parse({ type: 'analysisStarted', rootPath: 'C:/repo' }),
     );
     expect(analyzing.status).toBe('analyzing');
-    expect(analyzing.repository).toBeNull();
+    expect(analyzing.repository?.version).toBe(1);
 
     const failed = reduceAnalysisState(
       analyzing,
       ExtensionMessageSchema.parse({ type: 'analysisError', message: 'failed' }),
     );
-    expect(failed.status).toBe('error');
-    expect(failed.repository).toBeNull();
+    expect(failed.status).toBe('ready');
+    expect(failed.repository?.version).toBe(1);
+    expect(failed.error).toBe('failed');
+
+    const otherWorkspace = reduceAnalysisState(
+      ready,
+      ExtensionMessageSchema.parse({ type: 'analysisStarted', rootPath: 'C:/other' }),
+    );
+    expect(otherWorkspace.status).toBe('analyzing');
+    expect(otherWorkspace.repository).toBeNull();
   });
 
   it('retains the accepted version while analyzing and rejects delayed prior snapshots', () => {
@@ -51,6 +59,7 @@ describe('analysis state', () => {
     );
 
     expect(analyzing.latestVersion).toBe(2);
+    expect(analyzing.repository?.version).toBe(2);
     expect(reduceAnalysisState(analyzing, createSnapshot(2, 2))).toBe(analyzing);
 
     const next = reduceAnalysisState(analyzing, createSnapshot(3, 3));
@@ -63,6 +72,33 @@ describe('analysis state', () => {
     );
     expect(failed.latestVersion).toBe(2);
     expect(reduceAnalysisState(failed, createSnapshot(2, 2))).toBe(failed);
+  });
+
+  it('finishes a semantic no-op refresh without accepting a duplicate snapshot', () => {
+    const ready = reduceAnalysisState(initialAnalysisState, createSnapshot(2, 2));
+    const analyzing = reduceAnalysisState(
+      ready,
+      ExtensionMessageSchema.parse({ type: 'analysisStarted', rootPath: 'C:/repo' }),
+    );
+    const duplicate = reduceAnalysisState(analyzing, createSnapshot(2, 2));
+    expect(duplicate).toBe(analyzing);
+
+    const complete = reduceAnalysisState(
+      duplicate,
+      ExtensionMessageSchema.parse({
+        type: 'analysisComplete',
+        version: 2,
+        summary: {
+          fileCount: 0,
+          languageCount: 0,
+          architecturePattern: 'unknown',
+          knowledgeNodeCount: 0,
+          durationMs: 1,
+        },
+      }),
+    );
+    expect(complete.status).toBe('ready');
+    expect(complete.repository?.version).toBe(2);
   });
 
   it('preserves a valid snapshot when a non-analysis data request fails', () => {

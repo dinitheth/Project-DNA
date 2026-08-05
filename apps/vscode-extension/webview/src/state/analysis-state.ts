@@ -45,11 +45,17 @@ export function reduceAnalysisState(
     case 'analysisUnavailable':
       return emptyState('empty', message.rootPath);
     case 'analysisStarted':
-      return {
-        ...emptyState('analyzing', message.rootPath),
-        latestVersion: state.workspaceRoot === message.rootPath ? state.latestVersion : 0,
-        progress: { message: 'Starting repository analysis…', percent: 0 },
-      };
+      return state.workspaceRoot === message.rootPath && state.repository
+        ? {
+            ...state,
+            status: 'analyzing',
+            progress: { message: 'Starting repository analysis...', percent: 0 },
+            error: null,
+          }
+        : {
+            ...emptyState('analyzing', message.rootPath),
+            progress: { message: 'Starting repository analysis...', percent: 0 },
+          };
     case 'analysisProgress':
       return state.status === 'analyzing'
         ? {
@@ -58,8 +64,8 @@ export function reduceAnalysisState(
           }
         : state;
     case 'analysisError':
-      if (state.status !== 'analyzing' && state.repository) {
-        return { ...state, error: message.message };
+      if (state.repository) {
+        return { ...state, status: 'ready', progress: null, error: message.message };
       }
       return {
         ...emptyState('error', state.workspaceRoot),
@@ -86,6 +92,9 @@ export function reduceAnalysisState(
         latestVersion: message.version,
       };
     case 'analysisComplete':
+      return state.status === 'analyzing' && state.repository
+        ? { ...state, status: 'ready', progress: null }
+        : state;
     case 'repositoryData':
     case 'architectureData':
     case 'dependencyData':
