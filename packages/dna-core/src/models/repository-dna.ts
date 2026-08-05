@@ -7,6 +7,8 @@
  */
 
 import { z } from 'zod';
+import { createHash } from 'node:crypto';
+import path from 'node:path';
 
 export const RepositoryDNASchema = z.object({
   /** Unique identifier (hash of rootPath). */
@@ -65,3 +67,8 @@ export const RepositoryDNASchema = z.object({
 });
 
 export type RepositoryDNA = z.infer<typeof RepositoryDNASchema>;
+
+/** Derive the canonical repository identity used by scanning and persistence recovery. */
+export function createRepositoryId(rootPath: string): string {
+  return createHash('sha256').update(path.resolve(rootPath).toLowerCase()).digest('hex');
+}

@@ -7,6 +7,8 @@
  */
 
 import { z } from 'zod';
+import { createHash } from 'node:crypto';
+import type { ProjectDNA } from './project-dna.js';
 
 export const SnapshotTriggerSchema = z.enum([
   'manual',
@@ -49,3 +51,41 @@ export const EvolutionSnapshotSchema = z.object({
 });
 
 export type EvolutionSnapshot = z.infer<typeof EvolutionSnapshotSchema>;
+
+/** Compute the deterministic content hash stored in an evolution snapshot. */
+export function createProjectDnaSnapshotHash(dna: ProjectDNA): string {
+  const hashContent = JSON.stringify({
+    id: dna.id,
+    version: dna.version,
+    entityCount: dna.entityCount,
+    moduleCount: dna.moduleCount,
+    healthScore: dna.health.overallScore,
+    architecture: dna.architecture.pattern,
+  });
+  return createHash('sha256').update(hashContent).digest('hex').slice(0, 16);
+}
+
+/** Extract the deterministic metric set stored in an evolution snapshot. */
+export function createProjectDnaSnapshotMetrics(dna: ProjectDNA): Record<string, number> {
+  return {
+    'health.overall': dna.health.overallScore,
+    'health.architecture': dna.health.dimensions.architectureHealth,
+    'health.dependency': dna.health.dimensions.dependencyHealth,
+    'health.complexity': dna.health.dimensions.complexityHealth,
+    'health.knowledge': dna.health.dimensions.knowledgeHealth,
+    'health.risk': dna.health.dimensions.riskHealth,
+    'complexity.average': dna.complexity.averageComplexity,
+    'complexity.max': dna.complexity.maxComplexity,
+    'complexity.instability': dna.complexity.averageInstability,
+    'risk.overall': dna.risks.overallRiskScore,
+    'risk.total': dna.risks.totalRisks,
+    'risk.critical': dna.risks.bySeverity.critical,
+    'entities.total': dna.entityCount,
+    'modules.total': dna.moduleCount,
+    'domains.total': dna.domainCount,
+    'capabilities.total': dna.capabilityCount,
+    'knowledge.total': dna.knowledgeNodeCount,
+    'critical.total': dna.criticalComponents.length,
+    'duration.ms': dna.durationMs,
+  };
+}

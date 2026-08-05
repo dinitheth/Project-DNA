@@ -11,6 +11,10 @@
 
 import { DirectedGraph } from 'graphology';
 import type { Attributes, SerializedGraph } from 'graphology-types';
+import type { ArchitectureDNA } from './architecture-dna.js';
+import type { BusinessDomain } from './business-domain.js';
+import type { Capability } from './capability.js';
+import type { DNAObject } from './dna-object.js';
 
 // ─── Node Types ─────────────────────────────────────────────────────
 
@@ -186,4 +190,90 @@ export class DNAGraph {
     );
     return dnaGraph;
   }
+}
+
+/** Construct the deterministic semantic graph represented by persisted analysis collections. */
+export function createSemanticDnaGraph(input: {
+  readonly entities: readonly DNAObject[];
+  readonly domains: readonly BusinessDomain[];
+  readonly capabilities: readonly Capability[];
+  readonly architecture: ArchitectureDNA;
+}): DNAGraph {
+  const graph = new DNAGraph();
+  const domainFileCount = input.domains.reduce((total, domain) => total + domain.fileCount, 0);
+
+  for (const domain of input.domains) {
+    graph.addNode(domain.id, {
+      kind: 'domain',
+      label: domain.name,
+      weight: domain.fileCount / Math.max(1, domainFileCount),
+      metadata: { fileCount: domain.fileCount, confidence: domain.confidence },
+    });
+  }
+  for (const layer of input.architecture.layers) {
+    graph.addNode(`layer:${layer.name}`, {
+      kind: 'layer',
+      label: layer.name,
+      weight: 0.5,
+      metadata: { layerRole: layer.role },
+    });
+  }
+  for (const capability of input.capabilities) {
+    graph.addNode(capability.id, {
+      kind: 'capability',
+      label: capability.name,
+      weight: capability.confidence,
+      metadata: { category: capability.category, description: capability.description },
+    });
+  }
+  for (const entity of input.entities) {
+    graph.addNode(entity.id, {
+      kind: 'entity',
+      label: entity.name,
+      weight: entity.importance,
+      metadata: {
+        role: entity.architectureRole,
+        criticality: entity.criticality,
+        healthScore: entity.healthScore,
+      },
+    });
+  }
+
+  for (const domain of input.domains) {
+    for (const entityId of domain.entityIds) {
+      graph.addEdge(entityId, domain.id, {
+        kind: 'belongs-to',
+        weight: 1,
+        confidence: domain.confidence,
+      });
+    }
+  }
+  for (const entity of input.entities) {
+    if (entity.belongsToLayer !== null) {
+      graph.addEdge(entity.id, `layer:${entity.belongsToLayer}`, {
+        kind: 'belongs-to',
+        weight: 1,
+        confidence: 0.8,
+      });
+    }
+  }
+  for (const capability of input.capabilities) {
+    for (const entityId of capability.implementedBy) {
+      graph.addEdge(entityId, capability.id, {
+        kind: 'serves',
+        weight: capability.confidence,
+        confidence: capability.confidence,
+      });
+    }
+  }
+  for (const entity of input.entities) {
+    for (const dependencyId of entity.dependsOn) {
+      graph.addEdge(entity.id, dependencyId, {
+        kind: 'depends-on',
+        weight: 0.5,
+        confidence: 0.9,
+      });
+    }
+  }
+  return graph;
 }

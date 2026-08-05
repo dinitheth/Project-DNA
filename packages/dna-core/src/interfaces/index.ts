@@ -18,7 +18,16 @@ export type {
   IncrementalKnowledgeRequest,
   KnowledgeResult,
 } from './knowledge-engine.interface.js';
-export type { IStoragePort } from './storage.interface.js';
+export { StorageConflictError } from './storage.interface.js';
+export type {
+  IStoragePort,
+  IStorageInspectionPort,
+  ITransactionalStoragePort,
+  StorageRecordEvidence,
+  StorageBatch,
+  StorageMutation,
+  StoragePrecondition,
+} from './storage.interface.js';
 
 // ─── New Engine Interfaces (Layer 3/4) ─────────────────────────────
 export type {

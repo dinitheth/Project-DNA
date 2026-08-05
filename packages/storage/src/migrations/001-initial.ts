@@ -3,19 +3,24 @@
  * Initial database migration.
  */
 import type { Database } from 'better-sqlite3';
+import type { Migration } from './migration.js';
 
-export function migrate(db: Database): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS dna_store (
-      namespace TEXT NOT NULL,
-      key TEXT NOT NULL,
-      value TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      PRIMARY KEY (namespace, key)
-    );
+export const initialMigration: Migration = {
+  version: 1,
+  name: 'initial',
+  up(database: Database): void {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS dna_store (
+        namespace TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (namespace, key)
+      );
 
-    CREATE INDEX IF NOT EXISTS idx_dna_store_namespace
-      ON dna_store (namespace);
-  `);
-}
+      CREATE INDEX IF NOT EXISTS idx_dna_store_namespace
+        ON dna_store (namespace);
+    `);
+  },
+};

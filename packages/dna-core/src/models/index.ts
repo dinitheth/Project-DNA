@@ -1,5 +1,5 @@
 // ─── Domain Models (existing) ──────────────────────────────────────
-export { RepositoryDNASchema } from './repository-dna.js';
+export { RepositoryDNASchema, createRepositoryId } from './repository-dna.js';
 export type { RepositoryDNA } from './repository-dna.js';
 
 export { ModuleDNASchema } from './module-dna.js';
@@ -48,7 +48,7 @@ export {
 } from './dna-object.js';
 export type { DNAObject, DNAObjectKind, ArchitectureRole, CriticalityLevel } from './dna-object.js';
 
-export { DNAGraph } from './dna-graph.js';
+export { DNAGraph, createSemanticDnaGraph } from './dna-graph.js';
 export type {
   DNAGraphNodeKind,
   DNAGraphNodeAttributes,
@@ -80,6 +80,7 @@ export {
   RepositoryHealthSchema,
   HealthTrendSchema,
   HealthDimensionsSchema,
+  createRepositoryHealth,
 } from './repository-health.js';
 export type { RepositoryHealth, HealthTrend, HealthDimensions } from './repository-health.js';
 
@@ -92,13 +93,27 @@ export type { Capability, CapabilityCategory } from './capability.js';
 export { CriticalComponentSchema } from './critical-component.js';
 export type { CriticalComponent } from './critical-component.js';
 
-export { ComplexityProfileSchema, ComplexityDistributionSchema } from './complexity-profile.js';
+export {
+  ComplexityProfileSchema,
+  ComplexityDistributionSchema,
+  createComplexityProfile,
+} from './complexity-profile.js';
 export type { ComplexityProfile, ComplexityDistribution } from './complexity-profile.js';
 
-export { RiskAssessmentSchema } from './risk-assessment.js';
+export {
+  RiskAssessmentSchema,
+  calculateRiskExposureScore,
+  compareRiskExposure,
+  createRiskAssessment,
+} from './risk-assessment.js';
 export type { RiskAssessment } from './risk-assessment.js';
 
-export { EvolutionSnapshotSchema, SnapshotTriggerSchema } from './evolution-snapshot.js';
+export {
+  EvolutionSnapshotSchema,
+  SnapshotTriggerSchema,
+  createProjectDnaSnapshotHash,
+  createProjectDnaSnapshotMetrics,
+} from './evolution-snapshot.js';
 export type { EvolutionSnapshot, SnapshotTrigger } from './evolution-snapshot.js';
 
 export { DNADiffSchema, EntityDiffSchema } from './dna-diff.js';

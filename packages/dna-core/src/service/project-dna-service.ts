@@ -22,26 +22,42 @@ import {
 import type { IDNAEngine, SynthesisOutput } from '../interfaces/dna-engine.interface.js';
 import type { IEvolutionEngine } from '../interfaces/evolution-engine.interface.js';
 import type { ISoftwareIntelligenceEngine } from '../interfaces/intelligence-engine.interface.js';
-import type { IStoragePort } from '../interfaces/storage.interface.js';
+import type {
+  IStoragePort,
+  StorageMutation,
+  StoragePrecondition,
+} from '../interfaces/storage.interface.js';
 import type {
   EntityFilter,
   IProjectDNAService,
 } from '../interfaces/project-dna-service.interface.js';
 import { ProjectDNASchema, type AnalysisConfig, type ProjectDNA } from '../models/project-dna.js';
+import { createRepositoryId } from '../models/repository-dna.js';
 import type { ArchitectureDNA } from '../models/architecture-dna.js';
-import { BusinessDomainSchema, type BusinessDomain } from '../models/business-domain.js';
-import { CapabilitySchema, type Capability } from '../models/capability.js';
+import type { BusinessDomain } from '../models/business-domain.js';
+import type { Capability } from '../models/capability.js';
 import type { CriticalComponent } from '../models/critical-component.js';
 import type { DNADiff } from '../models/dna-diff.js';
-import { DNAGraph } from '../models/dna-graph.js';
-import { DNAObjectSchema, type DNAObject } from '../models/dna-object.js';
-import { EvolutionSnapshotSchema, type EvolutionSnapshot } from '../models/evolution-snapshot.js';
-import { KnowledgeNodeSchema, type KnowledgeNode } from '../models/knowledge-node.js';
+import type { DNAGraph } from '../models/dna-graph.js';
+import type { DNAObject } from '../models/dna-object.js';
+import type { EvolutionSnapshot } from '../models/evolution-snapshot.js';
+import type { KnowledgeNode } from '../models/knowledge-node.js';
 import { RepositoryGraph } from '../models/repository-graph.js';
 import type { RepositoryHealth } from '../models/repository-health.js';
 import type { RepositoryProfile } from '../models/repository-profile.js';
 import type { RepositoryStory } from '../models/repository-story.js';
 import type { RiskAssessment } from '../models/risk-assessment.js';
+import {
+  STORAGE_NAMESPACES,
+  VERSION_RECORD_NAMESPACES,
+  createVersionKey,
+  createLatestAnalysisRecord,
+  createVersionManifest,
+  isTransactionalStorage,
+  type LatestAnalysisRecord,
+  type PersistedCollections,
+} from './persisted-analysis.js';
+import { PersistedAnalysisRecoveryManager } from './analysis-recovery.js';
 
 export interface ProjectDNAServiceDependencies {
   readonly orchestrator: DNAOrchestrator;
@@ -54,14 +70,7 @@ export interface ProjectDNAServiceDependencies {
   readonly analysisConfig?: Partial<AnalysisConfig>;
 }
 
-interface LoadedCollections {
-  entities: DNAObject[];
-  domains: BusinessDomain[];
-  capabilities: Capability[];
-  knowledge: KnowledgeNode[];
-  dependencyGraph: RepositoryGraph;
-  dnaGraph: DNAGraph;
-}
+type LoadedCollections = PersistedCollections;
 
 const DEFAULT_ANALYSIS_CONFIG: AnalysisConfig = {
   maxFileSize: FILE_SIZE_LIMIT_BYTES,
@@ -76,23 +85,6 @@ const DEFAULT_ANALYSIS_CONFIG: AnalysisConfig = {
     size: 0.1,
   },
 };
-
-const STORAGE_NAMESPACES = {
-  rootIndex: 'project-dna:root-index',
-  latest: 'project-dna:latest',
-  aggregate: 'project-dna:aggregate',
-  entities: 'project-dna:entities',
-  domains: 'project-dna:domains',
-  capabilities: 'project-dna:capabilities',
-  knowledge: 'project-dna:knowledge',
-  dependencyGraph: 'project-dna:dependency-graph',
-  dnaGraph: 'project-dna:dna-graph',
-  snapshots: 'project-dna:snapshots',
-} as const;
-
-interface LatestAnalysisRecord {
-  readonly version: number;
-}
 
 interface IncrementalBaseline {
   readonly analysis: AnalysisResult;
@@ -119,6 +111,8 @@ export class ProjectDNAService implements IProjectDNAService {
   private analysisOperation: Promise<Result<ProjectDNA>> | null = null;
   private activeAnalysisRoot: string | null = null;
   private incrementalBaseline: IncrementalBaseline | null = null;
+  private persistedLatestRecord: LatestAnalysisRecord | null = null;
+  private warnedNonTransactionalStorage = false;
   private readonly pendingChanges = new Map<string, { path: string; generation: number }>();
   private pendingOverflow = false;
   private changeGeneration = 0;
@@ -229,71 +223,36 @@ export class ProjectDNAService implements IProjectDNAService {
 
     try {
       const rootKey = normalizeRootPath(rootPath);
-      const indexed = await storage.exists(STORAGE_NAMESPACES.rootIndex, rootKey);
-      if (isErr(indexed)) return indexed;
-      if (!indexed.value) {
+      const repositoryId = createRepositoryId(rootKey);
+      const recovery = await new PersistedAnalysisRecoveryManager(
+        storage,
+        this.dependencies.logger,
+      ).recover({
+        repositoryId,
+        normalizedRootPath: rootKey,
+        normalizeRootPath,
+      });
+      if (isErr(recovery)) return recovery;
+      if (!recovery.value.analysis || !recovery.value.latest) {
         const resetEvolution = await this.dependencies.evolutionEngine.restoreSnapshots([]);
         if (isErr(resetEvolution)) return resetEvolution;
         this.clearCurrent();
         return Ok(null);
       }
-
-      const repositoryId = await storage.load<string>(STORAGE_NAMESPACES.rootIndex, rootKey);
-      if (isErr(repositoryId)) return repositoryId;
-      const hasLatest = await storage.exists(STORAGE_NAMESPACES.latest, repositoryId.value);
-      if (isErr(hasLatest)) return hasLatest;
-      if (!hasLatest.value) {
-        const resetEvolution = await this.dependencies.evolutionEngine.restoreSnapshots([]);
-        if (isErr(resetEvolution)) return resetEvolution;
-        this.clearCurrent();
-        return Ok(null);
-      }
-      const latest = await storage.load<LatestAnalysisRecord>(
-        STORAGE_NAMESPACES.latest,
-        repositoryId.value,
-      );
-      if (isErr(latest)) return latest;
-
-      const versionKey = createVersionKey(repositoryId.value, latest.value.version);
-      const [aggregate, entities, domains, capabilities, knowledge, dependencyGraph, dnaGraph] =
-        await Promise.all([
-          storage.load<unknown>(STORAGE_NAMESPACES.aggregate, versionKey),
-          storage.load<DNAObject[]>(STORAGE_NAMESPACES.entities, versionKey),
-          storage.load<BusinessDomain[]>(STORAGE_NAMESPACES.domains, versionKey),
-          storage.load<Capability[]>(STORAGE_NAMESPACES.capabilities, versionKey),
-          storage.load<KnowledgeNode[]>(STORAGE_NAMESPACES.knowledge, versionKey),
-          storage.load<Record<string, unknown>>(STORAGE_NAMESPACES.dependencyGraph, versionKey),
-          storage.load<Record<string, unknown>>(STORAGE_NAMESPACES.dnaGraph, versionKey),
-        ]);
-      if (isErr(aggregate)) return aggregate;
-      if (isErr(entities)) return entities;
-      if (isErr(domains)) return domains;
-      if (isErr(capabilities)) return capabilities;
-      if (isErr(knowledge)) return knowledge;
-      if (isErr(dependencyGraph)) return dependencyGraph;
-      if (isErr(dnaGraph)) return dnaGraph;
-
-      const snapshots = await this.loadSnapshots(repositoryId.value);
-      if (isErr(snapshots)) return snapshots;
       const restoredEvolution = await this.dependencies.evolutionEngine.restoreSnapshots(
-        snapshots.value,
+        recovery.value.snapshots,
       );
       if (isErr(restoredEvolution)) return restoredEvolution;
 
-      const dna = ProjectDNASchema.parse(aggregate.value);
-      this.current = dna;
-      this.rootPath = dna.rootPath;
+      this.current = recovery.value.analysis.dna;
+      this.rootPath = recovery.value.analysis.dna.rootPath;
       this.incrementalBaseline = null;
-      this.collections = {
-        entities: DNAObjectSchema.array().parse(entities.value),
-        domains: BusinessDomainSchema.array().parse(domains.value),
-        capabilities: CapabilitySchema.array().parse(capabilities.value),
-        knowledge: KnowledgeNodeSchema.array().parse(knowledge.value),
-        dependencyGraph: RepositoryGraph.fromJSON(dependencyGraph.value),
-        dnaGraph: DNAGraph.fromJSON(dnaGraph.value),
-      };
-      this.dependencies.logger.info(`Restored Project DNA v${dna.version} for ${dna.rootPath}`);
-      return Ok(dna);
+      this.collections = recovery.value.analysis.collections;
+      this.persistedLatestRecord = recovery.value.latest;
+      this.dependencies.logger.info(
+        `Restored Project DNA v${recovery.value.analysis.dna.version} for ${recovery.value.analysis.dna.rootPath}`,
+      );
+      return Ok(recovery.value.analysis.dna);
     } catch (error) {
       const resolvedError = error instanceof Error ? error : new Error(String(error));
       return this.stageError('RestoringProjectDNA', resolvedError);
@@ -510,12 +469,14 @@ export class ProjectDNAService implements IProjectDNAService {
         dependencyGraph: analysis.value.graph,
         dnaGraph: synthesis.value.dnaGraph,
       };
+      const previousLatestRecord = this.persistedLatestRecord;
       const persisted = await this.persistAnalysis(
         dna,
         collections,
         snapshot.value,
         operationGeneration,
         previousCommitted?.version ?? null,
+        previousLatestRecord,
       );
       if (isErr(persisted)) {
         await this.dependencies.evolutionEngine.restoreSnapshots(previousHistory.value);
@@ -525,7 +486,12 @@ export class ProjectDNAService implements IProjectDNAService {
 
       if (this.changeGeneration !== operationGeneration || this.disposed) {
         await this.dependencies.evolutionEngine.restoreSnapshots(previousHistory.value);
-        await this.removePersistedCandidate(dna, previousCommitted?.version ?? null);
+        await this.removePersistedCandidate(
+          dna,
+          previousCommitted?.version ?? null,
+          persisted.value,
+          previousLatestRecord,
+        );
         return Err(new SupersededAnalysisError());
       }
 
@@ -533,6 +499,7 @@ export class ProjectDNAService implements IProjectDNAService {
       this.rootPath = dna.rootPath;
       this.collections = collections;
       this.incrementalBaseline = candidateBaseline;
+      this.persistedLatestRecord = persisted.value;
       this.acknowledgeChanges(operationGeneration);
       this.dependencies.eventBus.emit(DNAEventNames.EvolutionSnapshotCreated, {
         snapshotId: snapshot.value.id,
@@ -677,6 +644,7 @@ export class ProjectDNAService implements IProjectDNAService {
     this.collections = null;
     this.rootPath = null;
     this.incrementalBaseline = null;
+    this.persistedLatestRecord = null;
   }
 
   private acknowledgeChanges(operationGeneration: number): void {
@@ -691,12 +659,13 @@ export class ProjectDNAService implements IProjectDNAService {
     snapshot: EvolutionSnapshot,
     operationGeneration: number,
     previousVersion: number | null,
-  ): Promise<Result<void>> {
+    previousLatestRecord: LatestAnalysisRecord | null,
+  ): Promise<Result<LatestAnalysisRecord | null>> {
     const storage = this.dependencies.storage;
-    if (!storage) return Ok(undefined);
+    if (!storage) return Ok(null);
 
     const versionKey = createVersionKey(dna.id, dna.version);
-    const records: ReadonlyArray<readonly [string, string, unknown]> = [
+    const versionRecords: ReadonlyArray<readonly [string, string, unknown]> = [
       [STORAGE_NAMESPACES.aggregate, versionKey, dna],
       [STORAGE_NAMESPACES.entities, versionKey, collections.entities],
       [STORAGE_NAMESPACES.domains, versionKey, collections.domains],
@@ -705,55 +674,154 @@ export class ProjectDNAService implements IProjectDNAService {
       [STORAGE_NAMESPACES.dependencyGraph, versionKey, collections.dependencyGraph.toJSON()],
       [STORAGE_NAMESPACES.dnaGraph, versionKey, collections.dnaGraph.toJSON()],
       [STORAGE_NAMESPACES.snapshots, versionKey, snapshot],
-      [STORAGE_NAMESPACES.rootIndex, normalizeRootPath(dna.rootPath), dna.id],
     ];
 
-    for (const [namespace, key, value] of records) {
+    if (isTransactionalStorage(storage)) {
       if (this.changeGeneration !== operationGeneration || this.disposed) {
-        await this.removePersistedCandidate(dna, previousVersion);
+        return Err(new SupersededAnalysisError());
+      }
+      const latestRecord = createLatestAnalysisRecord(dna.version, previousVersion);
+      const manifest = createVersionManifest({
+        dna,
+        snapshot,
+        versionKey,
+        previousVersion,
+        normalizedRootPath: normalizeRootPath(dna.rootPath),
+      });
+      const preconditions: StoragePrecondition[] = [
+        ...VERSION_RECORD_NAMESPACES.map((namespace) => ({
+          type: 'missing' as const,
+          namespace,
+          key: versionKey,
+        })),
+        {
+          type: 'missing',
+          namespace: STORAGE_NAMESPACES.versionManifest,
+          key: versionKey,
+        },
+        previousLatestRecord === null
+          ? { type: 'missing', namespace: STORAGE_NAMESPACES.latest, key: dna.id }
+          : {
+              type: 'equals',
+              namespace: STORAGE_NAMESPACES.latest,
+              key: dna.id,
+              data: previousLatestRecord,
+            },
+      ];
+      const mutations: StorageMutation[] = [
+        ...versionRecords.map(([namespace, key, data]) => ({
+          type: 'save' as const,
+          namespace,
+          key,
+          data,
+        })),
+        {
+          type: 'save',
+          namespace: STORAGE_NAMESPACES.versionManifest,
+          key: versionKey,
+          data: manifest,
+        },
+        {
+          type: 'save',
+          namespace: STORAGE_NAMESPACES.rootIndex,
+          key: normalizeRootPath(dna.rootPath),
+          data: dna.id,
+        },
+        {
+          type: 'save',
+          namespace: STORAGE_NAMESPACES.latest,
+          key: dna.id,
+          data: latestRecord,
+        },
+      ];
+      const committed = await storage.applyAtomically({ preconditions, mutations });
+      return isErr(committed) ? committed : Ok(latestRecord);
+    }
+
+    if (!this.warnedNonTransactionalStorage) {
+      this.dependencies.logger.warn(
+        'Storage adapter does not support atomic batches; using legacy sequential persistence',
+      );
+      this.warnedNonTransactionalStorage = true;
+    }
+    const legacyRecords = [
+      ...versionRecords,
+      [STORAGE_NAMESPACES.rootIndex, normalizeRootPath(dna.rootPath), dna.id] as const,
+    ];
+    for (const [namespace, key, value] of legacyRecords) {
+      if (this.changeGeneration !== operationGeneration || this.disposed) {
+        await this.removePersistedCandidate(dna, previousVersion, null, previousLatestRecord);
         return Err(new SupersededAnalysisError());
       }
       const saved = await storage.save(namespace, key, value);
       if (isErr(saved)) return saved;
     }
 
-    if (this.changeGeneration !== operationGeneration || this.disposed) {
-      await this.removePersistedCandidate(dna, previousVersion);
-      return Err(new SupersededAnalysisError());
-    }
-    const savedLatest = await storage.save<LatestAnalysisRecord>(
-      STORAGE_NAMESPACES.latest,
-      dna.id,
-      {
-        version: dna.version,
-      },
-    );
+    const legacyLatestRecord: LatestAnalysisRecord = { version: dna.version };
+    const savedLatest = await storage.save(STORAGE_NAMESPACES.latest, dna.id, legacyLatestRecord);
     if (isErr(savedLatest)) return savedLatest;
     if (this.changeGeneration !== operationGeneration || this.disposed) {
-      await this.removePersistedCandidate(dna, previousVersion);
+      await this.removePersistedCandidate(
+        dna,
+        previousVersion,
+        legacyLatestRecord,
+        previousLatestRecord,
+      );
       return Err(new SupersededAnalysisError());
     }
-    return Ok(undefined);
+    return Ok(legacyLatestRecord);
   }
 
   private async removePersistedCandidate(
     dna: ProjectDNA,
     previousVersion: number | null,
+    candidateLatestRecord: LatestAnalysisRecord | null,
+    previousLatestRecord: LatestAnalysisRecord | null,
   ): Promise<void> {
     const storage = this.dependencies.storage;
     if (!storage) return;
     const versionKey = createVersionKey(dna.id, dna.version);
-    const versionNamespaces = [
-      STORAGE_NAMESPACES.aggregate,
-      STORAGE_NAMESPACES.entities,
-      STORAGE_NAMESPACES.domains,
-      STORAGE_NAMESPACES.capabilities,
-      STORAGE_NAMESPACES.knowledge,
-      STORAGE_NAMESPACES.dependencyGraph,
-      STORAGE_NAMESPACES.dnaGraph,
-      STORAGE_NAMESPACES.snapshots,
-    ] as const;
-    for (const namespace of versionNamespaces) {
+    if (isTransactionalStorage(storage) && candidateLatestRecord !== null) {
+      const mutations: StorageMutation[] = [
+        ...VERSION_RECORD_NAMESPACES.map((namespace) => ({
+          type: 'delete' as const,
+          namespace,
+          key: versionKey,
+        })),
+        {
+          type: 'delete',
+          namespace: STORAGE_NAMESPACES.versionManifest,
+          key: versionKey,
+        },
+        previousLatestRecord === null
+          ? { type: 'delete', namespace: STORAGE_NAMESPACES.latest, key: dna.id }
+          : {
+              type: 'save',
+              namespace: STORAGE_NAMESPACES.latest,
+              key: dna.id,
+              data: previousLatestRecord,
+            },
+      ];
+      const reverted = await storage.applyAtomically({
+        preconditions: [
+          {
+            type: 'equals',
+            namespace: STORAGE_NAMESPACES.latest,
+            key: dna.id,
+            data: candidateLatestRecord,
+          },
+        ],
+        mutations,
+      });
+      if (isErr(reverted)) {
+        this.dependencies.logger.warn(
+          `Could not atomically remove superseded analysis ${versionKey}: ${reverted.error.message}`,
+        );
+      }
+      return;
+    }
+
+    for (const namespace of [...VERSION_RECORD_NAMESPACES, STORAGE_NAMESPACES.versionManifest]) {
       const deleted = await storage.delete(namespace, versionKey);
       if (isErr(deleted)) {
         this.dependencies.logger.warn(
@@ -762,10 +830,10 @@ export class ProjectDNAService implements IProjectDNAService {
       }
     }
     if (previousVersion !== null) {
-      const restoredLatest = await storage.save<LatestAnalysisRecord>(
+      const restoredLatest = await storage.save(
         STORAGE_NAMESPACES.latest,
         dna.id,
-        { version: previousVersion },
+        previousLatestRecord ?? { version: previousVersion },
       );
       if (isErr(restoredLatest)) {
         this.dependencies.logger.warn(
@@ -781,21 +849,7 @@ export class ProjectDNAService implements IProjectDNAService {
       }
     }
   }
-  private async loadSnapshots(repositoryId: string): Promise<Result<EvolutionSnapshot[]>> {
-    const storage = this.dependencies.storage;
-    if (!storage) return Ok([]);
-    const listed = await storage.list(STORAGE_NAMESPACES.snapshots);
-    if (isErr(listed)) return listed;
-    const prefix = `${repositoryId}:v`;
-    const keys = listed.value.filter((key) => key.startsWith(prefix));
-    const snapshots: EvolutionSnapshot[] = [];
-    for (const key of keys) {
-      const loaded = await storage.load<unknown>(STORAGE_NAMESPACES.snapshots, key);
-      if (isErr(loaded)) return loaded;
-      snapshots.push(EvolutionSnapshotSchema.parse(loaded.value));
-    }
-    return Ok(snapshots);
-  }
+
   private emitProgress(stage: PipelineStage, message: string, stageProgress: number): void {
     this.dependencies.eventBus.emit(DNAEventNames.AnalysisProgress, {
       stage,
@@ -872,10 +926,6 @@ function countModules(graph: RepositoryGraph): number {
     modules.add(segments.length > 1 ? segments.slice(0, -1).join('/') : '_root');
   });
   return modules.size;
-}
-
-function createVersionKey(repositoryId: string, version: number): string {
-  return `${repositoryId}:v${version.toString().padStart(8, '0')}`;
 }
 
 function normalizeRootPath(rootPath: string): string {

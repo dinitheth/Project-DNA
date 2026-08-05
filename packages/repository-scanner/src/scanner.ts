@@ -1,15 +1,15 @@
 /** Repository scanner implementation. Performs filesystem observation only. */
 
-import { createHash } from 'node:crypto';
 import { access, lstat, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
-import type {
-  IRepositoryScanner,
-  IncrementalScanRequest,
-  RepositoryManifestEntry,
-  RepositoryDNA,
-  RepositoryScanResult,
-  ScannedFile,
+import {
+  createRepositoryId,
+  type IRepositoryScanner,
+  type IncrementalScanRequest,
+  type RepositoryManifestEntry,
+  type RepositoryDNA,
+  type RepositoryScanResult,
+  type ScannedFile,
 } from '@project-dna/dna-core';
 import {
   DEFAULT_IGNORE_PATTERNS,
@@ -79,7 +79,7 @@ export class RepositoryScanner implements IRepositoryScanner {
       const now = Date.now();
 
       const repository: RepositoryDNA = {
-        id: createHash('sha256').update(absoluteRoot.toLowerCase()).digest('hex'),
+        id: createRepositoryId(absoluteRoot),
         name: path.basename(absoluteRoot),
         rootPath: absoluteRoot,
         languages,
