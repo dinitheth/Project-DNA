@@ -5,19 +5,21 @@ import {
   FILE_SIZE_LIMIT_BYTES,
   Ok,
   isErr,
+  type RepositoryFilesChangedPayload,
+  type RepositoryWatcherInvalidatedPayload,
   type DNAEventMap,
   type EventBus,
   type Logger,
   type Result,
 } from '@project-dna/shared';
 import path from 'node:path';
-import type { DNAOrchestrator } from '../orchestrator/dna-orchestrator.js';
+import type { AnalysisResult, DNAOrchestrator } from '../orchestrator/dna-orchestrator.js';
 import {
   PipelineStage,
   calculateOverallProgress,
   type PipelineProgress,
 } from '../orchestrator/pipeline.js';
-import type { IDNAEngine } from '../interfaces/dna-engine.interface.js';
+import type { IDNAEngine, SynthesisOutput } from '../interfaces/dna-engine.interface.js';
 import type { IEvolutionEngine } from '../interfaces/evolution-engine.interface.js';
 import type { ISoftwareIntelligenceEngine } from '../interfaces/intelligence-engine.interface.js';
 import type { IStoragePort } from '../interfaces/storage.interface.js';
@@ -92,6 +94,22 @@ interface LatestAnalysisRecord {
   readonly version: number;
 }
 
+interface IncrementalBaseline {
+  readonly analysis: AnalysisResult;
+  readonly synthesis: SynthesisOutput;
+}
+
+class SupersededAnalysisError extends Error {
+  constructor() {
+    super('Analysis superseded by newer repository changes');
+    this.name = 'SupersededAnalysisError';
+  }
+}
+
+const CHANGE_DEBOUNCE_MS = 250;
+const CHANGE_MAX_LATENCY_MS = 2_000;
+const MAX_PENDING_PATHS = 10_000;
+
 export class ProjectDNAService implements IProjectDNAService {
   private current: ProjectDNA | null = null;
   private collections: LoadedCollections | null = null;
@@ -100,9 +118,109 @@ export class ProjectDNAService implements IProjectDNAService {
   private readonly analysisConfig: AnalysisConfig;
   private analysisOperation: Promise<Result<ProjectDNA>> | null = null;
   private activeAnalysisRoot: string | null = null;
+  private incrementalBaseline: IncrementalBaseline | null = null;
+  private readonly pendingChanges = new Map<string, { path: string; generation: number }>();
+  private pendingOverflow = false;
+  private changeGeneration = 0;
+  private watcherEpoch = 0;
+  private watcherSequence = 0;
+  private changeTimer: ReturnType<typeof setTimeout> | null = null;
+  private changeBatchStartedAt: number | null = null;
+  private disposed = false;
+  private readonly unsubscribeRepositoryChanges: () => void;
+  private readonly unsubscribeWatcherInvalidation: () => void;
 
   constructor(private readonly dependencies: ProjectDNAServiceDependencies) {
     this.analysisConfig = mergeAnalysisConfig(dependencies.analysisConfig);
+    this.unsubscribeRepositoryChanges = dependencies.eventBus.on(
+      DNAEventNames.RepositoryFilesChanged,
+      (payload) => this.handleRepositoryFilesChanged(payload),
+    );
+    this.unsubscribeWatcherInvalidation = dependencies.eventBus.on(
+      DNAEventNames.RepositoryWatcherInvalidated,
+      (payload) => this.handleWatcherInvalidated(payload),
+    );
+  }
+
+  private handleRepositoryFilesChanged(payload: RepositoryFilesChangedPayload): void {
+    if (this.disposed) return;
+    const normalizedRoot = normalizeRootPath(payload.rootPath);
+    if (this.rootPath && normalizeRootPath(this.rootPath) !== normalizedRoot) return;
+    if (payload.watcherEpoch < this.watcherEpoch) return;
+    if (payload.watcherEpoch === this.watcherEpoch && payload.sequence <= this.watcherSequence) {
+      return;
+    }
+    if (this.watcherEpoch === 0) {
+      this.watcherEpoch = payload.watcherEpoch;
+      this.watcherSequence = 0;
+    } else if (payload.watcherEpoch > this.watcherEpoch) {
+      this.pendingOverflow = true;
+      this.pendingChanges.clear();
+      this.watcherEpoch = payload.watcherEpoch;
+      this.watcherSequence = 0;
+    }
+    if (payload.changes.length === 0) return;
+    const acceptedPaths: string[] = [];
+    for (const change of payload.changes) {
+      const absolutePath = path.resolve(normalizedRoot, change.path);
+      if (!isPathWithinRoot(normalizedRoot, absolutePath)) continue;
+      acceptedPaths.push(absolutePath);
+    }
+    if (acceptedPaths.length === 0) return;
+    this.watcherEpoch = payload.watcherEpoch;
+    this.watcherSequence = payload.sequence;
+    this.changeGeneration++;
+    for (const absolutePath of acceptedPaths) {
+      this.pendingChanges.set(normalizePathKey(absolutePath), {
+        path: absolutePath,
+        generation: this.changeGeneration,
+      });
+    }
+    if (this.pendingChanges.size > MAX_PENDING_PATHS) this.pendingOverflow = true;
+    if (!this.rootPath) this.rootPath = normalizedRoot;
+    this.scheduleAutomaticRefresh();
+  }
+
+  private handleWatcherInvalidated(payload: RepositoryWatcherInvalidatedPayload): void {
+    if (this.disposed) return;
+    const normalizedRoot = normalizeRootPath(payload.rootPath);
+    if (
+      payload.watcherEpoch < this.watcherEpoch ||
+      (this.watcherEpoch !== 0 && payload.watcherEpoch === this.watcherEpoch)
+    ) {
+      return;
+    }
+    if (payload.reason === 'workspace-change') {
+      if (this.rootPath && normalizeRootPath(this.rootPath) !== normalizedRoot) this.clearCurrent();
+      this.rootPath = normalizedRoot;
+    } else if (this.rootPath && normalizeRootPath(this.rootPath) !== normalizedRoot) {
+      return;
+    }
+    this.pendingOverflow = true;
+    this.pendingChanges.clear();
+    this.watcherEpoch = payload.watcherEpoch;
+    this.watcherSequence = 0;
+    this.changeGeneration++;
+    this.scheduleAutomaticRefresh();
+  }
+
+  private scheduleAutomaticRefresh(): void {
+    if (this.disposed || !this.rootPath || this.analysisOperation) return;
+    if (this.changeBatchStartedAt === null) this.changeBatchStartedAt = Date.now();
+    if (this.changeTimer) clearTimeout(this.changeTimer);
+    const elapsed = Date.now() - this.changeBatchStartedAt;
+    const delay = Math.max(0, Math.min(CHANGE_DEBOUNCE_MS, CHANGE_MAX_LATENCY_MS - elapsed));
+    this.changeTimer = setTimeout(() => {
+      this.changeTimer = null;
+      this.changeBatchStartedAt = null;
+      void this.runAutomaticRefresh();
+    }, delay);
+  }
+
+  private async runAutomaticRefresh(): Promise<void> {
+    if (this.disposed || this.analysisOperation || !this.rootPath) return;
+    await this.refresh();
+    if (this.pendingChanges.size > 0 || this.pendingOverflow) this.scheduleAutomaticRefresh();
   }
 
   async restore(rootPath: string): Promise<Result<ProjectDNA | null>> {
@@ -165,6 +283,7 @@ export class ProjectDNAService implements IProjectDNAService {
       const dna = ProjectDNASchema.parse(aggregate.value);
       this.current = dna;
       this.rootPath = dna.rootPath;
+      this.incrementalBaseline = null;
       this.collections = {
         entities: DNAObjectSchema.array().parse(entities.value),
         domains: BusinessDomainSchema.array().parse(domains.value),
@@ -182,6 +301,14 @@ export class ProjectDNAService implements IProjectDNAService {
   }
 
   async analyze(rootPath: string, signal?: AbortSignal): Promise<Result<ProjectDNA>> {
+    return this.startAnalysis(rootPath, signal, true);
+  }
+
+  private async startAnalysis(
+    rootPath: string,
+    signal: AbortSignal | undefined,
+    forceFull: boolean,
+  ): Promise<Result<ProjectDNA>> {
     const normalizedRoot = normalizeRootPath(rootPath);
     if (this.analysisOperation) {
       return this.activeAnalysisRoot === normalizedRoot
@@ -194,9 +321,9 @@ export class ProjectDNAService implements IProjectDNAService {
     }
     this.activeAnalysisRoot = normalizedRoot;
     const operation = Promise.resolve()
-      .then(() => this.runAnalysis(rootPath, signal))
+      .then(() => this.runAnalysis(normalizedRoot, forceFull, signal))
       .then((result) => {
-        if (isErr(result)) {
+        if (isErr(result) && !(result.error instanceof SupersededAnalysisError)) {
           this.emitProgress(PipelineStage.Failed, result.error.message, 0);
         }
         return result;
@@ -204,14 +331,26 @@ export class ProjectDNAService implements IProjectDNAService {
       .finally(() => {
         this.analysisOperation = null;
         this.activeAnalysisRoot = null;
+        if (this.pendingChanges.size > 0 || this.pendingOverflow) this.scheduleAutomaticRefresh();
       });
     this.analysisOperation = operation;
     this.emitProgress(PipelineStage.Scanning, 'Preparing repository analysis...', 0);
     return operation;
   }
 
-  private async runAnalysis(rootPath: string, signal?: AbortSignal): Promise<Result<ProjectDNA>> {
+  private async runAnalysis(
+    rootPath: string,
+    forceFull: boolean,
+    signal?: AbortSignal,
+  ): Promise<Result<ProjectDNA>> {
     const startTime = Date.now();
+    const operationGeneration = this.changeGeneration;
+    const changedPaths = [...this.pendingChanges.values()]
+      .filter((entry) => entry.generation <= operationGeneration)
+      .map((entry) => entry.path)
+      .sort();
+    const previousBaseline = !forceFull && !this.pendingOverflow ? this.incrementalBaseline : null;
+    let previousCommitted: ProjectDNA | null = null;
     try {
       if (signal?.aborted) return Err(new Error('Project DNA analysis cancelled'));
       if (
@@ -221,7 +360,17 @@ export class ProjectDNAService implements IProjectDNAService {
         const restored = await this.restore(rootPath);
         if (isErr(restored)) return restored;
       }
-      const analysis = await this.dependencies.orchestrator.analyzeRepository(rootPath, signal);
+      previousCommitted = this.current;
+      const analysis = previousBaseline
+        ? await this.dependencies.orchestrator.analyzeRepositoryIncremental(
+            {
+              rootPath,
+              previous: previousBaseline.analysis,
+              changedPaths,
+            },
+            signal,
+          )
+        : await this.dependencies.orchestrator.analyzeRepository(rootPath, signal);
       if (isErr(analysis)) return analysis;
 
       this.emitProgress(PipelineStage.SynthesizingDNA, 'Synthesizing Project DNA...', 0);
@@ -229,17 +378,27 @@ export class ProjectDNAService implements IProjectDNAService {
         entityCount: analysis.value.files.length,
         timestamp: Date.now(),
       });
-      const synthesis = await this.dependencies.dnaEngine.synthesize(
-        {
-          repository: analysis.value.repository,
-          files: analysis.value.files,
-          dependencyGraph: analysis.value.graph,
-          architecture: analysis.value.architecture,
-          knowledgeNodes: analysis.value.knowledge.nodes,
-          risks: analysis.value.knowledge.risks,
-        },
-        signal,
-      );
+      const synthesisInput = {
+        repository: analysis.value.repository,
+        files: analysis.value.files,
+        dependencyGraph: analysis.value.graph,
+        architecture: analysis.value.architecture,
+        knowledgeNodes: analysis.value.knowledge.nodes,
+        risks: analysis.value.knowledge.risks,
+      };
+      const synthesis =
+        previousBaseline && this.dependencies.dnaEngine.synthesizeIncremental
+          ? await this.dependencies.dnaEngine.synthesizeIncremental(
+              {
+                input: synthesisInput,
+                previous: previousBaseline.synthesis,
+                dirtyEntityIds: (analysis.value.dirtyPaths ?? []).map(
+                  (filePath) => `file:${filePath}`,
+                ),
+              },
+              signal,
+            )
+          : await this.dependencies.dnaEngine.synthesize(synthesisInput, signal);
       if (isErr(synthesis)) return this.stageError('SynthesizingDNA', synthesis.error);
 
       this.dependencies.eventBus.emit(DNAEventNames.DNAGraphBuilt, {
@@ -274,6 +433,24 @@ export class ProjectDNAService implements IProjectDNAService {
       if (isErr(intelligence)) return this.stageError('ComputingIntelligence', intelligence.error);
 
       this.emitIntelligenceEvents(intelligence.value, startTime);
+
+      const candidateBaseline: IncrementalBaseline = {
+        analysis: analysis.value,
+        synthesis: synthesis.value,
+      };
+      if (this.changeGeneration !== operationGeneration) {
+        return Err(new SupersededAnalysisError());
+      }
+      if (
+        previousBaseline &&
+        this.current &&
+        equivalentBaseline(previousBaseline, candidateBaseline)
+      ) {
+        this.incrementalBaseline = candidateBaseline;
+        this.acknowledgeChanges(operationGeneration);
+        this.emitProgress(PipelineStage.Complete, 'Project DNA is already current.', 1);
+        return Ok(this.current);
+      }
       const version = (this.current?.version ?? 0) + 1;
       const versionKey = createVersionKey(analysis.value.repository.id, version);
       const dna = ProjectDNASchema.parse({
@@ -311,12 +488,19 @@ export class ProjectDNAService implements IProjectDNAService {
       });
 
       if (signal?.aborted) return Err(new Error('Project DNA analysis cancelled'));
+      if (this.changeGeneration !== operationGeneration) {
+        return Err(new SupersededAnalysisError());
+      }
       this.emitProgress(PipelineStage.ComputingEvolution, 'Creating evolution snapshot...', 0);
       const previousHistory = await this.dependencies.evolutionEngine.getHistory();
       if (isErr(previousHistory))
         return this.stageError('ComputingEvolution', previousHistory.error);
       const snapshot = await this.dependencies.evolutionEngine.createSnapshot(dna, signal);
       if (isErr(snapshot)) return this.stageError('ComputingEvolution', snapshot.error);
+      if (this.changeGeneration !== operationGeneration || this.disposed) {
+        await this.dependencies.evolutionEngine.restoreSnapshots(previousHistory.value);
+        return Err(new SupersededAnalysisError());
+      }
 
       const collections: LoadedCollections = {
         entities: synthesis.value.entities,
@@ -326,15 +510,30 @@ export class ProjectDNAService implements IProjectDNAService {
         dependencyGraph: analysis.value.graph,
         dnaGraph: synthesis.value.dnaGraph,
       };
-      const persisted = await this.persistAnalysis(dna, collections, snapshot.value);
+      const persisted = await this.persistAnalysis(
+        dna,
+        collections,
+        snapshot.value,
+        operationGeneration,
+        previousCommitted?.version ?? null,
+      );
       if (isErr(persisted)) {
         await this.dependencies.evolutionEngine.restoreSnapshots(previousHistory.value);
+        if (persisted.error instanceof SupersededAnalysisError) return persisted;
         return this.stageError('PersistingProjectDNA', persisted.error);
+      }
+
+      if (this.changeGeneration !== operationGeneration || this.disposed) {
+        await this.dependencies.evolutionEngine.restoreSnapshots(previousHistory.value);
+        await this.removePersistedCandidate(dna, previousCommitted?.version ?? null);
+        return Err(new SupersededAnalysisError());
       }
 
       this.current = dna;
       this.rootPath = dna.rootPath;
       this.collections = collections;
+      this.incrementalBaseline = candidateBaseline;
+      this.acknowledgeChanges(operationGeneration);
       this.dependencies.eventBus.emit(DNAEventNames.EvolutionSnapshotCreated, {
         snapshotId: snapshot.value.id,
         version: snapshot.value.version,
@@ -364,7 +563,7 @@ export class ProjectDNAService implements IProjectDNAService {
   async refresh(signal?: AbortSignal): Promise<Result<ProjectDNA>> {
     if (this.analysisOperation) return this.analysisOperation;
     if (!this.rootPath) return Err(new Error('No repository has been analyzed'));
-    return this.analyze(this.rootPath, signal);
+    return this.startAnalysis(this.rootPath, signal, false);
   }
 
   getCurrent(): Result<ProjectDNA | null> {
@@ -372,6 +571,13 @@ export class ProjectDNAService implements IProjectDNAService {
   }
 
   async dispose(): Promise<void> {
+    this.disposed = true;
+    this.changeGeneration++;
+    if (this.changeTimer) clearTimeout(this.changeTimer);
+    this.changeTimer = null;
+    this.unsubscribeRepositoryChanges();
+    this.unsubscribeWatcherInvalidation();
+    this.pendingChanges.clear();
     this.clearCurrent();
     this.readyListeners.clear();
     await this.dependencies.storage?.close();
@@ -470,11 +676,21 @@ export class ProjectDNAService implements IProjectDNAService {
     this.current = null;
     this.collections = null;
     this.rootPath = null;
+    this.incrementalBaseline = null;
+  }
+
+  private acknowledgeChanges(operationGeneration: number): void {
+    for (const [key, entry] of this.pendingChanges) {
+      if (entry.generation <= operationGeneration) this.pendingChanges.delete(key);
+    }
+    if (this.changeGeneration === operationGeneration) this.pendingOverflow = false;
   }
   private async persistAnalysis(
     dna: ProjectDNA,
     collections: LoadedCollections,
     snapshot: EvolutionSnapshot,
+    operationGeneration: number,
+    previousVersion: number | null,
   ): Promise<Result<void>> {
     const storage = this.dependencies.storage;
     if (!storage) return Ok(undefined);
@@ -493,13 +709,77 @@ export class ProjectDNAService implements IProjectDNAService {
     ];
 
     for (const [namespace, key, value] of records) {
+      if (this.changeGeneration !== operationGeneration || this.disposed) {
+        await this.removePersistedCandidate(dna, previousVersion);
+        return Err(new SupersededAnalysisError());
+      }
       const saved = await storage.save(namespace, key, value);
       if (isErr(saved)) return saved;
     }
 
-    return storage.save<LatestAnalysisRecord>(STORAGE_NAMESPACES.latest, dna.id, {
-      version: dna.version,
-    });
+    if (this.changeGeneration !== operationGeneration || this.disposed) {
+      await this.removePersistedCandidate(dna, previousVersion);
+      return Err(new SupersededAnalysisError());
+    }
+    const savedLatest = await storage.save<LatestAnalysisRecord>(
+      STORAGE_NAMESPACES.latest,
+      dna.id,
+      {
+        version: dna.version,
+      },
+    );
+    if (isErr(savedLatest)) return savedLatest;
+    if (this.changeGeneration !== operationGeneration || this.disposed) {
+      await this.removePersistedCandidate(dna, previousVersion);
+      return Err(new SupersededAnalysisError());
+    }
+    return Ok(undefined);
+  }
+
+  private async removePersistedCandidate(
+    dna: ProjectDNA,
+    previousVersion: number | null,
+  ): Promise<void> {
+    const storage = this.dependencies.storage;
+    if (!storage) return;
+    const versionKey = createVersionKey(dna.id, dna.version);
+    const versionNamespaces = [
+      STORAGE_NAMESPACES.aggregate,
+      STORAGE_NAMESPACES.entities,
+      STORAGE_NAMESPACES.domains,
+      STORAGE_NAMESPACES.capabilities,
+      STORAGE_NAMESPACES.knowledge,
+      STORAGE_NAMESPACES.dependencyGraph,
+      STORAGE_NAMESPACES.dnaGraph,
+      STORAGE_NAMESPACES.snapshots,
+    ] as const;
+    for (const namespace of versionNamespaces) {
+      const deleted = await storage.delete(namespace, versionKey);
+      if (isErr(deleted)) {
+        this.dependencies.logger.warn(
+          `Could not remove superseded analysis ${namespace}/${versionKey}: ${deleted.error.message}`,
+        );
+      }
+    }
+    if (previousVersion !== null) {
+      const restoredLatest = await storage.save<LatestAnalysisRecord>(
+        STORAGE_NAMESPACES.latest,
+        dna.id,
+        { version: previousVersion },
+      );
+      if (isErr(restoredLatest)) {
+        this.dependencies.logger.warn(
+          `Could not restore latest analysis pointer for ${dna.id}: ${restoredLatest.error.message}`,
+        );
+      }
+    } else {
+      const deletedLatest = await storage.delete(STORAGE_NAMESPACES.latest, dna.id);
+      if (isErr(deletedLatest)) {
+        this.dependencies.logger.warn(
+          `Could not remove latest analysis pointer for ${dna.id}: ${deletedLatest.error.message}`,
+        );
+      }
+    }
   }
   private async loadSnapshots(repositoryId: string): Promise<Result<EvolutionSnapshot[]>> {
     const storage = this.dependencies.storage;
@@ -601,4 +881,87 @@ function createVersionKey(repositoryId: string, version: number): string {
 function normalizeRootPath(rootPath: string): string {
   const normalized = path.resolve(rootPath).replaceAll('\\', '/').replace(/\/+$/u, '');
   return /^[A-Z]:/u.test(normalized) ? normalized.toLowerCase() : normalized;
+}
+
+function normalizePathKey(filePath: string): string {
+  const normalized = path.resolve(filePath).replaceAll('\\', '/').replace(/\/+$/u, '');
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+function isPathWithinRoot(rootPath: string, filePath: string): boolean {
+  const root = normalizePathKey(rootPath);
+  const candidate = normalizePathKey(filePath);
+  return candidate === root || candidate.startsWith(`${root}/`);
+}
+
+function equivalentBaseline(left: IncrementalBaseline, right: IncrementalBaseline): boolean {
+  return stableStringify(baselineValue(left)) === stableStringify(baselineValue(right));
+}
+
+function baselineValue(baseline: IncrementalBaseline): unknown {
+  return {
+    repository: baseline.analysis.repository,
+    files: baseline.analysis.files,
+    graph: graphComparisonValue(baseline.analysis.graph.toJSON()),
+    architecture: baseline.analysis.architecture,
+    knowledge: baseline.analysis.knowledge,
+    coverage: baseline.analysis.coverage,
+    failedPaths: baseline.analysis.failedPaths,
+    synthesis: {
+      entities: baseline.synthesis.entities,
+      dnaGraph: graphComparisonValue(baseline.synthesis.dnaGraph.toJSON()),
+      profile: baseline.synthesis.profile,
+      domains: baseline.synthesis.domains,
+      capabilities: baseline.synthesis.capabilities,
+    },
+  };
+}
+
+const VOLATILE_COMPARISON_KEYS = new Set([
+  'createdAt',
+  'updatedAt',
+  'detectedAt',
+  'analyzedAt',
+  'lastAnalyzedAt',
+  'durationMs',
+]);
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(normalizeComparisonValue(value));
+}
+
+function graphComparisonValue(value: object): unknown {
+  const graph = value as {
+    readonly nodes?: ReadonlyArray<Record<string, unknown>>;
+    readonly edges?: ReadonlyArray<Record<string, unknown>>;
+    readonly [key: string]: unknown;
+  };
+  return {
+    ...graph,
+    nodes: graph.nodes
+      ? [...graph.nodes].sort((left, right) =>
+          String(left['key']).localeCompare(String(right['key'])),
+        )
+      : undefined,
+    edges: graph.edges
+      ? graph.edges
+          .map(({ key: _generatedKey, ...edge }) => edge)
+          .sort((left, right) => graphEdgeKey(left).localeCompare(graphEdgeKey(right)))
+      : undefined,
+  };
+}
+
+function graphEdgeKey(edge: Readonly<Record<string, unknown>>): string {
+  return `${String(edge['source'])}\u0000${String(edge['target'])}\u0000${JSON.stringify(edge['attributes'] ?? {})}`;
+}
+
+function normalizeComparisonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeComparisonValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !VOLATILE_COMPARISON_KEYS.has(key))
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, normalizeComparisonValue(nested)]),
+  );
 }

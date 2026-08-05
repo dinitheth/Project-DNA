@@ -5,6 +5,7 @@
 import type {
   ArchitectureDNA,
   FileDNA,
+  IncrementalKnowledgeRequest,
   IKnowledgeEngine,
   KnowledgeResult,
   RepositoryDNA,
@@ -65,5 +66,18 @@ export class KnowledgeEngine implements IKnowledgeEngine {
       this.logger.error(`Knowledge generation failed: ${resolvedError.message}`);
       return Err(resolvedError);
     }
+  }
+
+  public generateKnowledgeIncremental(
+    request: IncrementalKnowledgeRequest,
+    signal?: AbortSignal,
+  ): Promise<Result<KnowledgeResult>> {
+    return this.generateKnowledge(
+      request.repository,
+      request.files,
+      request.graph,
+      request.architecture,
+      signal,
+    );
   }
 }

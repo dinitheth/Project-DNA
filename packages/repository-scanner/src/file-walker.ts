@@ -38,7 +38,7 @@ export class FileWalker {
 
       const absolutePath = path.join(directory, entry.name);
       const relativePath = normalizePath(path.relative(rootPath, absolutePath));
-      if (isIgnored(relativePath, entry.isDirectory(), patterns)) continue;
+      if (isIgnoredPath(relativePath, entry.isDirectory(), patterns)) continue;
 
       if (entry.isDirectory()) {
         await this.visit(rootPath, absolutePath, patterns, files, signal);
@@ -49,7 +49,7 @@ export class FileWalker {
   }
 }
 
-function isIgnored(
+export function isIgnoredPath(
   relativePath: string,
   isDirectory: boolean,
   patterns: readonly string[],

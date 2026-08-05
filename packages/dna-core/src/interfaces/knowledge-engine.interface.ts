@@ -20,6 +20,16 @@ export interface KnowledgeResult {
   risks: RiskNode[];
 }
 
+/** Input for regenerating knowledge from an incremental repository candidate. */
+export interface IncrementalKnowledgeRequest {
+  readonly repository: RepositoryDNA;
+  readonly files: FileDNA[];
+  readonly graph: RepositoryGraph;
+  readonly architecture: ArchitectureDNA;
+  readonly previous: KnowledgeResult;
+  readonly dirtyPaths: readonly string[];
+}
+
 export interface IKnowledgeEngine {
   /**
    * Generate structured knowledge from all analysis results.
@@ -35,6 +45,15 @@ export interface IKnowledgeEngine {
     files: FileDNA[],
     graph: RepositoryGraph,
     architecture: ArchitectureDNA,
+    signal?: AbortSignal,
+  ): Promise<Result<KnowledgeResult>>;
+
+  /**
+   * Regenerate knowledge for an incremental candidate and return a complete result.
+   * Implementations may omit this capability; callers must then regenerate fully.
+   */
+  generateKnowledgeIncremental?(
+    request: IncrementalKnowledgeRequest,
     signal?: AbortSignal,
   ): Promise<Result<KnowledgeResult>>;
 }

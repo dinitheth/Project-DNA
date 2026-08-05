@@ -96,6 +96,33 @@ describe('KnowledgeEngine', () => {
     );
     expect(isErr(result)).toBe(true);
   });
+
+  it('returns a complete deterministic result through incremental generation', async () => {
+    const engine = new KnowledgeEngine(createSilentLogger());
+    const files = [file('src/a.ts'), file('src/b.ts')];
+    const graph = new RepositoryGraph();
+    for (const item of files) graph.addFileNode(item.path, { label: item.path, path: item.path });
+    const full = await engine.generateKnowledge(repository(), files, graph, architecture());
+    if (isErr(full)) throw full.error;
+
+    const incremental = await engine.generateKnowledgeIncremental?.({
+      repository: repository(),
+      files,
+      graph,
+      architecture: architecture(),
+      previous: full.value,
+      dirtyPaths: ['src/a.ts'],
+    });
+    if (!incremental || isErr(incremental))
+      throw incremental?.error ?? new Error('Incremental knowledge unavailable');
+
+    expect(incremental.value.nodes.map((node) => node.id)).toEqual(
+      full.value.nodes.map((node) => node.id),
+    );
+    expect(incremental.value.risks.map((risk) => risk.id)).toEqual(
+      full.value.risks.map((risk) => risk.id),
+    );
+  });
 });
 
 function file(

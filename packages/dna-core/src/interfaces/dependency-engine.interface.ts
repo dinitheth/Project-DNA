@@ -17,6 +17,15 @@ export interface CircularDependency {
   length: number;
 }
 
+/** Input for repairing a dependency graph from a committed complete baseline. */
+export interface IncrementalDependencyRequest {
+  readonly files: FileDNA[];
+  readonly previousFiles: FileDNA[];
+  readonly previousGraph: RepositoryGraph;
+  readonly rootPath: string;
+  readonly changedPaths: readonly string[];
+}
+
 export interface IDependencyEngine {
   /**
    * Build the dependency graph from parsed files.
@@ -28,6 +37,15 @@ export interface IDependencyEngine {
   buildDependencyGraph(
     files: FileDNA[],
     rootPath: string,
+    signal?: AbortSignal,
+  ): Promise<Result<RepositoryGraph>>;
+
+  /**
+   * Repair a dependency graph while preserving the complete graph contract.
+   * Implementations may omit this capability; callers must then rebuild fully.
+   */
+  buildDependencyGraphIncremental?(
+    request: IncrementalDependencyRequest,
     signal?: AbortSignal,
   ): Promise<Result<RepositoryGraph>>;
 

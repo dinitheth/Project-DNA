@@ -98,7 +98,79 @@ describe('DNAEngine data integrity', () => {
       true,
     );
   });
+
+  it('keeps incremental synthesis equivalent while reusing clean entities', async () => {
+    const engine = new DNAEngine(createSilentLogger());
+    const files = [file('src/one.ts', 10), file('src/two.ts', 20), file('src/three.ts', 30)];
+    const input = {
+      repository: repository(files.length),
+      files,
+      dependencyGraph: graphFor(files),
+      architecture: architecture(),
+      knowledgeNodes: [],
+      risks: [],
+    };
+    const full = await engine.synthesize(input);
+    if (isErr(full)) throw full.error;
+
+    const changedFiles = [file('src/one.ts', 11), files[1]!, files[2]!];
+    const incremental = await engine.synthesizeIncremental?.({
+      input: { ...input, files: changedFiles },
+      previous: full.value,
+      dirtyEntityIds: ['file:src/one.ts'],
+    });
+    if (!incremental || isErr(incremental))
+      throw incremental?.error ?? new Error('Incremental synthesis unavailable');
+
+    const changedFull = await new DNAEngine(createSilentLogger()).synthesize({
+      ...input,
+      files: changedFiles,
+    });
+    if (isErr(changedFull)) throw changedFull.error;
+
+    expect(incremental.value.profile.primaryLanguages).toEqual(
+      changedFull.value.profile.primaryLanguages,
+    );
+    expect(incremental.value.entities.map(withoutEntityTimestamp)).toEqual(
+      changedFull.value.entities.map(withoutEntityTimestamp),
+    );
+    expect(
+      incremental.value.domains.map(({ detectedAt: _detectedAt, ...domain }) => domain),
+    ).toEqual(changedFull.value.domains.map(({ detectedAt: _detectedAt, ...domain }) => domain));
+    expect(
+      incremental.value.capabilities.map(
+        ({ detectedAt: _detectedAt, ...capability }) => capability,
+      ),
+    ).toEqual(
+      changedFull.value.capabilities.map(
+        ({ detectedAt: _detectedAt, ...capability }) => capability,
+      ),
+    );
+    expect(normalizeGraphJson(incremental.value.dnaGraph.toJSON())).toEqual(
+      normalizeGraphJson(changedFull.value.dnaGraph.toJSON()),
+    );
+  });
 });
+
+function withoutEntityTimestamp<T extends { lastAnalyzedAt: number }>(entity: T) {
+  const { lastAnalyzedAt: _lastAnalyzedAt, ...stable } = entity;
+  return stable;
+}
+
+function normalizeGraphJson(value: object): object {
+  const graph = value as {
+    options?: object;
+    attributes?: object;
+    nodes?: Array<Record<string, unknown>>;
+    edges?: Array<Record<string, unknown>>;
+  };
+  return {
+    options: graph.options,
+    attributes: graph.attributes,
+    nodes: graph.nodes,
+    edges: graph.edges?.map(({ key: _key, ...edge }) => edge),
+  };
+}
 
 function file(
   path: string,

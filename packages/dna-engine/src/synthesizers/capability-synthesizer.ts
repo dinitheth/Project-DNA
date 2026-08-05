@@ -163,7 +163,7 @@ export class CapabilitySynthesizer {
                 .filter((location) => filePaths.has(location))
                 .map(toFileEntityId),
             ),
-          ),
+          ).sort(),
           detectedAt: Date.now(),
         });
       }

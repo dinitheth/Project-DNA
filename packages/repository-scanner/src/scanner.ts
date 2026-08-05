@@ -1,10 +1,12 @@
 /** Repository scanner implementation. Performs filesystem observation only. */
 
 import { createHash } from 'node:crypto';
-import { access, readFile, stat } from 'node:fs/promises';
+import { access, lstat, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type {
   IRepositoryScanner,
+  IncrementalScanRequest,
+  RepositoryManifestEntry,
   RepositoryDNA,
   RepositoryScanResult,
   ScannedFile,
@@ -20,7 +22,7 @@ import {
 } from '@project-dna/shared';
 import { FrameworkDetector } from './detectors/framework-detector.js';
 import { LanguageDetector } from './detectors/language-detector.js';
-import { FileWalker } from './file-walker.js';
+import { FileWalker, isIgnoredPath } from './file-walker.js';
 import { ConfigReader, type JsonRecord } from './readers/config-reader.js';
 
 export interface RepositoryScannerDependencies {
@@ -66,7 +68,12 @@ export class RepositoryScanner implements IRepositoryScanner {
 
       const ignorePatterns = [...DEFAULT_IGNORE_PATTERNS, ...gitIgnoreResult.value];
       const allFiles = await this.fileWalker.walk(absoluteRoot, { ignorePatterns, signal });
-      const manifest = await this.createManifest(absoluteRoot, allFiles, signal);
+      const repositoryManifest = await this.createRepositoryManifest(
+        absoluteRoot,
+        allFiles,
+        signal,
+      );
+      const manifest = toScannedFiles(repositoryManifest);
       const languages = this.languageDetector.detect(manifest.map((file) => file.path));
       const frameworks = this.frameworkDetector.detect(packageResult.value);
       const now = Date.now();
@@ -89,7 +96,7 @@ export class RepositoryScanner implements IRepositoryScanner {
           ...readPackageMetadata(packageResult.value),
         },
         totalFiles: allFiles.length,
-        totalLinesOfCode: await countLines(manifest, signal),
+        totalLinesOfCode: countManifestLines(repositoryManifest),
         createdAt: now,
         updatedAt: now,
       };
@@ -97,7 +104,7 @@ export class RepositoryScanner implements IRepositoryScanner {
       this.logger.info(
         `Scanned ${absoluteRoot}: ${repository.totalFiles} files, ${manifest.length} source files`,
       );
-      return Ok({ repository, files: manifest });
+      return Ok({ repository, files: manifest, manifest: repositoryManifest });
     } catch (error) {
       const resolvedError = error instanceof Error ? error : new Error(String(error));
       this.logger.error(`Repository scan failed: ${resolvedError.message}`);
@@ -105,41 +112,205 @@ export class RepositoryScanner implements IRepositoryScanner {
     }
   }
 
-  private async createManifest(
+  public async scanIncremental(
+    request: IncrementalScanRequest,
+    signal?: AbortSignal,
+  ): Promise<Result<RepositoryScanResult>> {
+    try {
+      if (signal?.aborted) return Err(new Error('Repository scan cancelled'));
+      if (!request.previous.manifest) return this.scan(request.rootPath, signal);
+
+      const absoluteRoot = path.resolve(request.rootPath);
+      if (request.changedPaths.some((filePath) => requiresFullScan(absoluteRoot, filePath))) {
+        return this.scan(absoluteRoot, signal);
+      }
+
+      const gitIgnoreResult = await this.configReader.readGitIgnore(absoluteRoot);
+      if (isErr(gitIgnoreResult)) return gitIgnoreResult;
+      const ignorePatterns = [...DEFAULT_IGNORE_PATTERNS, ...gitIgnoreResult.value];
+      const manifestByPath = new Map(
+        request.previous.manifest.map((entry) => [comparisonPath(entry.relativePath), entry]),
+      );
+      const previousDirectories = manifestDirectoryKeys(request.previous.manifest);
+      const changedPaths = [
+        ...new Set(request.changedPaths.map((filePath) => path.resolve(filePath))),
+      ].sort((left, right) => left.localeCompare(right));
+
+      for (const changedPath of changedPaths) {
+        if (signal?.aborted) return Err(new Error('Repository scan cancelled'));
+        const relativePath = normalizePath(path.relative(absoluteRoot, changedPath));
+        if (!relativePath || relativePath === '..' || relativePath.startsWith('../')) {
+          return Err(new Error(`Changed path is outside repository root: ${changedPath}`));
+        }
+        const key = comparisonPath(relativePath);
+        if ((await isDirectoryPath(changedPath)) || previousDirectories.has(key)) {
+          return this.scan(absoluteRoot, signal);
+        }
+        if (isIgnoredPath(relativePath, false, ignorePatterns)) {
+          manifestByPath.delete(key);
+          continue;
+        }
+
+        const entry = await this.readManifestEntry(absoluteRoot, changedPath, signal);
+        if (entry) manifestByPath.set(key, entry);
+        else manifestByPath.delete(key);
+      }
+
+      const repositoryManifest = [...manifestByPath.values()].sort((left, right) =>
+        left.relativePath.localeCompare(right.relativePath),
+      );
+      const files = toScannedFiles(repositoryManifest);
+      const repository = updateRepository(
+        request.previous.repository,
+        repositoryManifest,
+        this.languageDetector,
+      );
+      this.logger.info(
+        `Reconciled ${changedPaths.length} changed paths in ${absoluteRoot}: ${repository.totalFiles} files`,
+      );
+      return Ok({ repository, files, manifest: repositoryManifest });
+    } catch (error) {
+      const resolvedError = error instanceof Error ? error : new Error(String(error));
+      this.logger.error(`Incremental repository scan failed: ${resolvedError.message}`);
+      return Err(resolvedError);
+    }
+  }
+
+  private async createRepositoryManifest(
     rootPath: string,
     filePaths: readonly string[],
     signal?: AbortSignal,
-  ): Promise<ScannedFile[]> {
-    const files: ScannedFile[] = [];
+  ): Promise<RepositoryManifestEntry[]> {
+    const files: RepositoryManifestEntry[] = [];
 
     for (const filePath of filePaths) {
       if (signal?.aborted) throw new Error('Repository scan cancelled');
-      const language = this.languageDetector.detectFile(filePath);
-      if (!language) continue;
-
-      const fileStats = await stat(filePath);
-      if (fileStats.size > FILE_SIZE_LIMIT_BYTES) continue;
-
-      files.push({
-        path: filePath,
-        relativePath: path.relative(rootPath, filePath).replace(/\\/gu, '/'),
-        language: language.id,
-        size: fileStats.size,
-      });
+      const entry = await this.readManifestEntry(rootPath, filePath, signal);
+      if (entry) files.push(entry);
     }
 
-    return files;
+    return files.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  }
+
+  private async readManifestEntry(
+    rootPath: string,
+    filePath: string,
+    signal?: AbortSignal,
+  ): Promise<RepositoryManifestEntry | null> {
+    try {
+      const fileStats = await lstat(filePath);
+      if (!fileStats.isFile()) return null;
+      const language = this.languageDetector.detectFile(filePath);
+      const analyzable = language !== null && fileStats.size <= FILE_SIZE_LIMIT_BYTES;
+      let linesOfCode = 0;
+      if (analyzable) {
+        try {
+          if (signal?.aborted) throw new Error('Repository scan cancelled');
+          linesOfCode = countContentLines(await readFile(filePath, 'utf8'));
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          this.logger.warn(`Could not count lines for ${filePath}: ${String(error)}`);
+        }
+      }
+      return {
+        path: filePath,
+        relativePath: normalizePath(path.relative(rootPath, filePath)),
+        size: fileStats.size,
+        modifiedAtMs: fileStats.mtimeMs,
+        ...(language ? { language: language.id } : {}),
+        analyzable,
+        linesOfCode,
+      };
+    } catch (error) {
+      if (isMissingPathError(error)) return null;
+      throw error;
+    }
   }
 }
 
-async function countLines(files: readonly ScannedFile[], signal?: AbortSignal): Promise<number> {
-  let total = 0;
-  for (const file of files) {
-    if (signal?.aborted) throw new Error('Repository scan cancelled');
-    const content = await readFile(file.path, 'utf8');
-    total += content.split(/\r?\n/u).filter((line) => line.trim().length > 0).length;
+function toScannedFiles(manifest: readonly RepositoryManifestEntry[]): ScannedFile[] {
+  return manifest
+    .filter(
+      (entry): entry is RepositoryManifestEntry & { language: string } =>
+        entry.analyzable && entry.language !== undefined,
+    )
+    .map((entry) => ({
+      path: entry.path,
+      relativePath: entry.relativePath,
+      language: entry.language,
+      size: entry.size,
+    }));
+}
+
+function countManifestLines(manifest: readonly RepositoryManifestEntry[]): number {
+  return manifest.reduce((total, entry) => total + entry.linesOfCode, 0);
+}
+
+function countContentLines(content: string): number {
+  return content.split(/\r?\n/u).filter((line) => line.trim().length > 0).length;
+}
+
+function updateRepository(
+  previous: RepositoryDNA,
+  manifest: readonly RepositoryManifestEntry[],
+  languageDetector: LanguageDetector,
+): RepositoryDNA {
+  const paths = manifest.map((entry) => entry.path);
+  return {
+    ...previous,
+    languages: languageDetector.detect(
+      manifest.filter((entry) => entry.analyzable).map((entry) => entry.path),
+    ),
+    metadata: {
+      ...previous.metadata,
+      hasReadme: hasNamedFile(paths, /^readme(?:\.[^.]+)?$/iu),
+      hasLicense: hasNamedFile(paths, /^licen[cs]e(?:\.[^.]+)?$/iu),
+    },
+    totalFiles: manifest.length,
+    totalLinesOfCode: countManifestLines(manifest),
+    updatedAt: Date.now(),
+  };
+}
+
+function requiresFullScan(rootPath: string, filePath: string): boolean {
+  const relativePath = normalizePath(path.relative(rootPath, path.resolve(filePath))).toLowerCase();
+  const name = path.posix.basename(relativePath);
+  return (
+    name === '.gitignore' ||
+    name === 'package.json' ||
+    name === 'pnpm-lock.yaml' ||
+    name === 'package-lock.json' ||
+    name === 'yarn.lock' ||
+    name === 'bun.lock' ||
+    name === 'bun.lockb' ||
+    /^tsconfig(?:\.[^.]+)?\.json$/u.test(name)
+  );
+}
+
+function comparisonPath(value: string): string {
+  const normalized = normalizePath(value);
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+function manifestDirectoryKeys(manifest: readonly RepositoryManifestEntry[]): Set<string> {
+  const directories = new Set<string>();
+  for (const entry of manifest) {
+    const segments = normalizePath(entry.relativePath).split('/');
+    for (let index = 1; index < segments.length; index++) {
+      directories.add(comparisonPath(segments.slice(0, index).join('/')));
+    }
   }
-  return total;
+  return directories;
+}
+
+function normalizePath(value: string): string {
+  return value.replace(/\\/gu, '/').replace(/^\.\//u, '');
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return (
+    error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT'
+  );
 }
 
 async function detectPackageManager(rootPath: string): Promise<string | undefined> {
@@ -174,6 +345,15 @@ async function exists(filePath: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+async function isDirectoryPath(filePath: string): Promise<boolean> {
+  try {
+    return (await lstat(filePath)).isDirectory();
+  } catch (error) {
+    if (isMissingPathError(error)) return false;
+    throw error;
   }
 }
 

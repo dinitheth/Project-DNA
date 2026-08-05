@@ -1,7 +1,11 @@
 /** Builds repository dependency graphs from parsed FileDNA imports and re-exports. */
 
 import path from 'node:path';
-import { RepositoryGraph, type FileDNA } from '@project-dna/dna-core';
+import {
+  RepositoryGraph,
+  type FileDNA,
+  type IncrementalDependencyRequest,
+} from '@project-dna/dna-core';
 import { Err, Ok, type Logger, type Result } from '@project-dna/shared';
 
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'] as const;
@@ -10,10 +14,51 @@ export class GraphBuilder {
   constructor(private readonly logger?: Logger) {}
 
   public build(files: FileDNA[], rootPath: string, signal?: AbortSignal): Result<RepositoryGraph> {
+    return this.buildForSources(files, rootPath, null, signal);
+  }
+
+  public repair(
+    request: IncrementalDependencyRequest,
+    signal?: AbortSignal,
+  ): Result<RepositoryGraph> {
+    const previousPaths = normalizedPathSet(request.previousFiles, request.rootPath);
+    const currentPaths = normalizedPathSet(request.files, request.rootPath);
+    const structureChanged = !setsEqual(previousPaths, currentPaths);
+    const dirtySources = structureChanged
+      ? currentPaths
+      : new Set(
+          request.changedPaths
+            .map((filePath) => normalizeFilePath(filePath, request.rootPath))
+            .filter((filePath) => currentPaths.has(filePath)),
+        );
+    const candidate = this.buildForSources(request.files, request.rootPath, dirtySources, signal);
+    if (!candidate.ok) return candidate;
+
+    if (structureChanged) return candidate;
+    for (const sourcePath of [...currentPaths].sort()) {
+      if (dirtySources.has(sourcePath)) continue;
+      request.previousGraph.forEachOutEdge(sourcePath, (_edgeId, attributes, _source, target) => {
+        const targetAttributes = request.previousGraph.getNodeAttributes(target);
+        if (targetAttributes?.kind === 'external') {
+          candidate.value.addExternalNode(target, targetAttributes.label);
+        }
+        if (targetAttributes?.kind === 'file' && !currentPaths.has(target)) return;
+        candidate.value.addDependency(sourcePath, target, { ...attributes });
+      });
+    }
+    return candidate;
+  }
+
+  private buildForSources(
+    files: FileDNA[],
+    rootPath: string,
+    sourcePaths: ReadonlySet<string> | null,
+    signal?: AbortSignal,
+  ): Result<RepositoryGraph> {
     const graph = new RepositoryGraph();
     const normalizedFiles = new Map<string, FileDNA>();
 
-    for (const file of files) {
+    for (const file of [...files].sort((left, right) => left.path.localeCompare(right.path))) {
       if (signal?.aborted) return Err(new Error('Dependency analysis cancelled'));
       const normalizedPath = normalizeFilePath(file.path, rootPath);
       normalizedFiles.set(normalizedPath, file);
@@ -29,6 +74,7 @@ export class GraphBuilder {
     const knownPaths = new Set(normalizedFiles.keys());
     for (const [sourcePath, file] of normalizedFiles) {
       if (signal?.aborted) return Err(new Error('Dependency analysis cancelled'));
+      if (sourcePaths && !sourcePaths.has(sourcePath)) continue;
 
       for (const imported of file.imports) {
         const resolution = resolveSpecifier(sourcePath, imported.source, knownPaths);
@@ -86,6 +132,14 @@ export class GraphBuilder {
 
     return Ok(graph);
   }
+}
+
+function normalizedPathSet(files: readonly FileDNA[], rootPath: string): Set<string> {
+  return new Set(files.map((file) => normalizeFilePath(file.path, rootPath)));
+}
+
+function setsEqual(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
+  return left.size === right.size && [...left].every((value) => right.has(value));
 }
 
 type Resolution =

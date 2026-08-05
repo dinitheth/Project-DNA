@@ -12,7 +12,13 @@
 
 import { Ok, Err } from '@project-dna/shared';
 import type { Logger, Result } from '@project-dna/shared';
-import type { IDNAEngine, SynthesisInput, SynthesisOutput } from '@project-dna/dna-core';
+import type {
+  DNAObject,
+  IDNAEngine,
+  IncrementalSynthesisRequest,
+  SynthesisInput,
+  SynthesisOutput,
+} from '@project-dna/dna-core';
 import { EntitySynthesizer } from './synthesizers/entity-synthesizer.js';
 import { IdentitySynthesizer } from './synthesizers/identity-synthesizer.js';
 import { DomainSynthesizer } from './synthesizers/domain-synthesizer.js';
@@ -39,10 +45,13 @@ export class DNAEngine implements IDNAEngine {
       if (signal?.aborted) return Err(new Error('DNA synthesis cancelled'));
       this.logger.info('Starting DNA synthesis...');
       const startTime = Date.now();
+      const orderedFiles = [...input.files].sort((left, right) =>
+        left.path.localeCompare(right.path),
+      );
 
       // Step 1: Synthesize raw files into enriched entities
       const entities = this.entitySynthesizer.synthesize(
-        input.files,
+        orderedFiles,
         input.dependencyGraph,
         input.architecture,
         input.knowledgeNodes,
@@ -53,17 +62,17 @@ export class DNAEngine implements IDNAEngine {
       // Step 2: Infer repository identity
       const profile = this.identitySynthesizer.synthesize(
         input.repository,
-        input.files,
+        orderedFiles,
         input.architecture,
       );
       if (signal?.aborted) return Err(new Error('DNA synthesis cancelled'));
 
       // Step 3: Infer business domains (mutates entity domain assignments)
-      const domains = this.domainSynthesizer.synthesize(input.files, entities);
+      const domains = this.domainSynthesizer.synthesize(orderedFiles, entities);
       if (signal?.aborted) return Err(new Error('DNA synthesis cancelled'));
 
       // Step 4: Detect capabilities
-      const capabilities = this.capabilitySynthesizer.synthesize(input.repository, input.files);
+      const capabilities = this.capabilitySynthesizer.synthesize(input.repository, orderedFiles);
       if (signal?.aborted) return Err(new Error('DNA synthesis cancelled'));
 
       // Step 5: Build semantic DNA graph
@@ -86,6 +95,74 @@ export class DNAEngine implements IDNAEngine {
       const err = error instanceof Error ? error : new Error(String(error));
       this.logger.error(`DNA synthesis failed: ${err.message}`);
       return Err(err);
+    }
+  }
+
+  async synthesizeIncremental(
+    request: IncrementalSynthesisRequest,
+    signal?: AbortSignal,
+  ): Promise<Result<SynthesisOutput>> {
+    try {
+      if (signal?.aborted) return Err(new Error('DNA synthesis cancelled'));
+      const dirtyIds = new Set(request.dirtyEntityIds);
+      const previousEntities = new Map(
+        request.previous.entities.map((entity) => [entity.id, entity] as const),
+      );
+      const orderedFiles = [...request.input.files].sort((left, right) =>
+        left.path.localeCompare(right.path),
+      );
+      const entities: DNAObject[] = [];
+
+      for (const file of orderedFiles) {
+        if (signal?.aborted) return Err(new Error('DNA synthesis cancelled'));
+        const entityId = `file:${file.path}`;
+        const previous = previousEntities.get(entityId);
+        if (previous && !dirtyIds.has(entityId)) {
+          entities.push({
+            ...previous,
+            risks: [...previous.risks],
+            dependsOn: [...previous.dependsOn],
+            dependedOnBy: [...previous.dependedOnBy],
+            knowledgeNodeIds: [...previous.knowledgeNodeIds],
+          });
+          continue;
+        }
+        const synthesized = this.entitySynthesizer.synthesize(
+          [file],
+          request.input.dependencyGraph,
+          request.input.architecture,
+          request.input.knowledgeNodes,
+          request.input.risks,
+        );
+        const entity = synthesized[0];
+        if (entity) entities.push(entity);
+      }
+
+      const profile = this.identitySynthesizer.synthesize(
+        request.input.repository,
+        orderedFiles,
+        request.input.architecture,
+      );
+      for (const entity of entities) {
+        entity.businessDomain = null;
+        entity.belongsToDomain = null;
+      }
+      const domains = this.domainSynthesizer.synthesize(orderedFiles, entities);
+      const capabilities = this.capabilitySynthesizer.synthesize(
+        request.input.repository,
+        orderedFiles,
+      );
+      const dnaGraph = this.graphBuilder.build(
+        entities,
+        domains,
+        capabilities,
+        request.input.architecture,
+      );
+      return Ok({ entities, dnaGraph, profile, domains, capabilities });
+    } catch (error) {
+      const resolvedError = error instanceof Error ? error : new Error(String(error));
+      this.logger.error(`Incremental DNA synthesis failed: ${resolvedError.message}`);
+      return Err(resolvedError);
     }
   }
 }

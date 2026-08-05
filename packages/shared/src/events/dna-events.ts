@@ -157,6 +157,30 @@ export interface AnalysisProgressPayload {
   readonly detail?: string;
 }
 
+// Repository synchronization events
+
+export type RepositoryFileChangeKind = 'created' | 'modified' | 'deleted';
+
+export interface RepositoryFileChange {
+  readonly kind: RepositoryFileChangeKind;
+  readonly path: FilePath;
+}
+
+export interface RepositoryFilesChangedPayload {
+  readonly rootPath: FilePath;
+  readonly watcherEpoch: number;
+  readonly sequence: number;
+  readonly observedAt: number;
+  readonly changes: readonly RepositoryFileChange[];
+}
+
+export interface RepositoryWatcherInvalidatedPayload {
+  readonly rootPath: FilePath;
+  readonly watcherEpoch: number;
+  readonly observedAt: number;
+  readonly reason: 'overflow' | 'restart' | 'workspace-change';
+}
+
 // ─── Event Map ──────────────────────────────────────────────────────
 
 /** Complete map of DNA event names to their payload types. */
@@ -195,6 +219,10 @@ export interface DNAEventMap {
   // Pipeline
   AnalysisError: AnalysisErrorPayload;
   AnalysisProgress: AnalysisProgressPayload;
+
+  // Repository synchronization
+  RepositoryFilesChanged: RepositoryFilesChangedPayload;
+  RepositoryWatcherInvalidated: RepositoryWatcherInvalidatedPayload;
 }
 
 /** Event name constants for use without string literals. */
@@ -233,4 +261,8 @@ export const DNAEventNames = {
   // Pipeline
   AnalysisError: 'AnalysisError',
   AnalysisProgress: 'AnalysisProgress',
+
+  // Repository synchronization
+  RepositoryFilesChanged: 'RepositoryFilesChanged',
+  RepositoryWatcherInvalidated: 'RepositoryWatcherInvalidated',
 } as const satisfies Record<keyof DNAEventMap, keyof DNAEventMap>;

@@ -47,10 +47,10 @@ export class DomainSynthesizer {
         inferenceSource: 'folder-structure',
         confidence: 0.6,
         rootPaths: [dirName],
-        entityIds: domainEntities.map((e) => e.id),
+        entityIds: domainEntities.map((e) => e.id).sort(),
         fileCount: filePaths.length,
         linesOfCode,
-        primaryLanguages: Array.from(languages),
+        primaryLanguages: Array.from(languages).sort(),
         dependsOn: [],
         dependedOnBy: [],
         detectedAt: Date.now(),
@@ -146,8 +146,8 @@ export class DomainSynthesizer {
         }
       }
 
-      domain.dependsOn = Array.from(depDomains);
-      domain.dependedOnBy = Array.from(dependentDomains);
+      domain.dependsOn = Array.from(depDomains).sort();
+      domain.dependedOnBy = Array.from(dependentDomains).sort();
     }
   }
 }

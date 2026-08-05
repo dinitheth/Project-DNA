@@ -5,7 +5,13 @@ export { TOKENS } from './di/tokens.js';
 
 // ─── Event Bus ─────────────────────────────────────────────────────
 export { EventBus } from './events/event-bus.js';
-export type { DNAEventMap } from './events/dna-events.js';
+export type {
+  DNAEventMap,
+  RepositoryFileChange,
+  RepositoryFileChangeKind,
+  RepositoryFilesChangedPayload,
+  RepositoryWatcherInvalidatedPayload,
+} from './events/dna-events.js';
 export { DNAEventNames } from './events/dna-events.js';
 
 // ─── Result Type ───────────────────────────────────────────────────

@@ -57,8 +57,8 @@ export class EntitySynthesizer {
     const criticality = this.classifyCriticality(importance);
     const complexity = file.complexity;
     const healthScore = this.computeHealthScore(complexity, importance);
-    const knowledgeNodeIds = knowledgeIndex.get(file.path) ?? [];
-    const riskIds = riskIndex.get(file.path) ?? [];
+    const knowledgeNodeIds = [...(knowledgeIndex.get(file.path) ?? [])].sort();
+    const riskIds = [...(riskIndex.get(file.path) ?? [])].sort();
 
     // Build dependency relationships from graph
     const dependsOn: string[] = [];
@@ -89,8 +89,8 @@ export class EntitySynthesizer {
       complexity,
       healthScore,
       risks: riskIds,
-      dependsOn,
-      dependedOnBy,
+      dependsOn: dependsOn.sort(),
+      dependedOnBy: dependedOnBy.sort(),
       belongsToDomain: null, // Set by DomainSynthesizer
       belongsToLayer: layer,
       knowledgeNodeIds,

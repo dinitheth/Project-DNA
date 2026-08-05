@@ -38,6 +38,13 @@ export interface SynthesisOutput {
   readonly capabilities: Capability[];
 }
 
+/** Input for synthesizing a candidate from a committed complete DNA baseline. */
+export interface IncrementalSynthesisRequest {
+  readonly input: SynthesisInput;
+  readonly previous: SynthesisOutput;
+  readonly dirtyEntityIds: readonly string[];
+}
+
 export interface IDNAEngine {
   /**
    * Synthesize all analysis outputs into unified DNA.
@@ -47,4 +54,13 @@ export interface IDNAEngine {
    * @returns Synthesized DNA objects, graph, profile, domains, and capabilities.
    */
   synthesize(input: SynthesisInput, signal?: AbortSignal): Promise<Result<SynthesisOutput>>;
+
+  /**
+   * Re-synthesize dirty entities and return a complete synthesis output.
+   * Implementations may omit this capability; callers must then synthesize fully.
+   */
+  synthesizeIncremental?(
+    request: IncrementalSynthesisRequest,
+    signal?: AbortSignal,
+  ): Promise<Result<SynthesisOutput>>;
 }
