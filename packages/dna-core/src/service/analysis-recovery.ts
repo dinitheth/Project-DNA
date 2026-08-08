@@ -7,7 +7,7 @@ import type {
   StoragePrecondition,
   StorageRecordEvidence,
 } from '../interfaces/storage.interface.js';
-import type { EvolutionSnapshot } from '../models/evolution-snapshot.js';
+import { EvolutionSnapshotSchema, type EvolutionSnapshot } from '../models/evolution-snapshot.js';
 import {
   STORAGE_NAMESPACES,
   VERSION_RECORD_NAMESPACES,
@@ -63,6 +63,38 @@ interface ParsedPointer {
   readonly invalidReason: string | null;
 }
 
+interface RecoveryCandidateMetadata {
+  readonly versionKey: string;
+  readonly version: number;
+  readonly snapshot: EvolutionSnapshot;
+}
+
+type CandidateEvaluation =
+  | {
+      readonly kind: 'valid';
+      readonly candidate: ValidCandidate;
+    }
+  | {
+      readonly kind: 'cleanup';
+    }
+  | {
+      readonly kind: 'quarantine';
+      readonly reason: string;
+    };
+
+type MetadataEvaluation =
+  | {
+      readonly kind: 'valid';
+      readonly metadata: RecoveryCandidateMetadata;
+    }
+  | {
+      readonly kind: 'cleanup';
+    }
+  | {
+      readonly kind: 'quarantine';
+      readonly reason: string;
+    };
+
 export interface RecoveryResult {
   readonly analysis: ValidatedPersistedAnalysis | null;
   readonly latest: LatestAnalysisRecord | null;
@@ -89,10 +121,9 @@ export class PersistedAnalysisRecoveryManager {
         input.normalizedRootPath,
       );
       const versionKeys = await this.discoverVersionKeys(input.repositoryId);
-      const snapshots: EvolutionSnapshot[] = [];
+      const candidates: RecoveryCandidateMetadata[] = [];
       const validVersions = new Set<number>();
       const snapshotIds = new Map<number, string>();
-      let selected: ValidCandidate | null = null;
 
       for (const versionKey of versionKeys) {
         const version = parseVersionKey(input.repositoryId, versionKey);
@@ -102,107 +133,92 @@ export class PersistedAnalysisRecoveryManager {
           continue;
         }
 
-        const evidence = await this.readVersionEvidence(versionKey);
-        if (evidence.some((record) => record.status === 'unreadable')) {
-          await this.quarantineVersion(
-            input.repositoryId,
-            versionKey,
-            evidence,
-            'Unreadable record',
-          );
-          continue;
-        }
-        if (
-          evidence.some(
-            (record) =>
-              record.namespace !== STORAGE_NAMESPACES.versionManifest &&
-              record.status === 'missing',
-          )
-        ) {
+        const metadataEvidence = await this.readVersionMetadata(versionKey);
+        const requiredRecordsExist = await this.requiredVersionRecordsExist(versionKey);
+        const metadataEvaluation = this.evaluateMetadata({
+          repositoryId: input.repositoryId,
+          normalizedRootPath: input.normalizedRootPath,
+          versionKey,
+          version,
+          manifestPointerVersion,
+          validVersions,
+          snapshotIds,
+          evidence: metadataEvidence,
+          requiredRecordsExist,
+        });
+
+        if (metadataEvaluation.kind === 'cleanup') {
+          const evidence = await this.readVersionEvidence(versionKey);
           await this.cleanupVersion(versionKey, evidence);
           this.logger.warn(`Removed incomplete persisted version ${versionKey}`);
           continue;
         }
-
-        const values = new Map(
-          evidence
-            .filter(
-              (record): record is Extract<StoredEvidence, { status: 'loaded' }> =>
-                record.status === 'loaded',
-            )
-            .map((record) => [record.namespace, record.value] as const),
-        );
-        const hasManifest = values.has(STORAGE_NAMESPACES.versionManifest);
-        const manifestRequired = version === manifestPointerVersion;
-        if (!hasManifest && manifestRequired) {
+        if (metadataEvaluation.kind === 'quarantine') {
+          const evidence = await this.readVersionEvidence(versionKey);
           await this.quarantineVersion(
             input.repositoryId,
             versionKey,
             evidence,
-            `Persisted M3 version ${versionKey} is missing its version manifest`,
+            metadataEvaluation.reason,
           );
           continue;
         }
 
-        try {
-          const manifestValue = hasManifest ? values.get(STORAGE_NAMESPACES.versionManifest) : null;
-          const promotesLegacyIntoManifestChain = !hasManifest && manifestPointerVersion !== null;
-          const latest = hasManifest
-            ? createLatestAnalysisRecord(
-                version,
-                parseVersionManifest(manifestValue).previousVersion,
-              )
-            : ({ version } satisfies LatestAnalysisRecord);
-          const validated = validatePersistedAnalysis({
-            repositoryId: input.repositoryId,
-            normalizedRootPath: input.normalizedRootPath,
-            versionKey,
-            latest,
-            aggregate: requiredValue(values, STORAGE_NAMESPACES.aggregate),
-            entities: requiredValue(values, STORAGE_NAMESPACES.entities),
-            domains: requiredValue(values, STORAGE_NAMESPACES.domains),
-            capabilities: requiredValue(values, STORAGE_NAMESPACES.capabilities),
-            knowledge: requiredValue(values, STORAGE_NAMESPACES.knowledge),
-            dependencyGraph: requiredValue(values, STORAGE_NAMESPACES.dependencyGraph),
-            dnaGraph: requiredValue(values, STORAGE_NAMESPACES.dnaGraph),
-            snapshot: requiredValue(values, STORAGE_NAMESPACES.snapshots),
-            manifest: manifestValue,
-            persistedVersions: validVersions,
-            previousSnapshotId:
-              (hasManifest || promotesLegacyIntoManifestChain) && version > 1
-                ? (snapshotIds.get(version - 1) ?? null)
-                : undefined,
-            normalizeRootPath: input.normalizeRootPath,
-          });
-          if (
-            !hasManifest &&
-            manifestPointerVersion !== null &&
-            version > 1 &&
-            !validVersions.has(version - 1)
-          ) {
-            await this.quarantineVersion(
-              input.repositoryId,
-              versionKey,
-              evidence,
-              `Legacy fallback ${versionKey} has no validated predecessor version ${version - 1}`,
-            );
-            continue;
-          }
-          selected = { ...validated, versionKey, latest, hasManifest };
-          validVersions.add(version);
-          snapshotIds.set(version, validated.snapshot.id);
-          snapshots.push(validated.snapshot);
-        } catch (error) {
-          await this.quarantineVersion(
-            input.repositoryId,
-            versionKey,
-            evidence,
-            errorMessage(error),
-          );
-        }
+        validVersions.add(version);
+        snapshotIds.set(version, metadataEvaluation.metadata.snapshot.id);
+        candidates.push(metadataEvaluation.metadata);
       }
 
-      snapshots.sort((left, right) => left.version - right.version);
+      let selected: ValidCandidate | null = null;
+      for (let index = candidates.length - 1; index >= 0; index--) {
+        const metadata = candidates[index];
+        if (!metadata) continue;
+        let evidence = await this.readVersionValues(metadata.versionKey);
+        let evaluation = this.evaluateCandidate({
+          repositoryId: input.repositoryId,
+          normalizedRootPath: input.normalizedRootPath,
+          normalizeRootPath: input.normalizeRootPath,
+          versionKey: metadata.versionKey,
+          version: metadata.version,
+          manifestPointerVersion,
+          validVersions,
+          snapshotIds,
+          evidence,
+        });
+        if (evaluation.kind !== 'valid') {
+          evidence = await this.readVersionEvidence(metadata.versionKey);
+          evaluation = this.evaluateCandidate({
+            repositoryId: input.repositoryId,
+            normalizedRootPath: input.normalizedRootPath,
+            normalizeRootPath: input.normalizeRootPath,
+            versionKey: metadata.versionKey,
+            version: metadata.version,
+            manifestPointerVersion,
+            validVersions,
+            snapshotIds,
+            evidence,
+          });
+        }
+        if (evaluation.kind === 'cleanup') {
+          await this.cleanupVersion(metadata.versionKey, evidence);
+          this.logger.warn(`Removed incomplete persisted version ${metadata.versionKey}`);
+        } else if (evaluation.kind === 'quarantine') {
+          await this.quarantineVersion(
+            input.repositoryId,
+            metadata.versionKey,
+            evidence,
+            evaluation.reason,
+          );
+        } else {
+          selected = evaluation.candidate;
+          break;
+        }
+        validVersions.delete(metadata.version);
+        snapshotIds.delete(metadata.version);
+        candidates.splice(index, 1);
+      }
+
+      const snapshots = candidates.map((candidate) => candidate.snapshot);
       const promoted = selected
         ? this.prepareSelectedPromotion(
             selected,
@@ -281,6 +297,228 @@ export class PersistedAnalysisRecoveryManager {
       evidence.push(await this.readRecord(namespace, versionKey));
     }
     return evidence;
+  }
+
+  private async readVersionMetadata(versionKey: string): Promise<StoredEvidence[]> {
+    return Promise.all([
+      this.readRecord(STORAGE_NAMESPACES.versionManifest, versionKey),
+      this.readRecord(STORAGE_NAMESPACES.snapshots, versionKey),
+    ]);
+  }
+
+  private async requiredVersionRecordsExist(versionKey: string): Promise<boolean> {
+    for (const namespace of VERSION_RECORD_NAMESPACES) {
+      const exists = await this.storage.exists(namespace, versionKey);
+      if (isErr(exists)) throw exists.error;
+      if (!exists.value) return false;
+    }
+    return true;
+  }
+
+  private async readVersionValues(versionKey: string): Promise<StoredEvidence[]> {
+    const values: StoredEvidence[] = [];
+    for (const namespace of VERSION_NAMESPACES) {
+      const loaded = await this.storage.load<unknown>(namespace, versionKey);
+      if (!isErr(loaded)) {
+        values.push({ namespace, key: versionKey, status: 'loaded', value: loaded.value });
+        continue;
+      }
+      const exists = await this.storage.exists(namespace, versionKey);
+      if (isErr(exists)) throw exists.error;
+      values.push(
+        exists.value
+          ? { namespace, key: versionKey, status: 'unreadable', error: loaded.error.message }
+          : { namespace, key: versionKey, status: 'missing' },
+      );
+    }
+    return values;
+  }
+
+  private evaluateMetadata(input: {
+    readonly repositoryId: string;
+    readonly normalizedRootPath: string;
+    readonly versionKey: string;
+    readonly version: number;
+    readonly manifestPointerVersion: number | null;
+    readonly validVersions: ReadonlySet<number>;
+    readonly snapshotIds: ReadonlyMap<number, string>;
+    readonly evidence: readonly StoredEvidence[];
+    readonly requiredRecordsExist: boolean;
+  }): MetadataEvaluation {
+    if (input.evidence.some((record) => record.status === 'unreadable')) {
+      return { kind: 'quarantine', reason: 'Unreadable recovery metadata' };
+    }
+    if (!input.requiredRecordsExist) return { kind: 'cleanup' };
+
+    const values = new Map(
+      input.evidence
+        .filter(
+          (record): record is Extract<StoredEvidence, { status: 'loaded' }> =>
+            record.status === 'loaded',
+        )
+        .map((record) => [record.namespace, record.value] as const),
+    );
+    if (!values.has(STORAGE_NAMESPACES.snapshots)) return { kind: 'cleanup' };
+    const hasManifest = values.has(STORAGE_NAMESPACES.versionManifest);
+    if (!hasManifest && input.version === input.manifestPointerVersion) {
+      return {
+        kind: 'quarantine',
+        reason: `Persisted M3 version ${input.versionKey} is missing its version manifest`,
+      };
+    }
+
+    try {
+      const snapshot = EvolutionSnapshotSchema.parse(values.get(STORAGE_NAMESPACES.snapshots));
+      assertRecoveryEqual(snapshot.version, input.version, 'Evolution snapshot version');
+      if (input.version === 1) {
+        assertRecoveryEqual(snapshot.parentSnapshotId, null, 'Evolution snapshot parent');
+      }
+
+      if (hasManifest) {
+        const manifest = parseVersionManifest(values.get(STORAGE_NAMESPACES.versionManifest));
+        assertRecoveryEqual(manifest.repositoryId, input.repositoryId, 'Manifest repository ID');
+        assertRecoveryEqual(
+          manifest.normalizedRootPath,
+          input.normalizedRootPath,
+          'Manifest root path',
+        );
+        assertRecoveryEqual(manifest.version, input.version, 'Manifest version');
+        assertRecoveryEqual(manifest.versionKey, input.versionKey, 'Manifest version key');
+        assertRecoveryEqual(manifest.aggregateId, input.repositoryId, 'Manifest aggregate ID');
+        assertRecoveryEqual(manifest.snapshotId, snapshot.id, 'Manifest snapshot ID');
+        assertRecoveryNamespaces(manifest.requiredNamespaces);
+        const expectedPreviousVersion = input.version === 1 ? null : input.version - 1;
+        assertRecoveryEqual(
+          manifest.previousVersion,
+          expectedPreviousVersion,
+          'Manifest version chain',
+        );
+        if (
+          manifest.previousVersion !== null &&
+          !input.validVersions.has(manifest.previousVersion)
+        ) {
+          throw new Error(
+            `Manifest version chain references missing version ${manifest.previousVersion}`,
+          );
+        }
+        if (input.version > 1) {
+          assertRecoveryEqual(
+            snapshot.parentSnapshotId,
+            input.snapshotIds.get(input.version - 1) ?? null,
+            'Evolution snapshot parent',
+          );
+        }
+      } else if (
+        input.manifestPointerVersion !== null &&
+        input.version > 1 &&
+        !input.validVersions.has(input.version - 1)
+      ) {
+        return {
+          kind: 'quarantine',
+          reason: `Legacy fallback ${input.versionKey} has no validated predecessor version ${input.version - 1}`,
+        };
+      }
+
+      return {
+        kind: 'valid',
+        metadata: {
+          versionKey: input.versionKey,
+          version: input.version,
+          snapshot,
+        },
+      };
+    } catch (error) {
+      return { kind: 'quarantine', reason: errorMessage(error) };
+    }
+  }
+
+  private evaluateCandidate(input: {
+    readonly repositoryId: string;
+    readonly normalizedRootPath: string;
+    readonly normalizeRootPath: (rootPath: string) => string;
+    readonly versionKey: string;
+    readonly version: number;
+    readonly manifestPointerVersion: number | null;
+    readonly validVersions: ReadonlySet<number>;
+    readonly snapshotIds: ReadonlyMap<number, string>;
+    readonly evidence: readonly StoredEvidence[];
+  }): CandidateEvaluation {
+    if (input.evidence.some((record) => record.status === 'unreadable')) {
+      return { kind: 'quarantine', reason: 'Unreadable record' };
+    }
+    if (
+      input.evidence.some(
+        (record) =>
+          record.namespace !== STORAGE_NAMESPACES.versionManifest && record.status === 'missing',
+      )
+    ) {
+      return { kind: 'cleanup' };
+    }
+
+    const values = new Map(
+      input.evidence
+        .filter(
+          (record): record is Extract<StoredEvidence, { status: 'loaded' }> =>
+            record.status === 'loaded',
+        )
+        .map((record) => [record.namespace, record.value] as const),
+    );
+    const hasManifest = values.has(STORAGE_NAMESPACES.versionManifest);
+    if (!hasManifest && input.version === input.manifestPointerVersion) {
+      return {
+        kind: 'quarantine',
+        reason: `Persisted M3 version ${input.versionKey} is missing its version manifest`,
+      };
+    }
+
+    try {
+      const manifestValue = hasManifest ? values.get(STORAGE_NAMESPACES.versionManifest) : null;
+      const promotesLegacyIntoManifestChain = !hasManifest && input.manifestPointerVersion !== null;
+      const latest = hasManifest
+        ? createLatestAnalysisRecord(
+            input.version,
+            parseVersionManifest(manifestValue).previousVersion,
+          )
+        : ({ version: input.version } satisfies LatestAnalysisRecord);
+      const validated = validatePersistedAnalysis({
+        repositoryId: input.repositoryId,
+        normalizedRootPath: input.normalizedRootPath,
+        versionKey: input.versionKey,
+        latest,
+        aggregate: requiredValue(values, STORAGE_NAMESPACES.aggregate),
+        entities: requiredValue(values, STORAGE_NAMESPACES.entities),
+        domains: requiredValue(values, STORAGE_NAMESPACES.domains),
+        capabilities: requiredValue(values, STORAGE_NAMESPACES.capabilities),
+        knowledge: requiredValue(values, STORAGE_NAMESPACES.knowledge),
+        dependencyGraph: requiredValue(values, STORAGE_NAMESPACES.dependencyGraph),
+        dnaGraph: requiredValue(values, STORAGE_NAMESPACES.dnaGraph),
+        snapshot: requiredValue(values, STORAGE_NAMESPACES.snapshots),
+        manifest: manifestValue,
+        persistedVersions: input.validVersions,
+        previousSnapshotId:
+          (hasManifest || promotesLegacyIntoManifestChain) && input.version > 1
+            ? (input.snapshotIds.get(input.version - 1) ?? null)
+            : undefined,
+        normalizeRootPath: input.normalizeRootPath,
+      });
+      if (
+        !hasManifest &&
+        input.manifestPointerVersion !== null &&
+        input.version > 1 &&
+        !input.validVersions.has(input.version - 1)
+      ) {
+        return {
+          kind: 'quarantine',
+          reason: `Legacy fallback ${input.versionKey} has no validated predecessor version ${input.version - 1}`,
+        };
+      }
+      return {
+        kind: 'valid',
+        candidate: { ...validated, versionKey: input.versionKey, latest, hasManifest },
+      };
+    } catch (error) {
+      return { kind: 'quarantine', reason: errorMessage(error) };
+    }
   }
 
   private async readRecord(namespace: string, key: string): Promise<StoredEvidence> {
@@ -583,6 +821,21 @@ function isInspectionStorage(storage: IStoragePort): storage is IStorageInspecti
 function requiredValue(values: ReadonlyMap<string, unknown>, namespace: string): unknown {
   if (!values.has(namespace)) throw new Error(`Missing required persisted record ${namespace}`);
   return values.get(namespace);
+}
+
+function assertRecoveryNamespaces(namespaces: readonly string[]): void {
+  if (
+    namespaces.length !== VERSION_RECORD_NAMESPACES.length ||
+    namespaces.some((namespace, index) => namespace !== VERSION_RECORD_NAMESPACES[index])
+  ) {
+    throw new Error('Version manifest contains an invalid required namespace list');
+  }
+}
+
+function assertRecoveryEqual<T>(actual: T, expected: T, label: string): void {
+  if (actual !== expected) {
+    throw new Error(`${label} mismatch: expected ${String(expected)}, received ${String(actual)}`);
+  }
 }
 
 function latestRecordsEqual(

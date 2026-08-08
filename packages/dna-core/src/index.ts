@@ -14,6 +14,20 @@ export type {
 export { PipelineStage, calculateOverallProgress, STAGE_WEIGHTS } from './orchestrator/pipeline.js';
 export type { PipelineProgress } from './orchestrator/pipeline.js';
 
+// Performance instrumentation
+export {
+  AnalysisPerformanceStages,
+  AnalysisPerformanceTracker,
+} from './performance/analysis-performance.js';
+export type {
+  AnalysisMemoryUsage,
+  AnalysisPerformanceMeasurement,
+  AnalysisPerformanceRecorder,
+  AnalysisPerformanceReport,
+  AnalysisPerformanceStage,
+  AnalysisPerformanceTrackerOptions,
+} from './performance/analysis-performance.js';
+
 // Public service implementation
 export { ProjectDNAService } from './service/project-dna-service.js';
 export type { ProjectDNAServiceDependencies } from './service/project-dna-service.js';

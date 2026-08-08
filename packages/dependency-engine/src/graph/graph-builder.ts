@@ -58,7 +58,7 @@ export class GraphBuilder {
     const graph = new RepositoryGraph();
     const normalizedFiles = new Map<string, FileDNA>();
 
-    for (const file of [...files].sort((left, right) => left.path.localeCompare(right.path))) {
+    for (const file of filesInPathOrder(files)) {
       if (signal?.aborted) return Err(new Error('Dependency analysis cancelled'));
       const normalizedPath = normalizeFilePath(file.path, rootPath);
       normalizedFiles.set(normalizedPath, file);
@@ -132,6 +132,15 @@ export class GraphBuilder {
 
     return Ok(graph);
   }
+}
+
+function filesInPathOrder(files: FileDNA[]): FileDNA[] {
+  for (let index = 1; index < files.length; index++) {
+    if (files[index - 1]!.path.localeCompare(files[index]!.path) > 0) {
+      return [...files].sort((left, right) => left.path.localeCompare(right.path));
+    }
+  }
+  return files;
 }
 
 function normalizedPathSet(files: readonly FileDNA[], rootPath: string): Set<string> {

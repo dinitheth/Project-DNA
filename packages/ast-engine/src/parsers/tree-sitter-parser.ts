@@ -5,7 +5,7 @@
 
 import type { IParser, RawParseTree } from './parser.interface.js';
 import Parser from 'web-tree-sitter';
-import { Err, Ok, type Result } from '@project-dna/shared';
+import { Err, Ok, type Result } from '@project-dna/shared/src/result/result.js';
 
 const WASM_BY_LANGUAGE: Readonly<Record<string, string>> = {
   csharp: 'tree-sitter-wasms/out/tree-sitter-c_sharp.wasm',

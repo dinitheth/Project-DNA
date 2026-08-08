@@ -25,6 +25,8 @@ import { LanguageDetector } from './detectors/language-detector.js';
 import { FileWalker, isIgnoredPath } from './file-walker.js';
 import { ConfigReader, type JsonRecord } from './readers/config-reader.js';
 
+const MANIFEST_READ_BATCH_SIZE = 32;
+
 export interface RepositoryScannerDependencies {
   readonly logger: Logger;
   readonly fileWalker?: FileWalker;
@@ -183,10 +185,17 @@ export class RepositoryScanner implements IRepositoryScanner {
   ): Promise<RepositoryManifestEntry[]> {
     const files: RepositoryManifestEntry[] = [];
 
-    for (const filePath of filePaths) {
+    for (let offset = 0; offset < filePaths.length; offset += MANIFEST_READ_BATCH_SIZE) {
       if (signal?.aborted) throw new Error('Repository scan cancelled');
-      const entry = await this.readManifestEntry(rootPath, filePath, signal);
-      if (entry) files.push(entry);
+      const batch = filePaths.slice(offset, offset + MANIFEST_READ_BATCH_SIZE);
+      const inspected = await Promise.allSettled(
+        batch.map((filePath) => this.inspectManifestEntry(rootPath, filePath, signal)),
+      );
+      for (const result of inspected) {
+        if (result.status === 'rejected') throw result.reason;
+        if (result.value.warning) this.logger.warn(result.value.warning);
+        if (result.value.entry) files.push(result.value.entry);
+      }
     }
 
     return files.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
@@ -197,49 +206,63 @@ export class RepositoryScanner implements IRepositoryScanner {
     filePath: string,
     signal?: AbortSignal,
   ): Promise<RepositoryManifestEntry | null> {
+    const result = await this.inspectManifestEntry(rootPath, filePath, signal);
+    if (result.warning) this.logger.warn(result.warning);
+    return result.entry;
+  }
+
+  private async inspectManifestEntry(
+    rootPath: string,
+    filePath: string,
+    signal?: AbortSignal,
+  ): Promise<ManifestInspection> {
     try {
       const fileStats = await lstat(filePath);
-      if (!fileStats.isFile()) return null;
+      if (!fileStats.isFile()) return { entry: null, warning: null };
       const language = this.languageDetector.detectFile(filePath);
       const analyzable = language !== null && fileStats.size <= FILE_SIZE_LIMIT_BYTES;
       let linesOfCode = 0;
+      let warning: string | null = null;
       if (analyzable) {
         try {
           if (signal?.aborted) throw new Error('Repository scan cancelled');
           linesOfCode = countContentLines(await readFile(filePath, 'utf8'));
         } catch (error) {
           if (signal?.aborted) throw error;
-          this.logger.warn(`Could not count lines for ${filePath}: ${String(error)}`);
+          warning = `Could not count lines for ${filePath}: ${String(error)}`;
         }
       }
       return {
-        path: filePath,
-        relativePath: normalizePath(path.relative(rootPath, filePath)),
-        size: fileStats.size,
-        modifiedAtMs: fileStats.mtimeMs,
-        ...(language ? { language: language.id } : {}),
-        analyzable,
-        linesOfCode,
+        entry: {
+          path: filePath,
+          relativePath: normalizePath(path.relative(rootPath, filePath)),
+          size: fileStats.size,
+          modifiedAtMs: fileStats.mtimeMs,
+          ...(language ? { language: language.id } : {}),
+          analyzable,
+          linesOfCode,
+        },
+        warning,
       };
     } catch (error) {
-      if (isMissingPathError(error)) return null;
+      if (isMissingPathError(error)) return { entry: null, warning: null };
       throw error;
     }
   }
 }
 
 function toScannedFiles(manifest: readonly RepositoryManifestEntry[]): ScannedFile[] {
-  return manifest
-    .filter(
-      (entry): entry is RepositoryManifestEntry & { language: string } =>
-        entry.analyzable && entry.language !== undefined,
-    )
-    .map((entry) => ({
+  const files: ScannedFile[] = [];
+  for (const entry of manifest) {
+    if (!entry.analyzable || entry.language === undefined) continue;
+    files.push({
       path: entry.path,
       relativePath: entry.relativePath,
       language: entry.language,
       size: entry.size,
-    }));
+    });
+  }
+  return files;
 }
 
 function countManifestLines(manifest: readonly RepositoryManifestEntry[]): number {
@@ -247,7 +270,21 @@ function countManifestLines(manifest: readonly RepositoryManifestEntry[]): numbe
 }
 
 function countContentLines(content: string): number {
-  return content.split(/\r?\n/u).filter((line) => line.trim().length > 0).length;
+  let count = 0;
+  let start = 0;
+  while (start <= content.length) {
+    const end = content.indexOf('\n', start);
+    const lineEnd = end === -1 ? content.length : end;
+    if (content.slice(start, lineEnd).trim().length > 0) count++;
+    if (end === -1) break;
+    start = end + 1;
+  }
+  return count;
+}
+
+interface ManifestInspection {
+  readonly entry: RepositoryManifestEntry | null;
+  readonly warning: string | null;
 }
 
 function updateRepository(

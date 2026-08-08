@@ -91,12 +91,13 @@
     "typescript": "^5.0.0"
   },
   "scripts": {
+    "benchmark": "node esbuild.mjs --workers-only && vitest bench --run",
     "build:extension": "node esbuild.mjs",
     "build:webview": "tsc -p webview/tsconfig.json --noEmit && cd webview && vite build",
     "build": "npm run build:extension && npm run build:webview",
     "watch:extension": "node esbuild.mjs --watch",
     "watch:webview": "cd webview && vite build --watch",
-    "test": "vitest run",
+    "test": "node esbuild.mjs --workers-only && vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit && tsc -p webview/tsconfig.json --noEmit",
     "lint": "eslint src/ webview/src/ --max-warnings=0",

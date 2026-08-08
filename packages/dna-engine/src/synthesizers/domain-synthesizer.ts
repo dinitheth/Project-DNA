@@ -21,6 +21,7 @@ export class DomainSynthesizer {
     const domainClusters = this.clusterByTopLevelDirectory(files);
     const domains: BusinessDomain[] = [];
     const entityIndex = new Map(entities.map((e) => [e.path, e]));
+    const fileIndex = new Map(files.map((file) => [file.path, file] as const));
 
     for (const [dirName, filePaths] of domainClusters) {
       // Skip non-domain directories
@@ -34,9 +35,9 @@ export class DomainSynthesizer {
 
       const languages = new Set<string>();
       let linesOfCode = 0;
-      const domainFilePaths = new Set(filePaths);
-      for (const file of files) {
-        if (!domainFilePaths.has(file.path)) continue;
+      for (const filePath of filePaths) {
+        const file = fileIndex.get(filePath);
+        if (!file) continue;
         if (file.language) languages.add(file.language);
         linesOfCode += file.linesOfCode;
       }
@@ -117,7 +118,9 @@ export class DomainSynthesizer {
 
   private computeDomainDependencies(domains: BusinessDomain[], entities: DNAObject[]): void {
     const entityDomainMap = new Map<string, string>();
+    const entityIndex = new Map<string, DNAObject>();
     for (const entity of entities) {
+      entityIndex.set(entity.id, entity);
       if (entity.belongsToDomain) {
         entityDomainMap.set(entity.id, entity.belongsToDomain);
       }
@@ -128,7 +131,7 @@ export class DomainSynthesizer {
       const dependentDomains = new Set<string>();
 
       for (const entityId of domain.entityIds) {
-        const entity = entities.find((e) => e.id === entityId);
+        const entity = entityIndex.get(entityId);
         if (!entity) continue;
 
         for (const depId of entity.dependsOn) {

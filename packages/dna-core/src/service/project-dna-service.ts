@@ -48,6 +48,11 @@ import type { RepositoryProfile } from '../models/repository-profile.js';
 import type { RepositoryStory } from '../models/repository-story.js';
 import type { RiskAssessment } from '../models/risk-assessment.js';
 import {
+  AnalysisPerformanceStages,
+  measureAnalysisPerformance,
+  type AnalysisPerformanceRecorder,
+} from '../performance/analysis-performance.js';
+import {
   STORAGE_NAMESPACES,
   VERSION_RECORD_NAMESPACES,
   createVersionKey,
@@ -68,6 +73,7 @@ export interface ProjectDNAServiceDependencies {
   readonly logger: Logger;
   readonly storage?: IStoragePort;
   readonly analysisConfig?: Partial<AnalysisConfig>;
+  readonly performanceRecorder?: AnalysisPerformanceRecorder;
 }
 
 type LoadedCollections = PersistedCollections;
@@ -218,6 +224,14 @@ export class ProjectDNAService implements IProjectDNAService {
   }
 
   async restore(rootPath: string): Promise<Result<ProjectDNA | null>> {
+    return measureAnalysisPerformance(
+      this.dependencies.performanceRecorder,
+      AnalysisPerformanceStages.StartupRecovery,
+      () => this.restorePersistedAnalysis(rootPath),
+    );
+  }
+
+  private async restorePersistedAnalysis(rootPath: string): Promise<Result<ProjectDNA | null>> {
     const storage = this.dependencies.storage;
     if (!storage) return Ok(null);
 
@@ -280,7 +294,13 @@ export class ProjectDNAService implements IProjectDNAService {
     }
     this.activeAnalysisRoot = normalizedRoot;
     const operation = Promise.resolve()
-      .then(() => this.runAnalysis(normalizedRoot, forceFull, signal))
+      .then(() =>
+        measureAnalysisPerformance(
+          this.dependencies.performanceRecorder,
+          AnalysisPerformanceStages.Total,
+          () => this.runAnalysis(normalizedRoot, forceFull, signal),
+        ),
+      )
       .then((result) => {
         if (isErr(result) && !(result.error instanceof SupersededAnalysisError)) {
           this.emitProgress(PipelineStage.Failed, result.error.message, 0);
@@ -345,19 +365,23 @@ export class ProjectDNAService implements IProjectDNAService {
         knowledgeNodes: analysis.value.knowledge.nodes,
         risks: analysis.value.knowledge.risks,
       };
-      const synthesis =
-        previousBaseline && this.dependencies.dnaEngine.synthesizeIncremental
-          ? await this.dependencies.dnaEngine.synthesizeIncremental(
-              {
-                input: synthesisInput,
-                previous: previousBaseline.synthesis,
-                dirtyEntityIds: (analysis.value.dirtyPaths ?? []).map(
-                  (filePath) => `file:${filePath}`,
-                ),
-              },
-              signal,
-            )
-          : await this.dependencies.dnaEngine.synthesize(synthesisInput, signal);
+      const synthesis = await measureAnalysisPerformance(
+        this.dependencies.performanceRecorder,
+        AnalysisPerformanceStages.DnaSynthesis,
+        () =>
+          previousBaseline && this.dependencies.dnaEngine.synthesizeIncremental
+            ? this.dependencies.dnaEngine.synthesizeIncremental(
+                {
+                  input: synthesisInput,
+                  previous: previousBaseline.synthesis,
+                  dirtyEntityIds: (analysis.value.dirtyPaths ?? []).map(
+                    (filePath) => `file:${filePath}`,
+                  ),
+                },
+                signal,
+              )
+            : this.dependencies.dnaEngine.synthesize(synthesisInput, signal),
+      );
       if (isErr(synthesis)) return this.stageError('SynthesizingDNA', synthesis.error);
 
       this.dependencies.eventBus.emit(DNAEventNames.DNAGraphBuilt, {
@@ -378,16 +402,21 @@ export class ProjectDNAService implements IProjectDNAService {
         0,
       );
       this.dependencies.eventBus.emit(DNAEventNames.IntelligenceStarted, { timestamp: Date.now() });
-      const intelligence = await this.dependencies.intelligenceEngine.computeIntelligence(
-        {
-          entities: synthesis.value.entities,
-          dnaGraph: synthesis.value.dnaGraph,
-          profile: synthesis.value.profile,
-          architecture: analysis.value.architecture,
-          knowledgeNodes: analysis.value.knowledge.nodes,
-          risks: analysis.value.knowledge.risks,
-        },
-        signal,
+      const intelligence = await measureAnalysisPerformance(
+        this.dependencies.performanceRecorder,
+        AnalysisPerformanceStages.Intelligence,
+        () =>
+          this.dependencies.intelligenceEngine.computeIntelligence(
+            {
+              entities: synthesis.value.entities,
+              dnaGraph: synthesis.value.dnaGraph,
+              profile: synthesis.value.profile,
+              architecture: analysis.value.architecture,
+              knowledgeNodes: analysis.value.knowledge.nodes,
+              risks: analysis.value.knowledge.risks,
+            },
+            signal,
+          ),
       );
       if (isErr(intelligence)) return this.stageError('ComputingIntelligence', intelligence.error);
 
@@ -454,7 +483,11 @@ export class ProjectDNAService implements IProjectDNAService {
       const previousHistory = await this.dependencies.evolutionEngine.getHistory();
       if (isErr(previousHistory))
         return this.stageError('ComputingEvolution', previousHistory.error);
-      const snapshot = await this.dependencies.evolutionEngine.createSnapshot(dna, signal);
+      const snapshot = await measureAnalysisPerformance(
+        this.dependencies.performanceRecorder,
+        AnalysisPerformanceStages.EvolutionSnapshot,
+        () => this.dependencies.evolutionEngine.createSnapshot(dna, signal),
+      );
       if (isErr(snapshot)) return this.stageError('ComputingEvolution', snapshot.error);
       if (this.changeGeneration !== operationGeneration || this.disposed) {
         await this.dependencies.evolutionEngine.restoreSnapshots(previousHistory.value);
@@ -470,13 +503,18 @@ export class ProjectDNAService implements IProjectDNAService {
         dnaGraph: synthesis.value.dnaGraph,
       };
       const previousLatestRecord = this.persistedLatestRecord;
-      const persisted = await this.persistAnalysis(
-        dna,
-        collections,
-        snapshot.value,
-        operationGeneration,
-        previousCommitted?.version ?? null,
-        previousLatestRecord,
+      const persisted = await measureAnalysisPerformance(
+        this.dependencies.performanceRecorder,
+        AnalysisPerformanceStages.Persistence,
+        () =>
+          this.persistAnalysis(
+            dna,
+            collections,
+            snapshot.value,
+            operationGeneration,
+            previousCommitted?.version ?? null,
+            previousLatestRecord,
+          ),
       );
       if (isErr(persisted)) {
         await this.dependencies.evolutionEngine.restoreSnapshots(previousHistory.value);

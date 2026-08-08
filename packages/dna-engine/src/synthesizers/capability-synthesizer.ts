@@ -143,7 +143,7 @@ export class CapabilitySynthesizer {
   synthesize(repository: RepositoryDNA, files: FileDNA[]): Capability[] {
     this.logger.info('Detecting software capabilities...');
     const capabilities: Capability[] = [];
-    const orderedFiles = [...files].sort((left, right) => left.path.localeCompare(right.path));
+    const orderedFiles = filesInPathOrder(files);
     const filePaths = new Set(orderedFiles.map((file) => file.path));
 
     for (const rule of CAPABILITY_RULES) {
@@ -235,4 +235,13 @@ export class CapabilitySynthesizer {
       return true;
     });
   }
+}
+
+function filesInPathOrder(files: FileDNA[]): FileDNA[] {
+  for (let index = 1; index < files.length; index++) {
+    if (files[index - 1]!.path.localeCompare(files[index]!.path) > 0) {
+      return [...files].sort((left, right) => left.path.localeCompare(right.path));
+    }
+  }
+  return files;
 }

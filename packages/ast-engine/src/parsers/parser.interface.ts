@@ -1,7 +1,7 @@
 /** Internal parser strategy contracts. */
 
 import type { SourceFile } from 'ts-morph';
-import type { Result } from '@project-dna/shared';
+import type { Result } from '@project-dna/shared/src/result/result.js';
 import type Parser from 'web-tree-sitter';
 
 export interface TypeScriptParseTree {

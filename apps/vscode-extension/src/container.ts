@@ -9,6 +9,7 @@ import {
 import {
   DNAOrchestrator,
   ProjectDNAService,
+  type AnalysisPerformanceRecorder,
   type IArchitectureEngine,
   type IAstEngine,
   type IDNAEngine,
@@ -21,7 +22,7 @@ import {
   type IStoragePort,
 } from '@project-dna/dna-core';
 import { RepositoryScanner } from '@project-dna/repository-scanner';
-import { AstEngine } from '@project-dna/ast-engine';
+import { AstEngine, type AstEngineOptions } from '@project-dna/ast-engine';
 import { DependencyEngine } from '@project-dna/dependency-engine';
 import { ArchitectureEngine } from '@project-dna/architecture-engine';
 import { KnowledgeEngine } from '@project-dna/knowledge-engine';
@@ -33,6 +34,8 @@ import { SqliteStorage } from '@project-dna/storage';
 export interface ContainerOptions {
   readonly logger?: Logger;
   readonly storagePath?: string;
+  readonly performanceRecorder?: AnalysisPerformanceRecorder;
+  readonly astEngineOptions?: AstEngineOptions;
 }
 
 export function createContainer(options: ContainerOptions | Logger = {}): Container {
@@ -52,7 +55,7 @@ export function createContainer(options: ContainerOptions | Logger = {}): Contai
   );
   container.register(
     TOKENS.AstEngine,
-    (current) => new AstEngine(current.resolve<Logger>(TOKENS.Logger)),
+    (current) => new AstEngine(current.resolve<Logger>(TOKENS.Logger), resolved.astEngineOptions),
   );
   container.register(
     TOKENS.DependencyEngine,
@@ -89,6 +92,7 @@ export function createContainer(options: ContainerOptions | Logger = {}): Contai
         knowledgeEngine: current.resolve<IKnowledgeEngine>(TOKENS.KnowledgeEngine),
         eventBus: current.resolve<EventBus<DNAEventMap>>(TOKENS.EventBus),
         logger: current.resolve<Logger>(TOKENS.Logger),
+        performanceRecorder: resolved.performanceRecorder,
       }),
   );
   container.register(
@@ -102,6 +106,7 @@ export function createContainer(options: ContainerOptions | Logger = {}): Contai
         eventBus: current.resolve<EventBus<DNAEventMap>>(TOKENS.EventBus),
         logger: current.resolve<Logger>(TOKENS.Logger),
         storage: current.resolve<IStoragePort>(TOKENS.StoragePort),
+        performanceRecorder: resolved.performanceRecorder,
       }),
   );
 

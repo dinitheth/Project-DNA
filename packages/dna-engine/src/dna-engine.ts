@@ -45,9 +45,7 @@ export class DNAEngine implements IDNAEngine {
       if (signal?.aborted) return Err(new Error('DNA synthesis cancelled'));
       this.logger.info('Starting DNA synthesis...');
       const startTime = Date.now();
-      const orderedFiles = [...input.files].sort((left, right) =>
-        left.path.localeCompare(right.path),
-      );
+      const orderedFiles = filesInPathOrder(input.files);
 
       // Step 1: Synthesize raw files into enriched entities
       const entities = this.entitySynthesizer.synthesize(
@@ -108,9 +106,7 @@ export class DNAEngine implements IDNAEngine {
       const previousEntities = new Map(
         request.previous.entities.map((entity) => [entity.id, entity] as const),
       );
-      const orderedFiles = [...request.input.files].sort((left, right) =>
-        left.path.localeCompare(right.path),
-      );
+      const orderedFiles = filesInPathOrder(request.input.files);
       const entities: DNAObject[] = [];
 
       for (const file of orderedFiles) {
@@ -165,4 +161,13 @@ export class DNAEngine implements IDNAEngine {
       return Err(resolvedError);
     }
   }
+}
+
+function filesInPathOrder<T extends { readonly path: string }>(files: T[]): T[] {
+  for (let index = 1; index < files.length; index++) {
+    if (files[index - 1]!.path.localeCompare(files[index]!.path) > 0) {
+      return [...files].sort((left, right) => left.path.localeCompare(right.path));
+    }
+  }
+  return files;
 }

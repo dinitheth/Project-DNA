@@ -6,7 +6,7 @@
 export * from './ast-engine.js';
 export * from './parsers/parser.interface.js';
 export * from './parsers/tree-sitter-parser.js';
-export * from './parsers/typescript-parser.js';
+export { TypeScriptParser } from './parsers/typescript-parser.js';
 export * from './extractors/extractor.interface.js';
 export * from './extractors/class-extractor.js';
 export * from './extractors/function-extractor.js';

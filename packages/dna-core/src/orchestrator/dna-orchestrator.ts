@@ -30,6 +30,12 @@ import type { FileDNA } from '../models/file-dna.js';
 import type { AnalysisCoverage } from '../models/project-dna.js';
 import type { RepositoryDNA } from '../models/repository-dna.js';
 import type { RepositoryGraph } from '../models/repository-graph.js';
+import {
+  AnalysisPerformanceStages,
+  measureAnalysisPerformance,
+  measureAnalysisPerformanceSync,
+  type AnalysisPerformanceRecorder,
+} from '../performance/analysis-performance.js';
 import { PipelineStage, calculateOverallProgress } from './pipeline.js';
 
 /** Complete core-analysis result used by synthesis and incremental baselines. */
@@ -63,6 +69,7 @@ export interface OrchestratorDependencies {
   knowledgeEngine: IKnowledgeEngine;
   eventBus: EventBus<DNAEventMap>;
   logger: Logger;
+  performanceRecorder?: AnalysisPerformanceRecorder;
 }
 
 interface ParseContext {
@@ -91,6 +98,7 @@ export class DNAOrchestrator {
   private readonly knowledgeEngine: IKnowledgeEngine;
   private readonly eventBus: EventBus<DNAEventMap>;
   private readonly logger: Logger;
+  private readonly performanceRecorder?: AnalysisPerformanceRecorder;
 
   constructor(dependencies: OrchestratorDependencies) {
     this.scanner = dependencies.scanner;
@@ -100,6 +108,7 @@ export class DNAOrchestrator {
     this.knowledgeEngine = dependencies.knowledgeEngine;
     this.eventBus = dependencies.eventBus;
     this.logger = dependencies.logger;
+    this.performanceRecorder = dependencies.performanceRecorder;
   }
 
   /** Run the complete analysis pipeline and establish a new incremental baseline. */
@@ -129,21 +138,24 @@ export class DNAOrchestrator {
     const cancelled = this.checkCancelled(signal);
     if (cancelled) return cancelled as Result<AnalysisResult>;
 
-    const scanResult = await this.scanRepository(
-      rootPath,
-      changedPaths,
-      previous,
-      startTime,
-      signal,
+    const scanResult = await measureAnalysisPerformance(
+      this.performanceRecorder,
+      AnalysisPerformanceStages.RepositoryScan,
+      () => this.scanRepository(rootPath, changedPaths, previous, startTime, signal),
     );
     if (isErr(scanResult)) return scanResult;
 
-    const parsed = await this.parseRepositoryFiles(
-      rootPath,
-      scanResult.value,
-      { previous, changedPaths },
-      startTime,
-      signal,
+    const parsed = await measureAnalysisPerformance(
+      this.performanceRecorder,
+      AnalysisPerformanceStages.AstAnalysis,
+      () =>
+        this.parseRepositoryFiles(
+          rootPath,
+          scanResult.value,
+          { previous, changedPaths },
+          startTime,
+          signal,
+        ),
     );
     if (isErr(parsed)) return parsed;
 
@@ -272,6 +284,7 @@ export class DNAOrchestrator {
     let processed = 0;
     for await (const parseResult of this.astEngine.parseFiles(inputs, signal)) {
       const input = inputs[processed];
+      if (input) inputs[processed] = releaseInputContent(input);
       processed++;
       if (isErr(parseResult)) {
         if (input?.relativePath) failedPaths.add(normalizeRelativePath(input.relativePath));
@@ -289,6 +302,7 @@ export class DNAOrchestrator {
     for (const input of inputs.slice(processed)) {
       if (input.relativePath) failedPaths.add(normalizeRelativePath(input.relativePath));
     }
+    inputs.length = 0;
 
     const orderedFiles = files
       .filter((file) => currentPaths.has(normalizeRelativePath(file.path)))
@@ -340,23 +354,31 @@ export class DNAOrchestrator {
     if (cancelled) return cancelled as Result<CoreStages>;
     this.emitProgress(PipelineStage.ResolvingDependencies, 'Building dependency graph...', 0);
 
-    const graphResult =
-      previous && this.dependencyEngine.buildDependencyGraphIncremental
-        ? await this.dependencyEngine.buildDependencyGraphIncremental(
-            {
-              files,
-              previousFiles: previous.files,
-              previousGraph: previous.graph,
-              rootPath,
-              changedPaths,
-            },
-            signal,
-          )
-        : await this.dependencyEngine.buildDependencyGraph(files, rootPath, signal);
+    const graphResult = await measureAnalysisPerformance(
+      this.performanceRecorder,
+      AnalysisPerformanceStages.DependencyGraph,
+      () =>
+        previous && this.dependencyEngine.buildDependencyGraphIncremental
+          ? this.dependencyEngine.buildDependencyGraphIncremental(
+              {
+                files,
+                previousFiles: previous.files,
+                previousGraph: previous.graph,
+                rootPath,
+                changedPaths,
+              },
+              signal,
+            )
+          : this.dependencyEngine.buildDependencyGraph(files, rootPath, signal),
+    );
     if (isErr(graphResult))
       return this.handleStageError('ResolvingDependencies', graphResult.error);
     const graph = graphResult.value;
-    const circularDependencies = this.dependencyEngine.detectCircularDependencies(graph);
+    const circularDependencies = measureAnalysisPerformanceSync(
+      this.performanceRecorder,
+      AnalysisPerformanceStages.CircularDependencies,
+      () => this.dependencyEngine.detectCircularDependencies(graph),
+    );
     this.eventBus.emit(DNAEventNames.DependenciesResolved, {
       nodeCount: graph.nodeCount,
       edgeCount: graph.edgeCount,
@@ -367,10 +389,10 @@ export class DNAOrchestrator {
     cancelled = this.checkCancelled(signal);
     if (cancelled) return cancelled as Result<CoreStages>;
     this.emitProgress(PipelineStage.InferringArchitecture, 'Inferring architecture...', 0);
-    const architectureResult = await this.architectureEngine.inferArchitecture(
-      graph,
-      repository,
-      signal,
+    const architectureResult = await measureAnalysisPerformance(
+      this.performanceRecorder,
+      AnalysisPerformanceStages.ArchitectureInference,
+      () => this.architectureEngine.inferArchitecture(graph, repository, signal),
     );
     if (isErr(architectureResult))
       return this.handleStageError('InferringArchitecture', architectureResult.error);
@@ -381,37 +403,32 @@ export class DNAOrchestrator {
       durationMs: Date.now() - startTime,
     });
 
-    const dirtyPaths = calculateDirtyPaths(
-      rootPath,
-      changedPaths,
-      files,
-      previous,
-      graph,
-      architecture,
+    const dirtyPaths = measureAnalysisPerformanceSync(
+      this.performanceRecorder,
+      AnalysisPerformanceStages.DirtySetPlanning,
+      () => calculateDirtyPaths(rootPath, changedPaths, files, previous, graph, architecture),
     );
     cancelled = this.checkCancelled(signal);
     if (cancelled) return cancelled as Result<CoreStages>;
     this.emitProgress(PipelineStage.GeneratingKnowledge, 'Generating knowledge...', 0);
-    const knowledgeResult =
-      previous && this.knowledgeEngine.generateKnowledgeIncremental
-        ? await this.knowledgeEngine.generateKnowledgeIncremental(
-            {
-              repository,
-              files,
-              graph,
-              architecture,
-              previous: previous.knowledge,
-              dirtyPaths,
-            },
-            signal,
-          )
-        : await this.knowledgeEngine.generateKnowledge(
-            repository,
-            files,
-            graph,
-            architecture,
-            signal,
-          );
+    const knowledgeResult = await measureAnalysisPerformance(
+      this.performanceRecorder,
+      AnalysisPerformanceStages.KnowledgeGeneration,
+      () =>
+        previous && this.knowledgeEngine.generateKnowledgeIncremental
+          ? this.knowledgeEngine.generateKnowledgeIncremental(
+              {
+                repository,
+                files,
+                graph,
+                architecture,
+                previous: previous.knowledge,
+                dirtyPaths,
+              },
+              signal,
+            )
+          : this.knowledgeEngine.generateKnowledge(repository, files, graph, architecture, signal),
+    );
     if (isErr(knowledgeResult))
       return this.handleStageError('GeneratingKnowledge', knowledgeResult.error);
     this.eventBus.emit(DNAEventNames.KnowledgeGenerated, {
@@ -444,6 +461,10 @@ export class DNAOrchestrator {
     this.eventBus.emit(DNAEventNames.AnalysisError, { stage, error: resolvedError });
     return Err(resolvedError);
   }
+}
+
+function releaseInputContent(input: FileInput): FileInput {
+  return input.content.length === 0 ? input : { ...input, content: '' };
 }
 
 function manifestIndex(scan?: RepositoryScanResult): Map<string, RepositoryManifestEntry> {

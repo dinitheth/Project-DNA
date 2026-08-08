@@ -2,8 +2,10 @@ import { mkdir, mkdtemp, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  AnalysisPerformanceStages,
+  AnalysisPerformanceTracker,
   PipelineStage,
   ProjectDNASchema,
   createProjectDnaSnapshotHash,
@@ -1301,7 +1303,8 @@ describe('ProjectDNAService integration', () => {
     await recoveredService.dispose();
   }, 30_000);
 
-  it('recovers a long history while returning only snapshots plus the selected aggregate', async () => {
+  it('recovers a long history without deserializing historical heavy namespaces', async () => {
+    const versionCount = 25;
     const root = await fixtureRepository();
     const storageDirectory = await mkdtemp(path.join(tmpdir(), 'project-dna-history-'));
     roots.push(storageDirectory);
@@ -1310,7 +1313,7 @@ describe('ProjectDNAService integration', () => {
     const service = container.resolve<IProjectDNAService>(TOKENS.ProjectDNAService);
     const first = await service.analyze(root);
     if (isErr(first)) throw first.error;
-    for (let version = 2; version <= 6; version++) {
+    for (let version = 2; version <= versionCount; version++) {
       await writeFile(
         path.join(root, 'src/orphan-file.ts'),
         `export const orphan = ${version};`,
@@ -1321,18 +1324,46 @@ describe('ProjectDNAService integration', () => {
     }
     await service.dispose();
 
-    const restoredContainer = createContainer({ logger: createSilentLogger(), storagePath });
+    const performance = new AnalysisPerformanceTracker();
+    const restoredContainer = createContainer({
+      logger: createSilentLogger(),
+      storagePath,
+      performanceRecorder: performance,
+    });
+    const storage = restoredContainer.resolve<IStoragePort>(TOKENS.StoragePort);
+    const load = vi.spyOn(storage, 'load');
     const restoredService = restoredContainer.resolve<IProjectDNAService>(TOKENS.ProjectDNAService);
     const restored = await restoredService.restore(root);
     if (isErr(restored)) throw restored.error;
-    expect(restored.value?.version).toBe(6);
+    expect(restored.value?.version).toBe(versionCount);
     const history = await restoredService.getHistory();
     if (isErr(history)) throw history.error;
-    expect(history.value.map((snapshot) => snapshot.version).sort((a, b) => a - b)).toEqual([
-      1, 2, 3, 4, 5, 6,
-    ]);
+    expect(history.value.map((snapshot) => snapshot.version).sort((a, b) => a - b)).toEqual(
+      Array.from({ length: versionCount }, (_, index) => index + 1),
+    );
+    const loadCounts = load.mock.calls.reduce<Record<string, number>>((counts, [namespace]) => {
+      counts[namespace] = (counts[namespace] ?? 0) + 1;
+      return counts;
+    }, {});
+    expect(loadCounts).toEqual({
+      'project-dna:aggregate': 1,
+      'project-dna:entities': 1,
+      'project-dna:domains': 1,
+      'project-dna:capabilities': 1,
+      'project-dna:knowledge': 1,
+      'project-dna:dependency-graph': 1,
+      'project-dna:dna-graph': 1,
+      'project-dna:snapshots': 1,
+      'project-dna:version-manifest': 1,
+    });
+    const recovery = performance
+      .createReport()
+      .measurements.find(
+        (measurement) => measurement.stage === AnalysisPerformanceStages.StartupRecovery,
+      );
+    expect(recovery?.durationMs).toBeLessThan(5_000);
     await restoredService.dispose();
-  }, 45_000);
+  }, 90_000);
 });
 
 interface PersistedFixture {

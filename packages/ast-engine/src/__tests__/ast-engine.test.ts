@@ -101,6 +101,24 @@ describe('AstEngine', () => {
     expect(results[2]?.ok).toBe(false);
   });
 
+  it('continues sequentially from the first unconsumed input after a worker failure', async () => {
+    const engine = new AstEngine(createSilentLogger(), {
+      workerCount: 2,
+      minimumParallelFiles: 1,
+      workerScriptPath: 'missing-worker.js',
+    });
+    const inputs = [
+      { path: 'one.ts', content: 'export const one = 1;', language: 'typescript' },
+      { path: 'two.ts', content: 'export const two = 2;', language: 'typescript' },
+    ];
+    const results = [];
+
+    for await (const result of engine.parseFiles(inputs)) results.push(result);
+
+    expect(results).toHaveLength(2);
+    expect(results.every((result) => result.ok)).toBe(true);
+  });
+
   it('extracts Python structure through the Tree-sitter WASM parser', async () => {
     const result = await new AstEngine(createSilentLogger()).parseFile({
       path: 'C:/repo/service.py',
