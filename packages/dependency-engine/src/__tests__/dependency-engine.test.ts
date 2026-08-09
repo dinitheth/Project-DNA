@@ -85,34 +85,40 @@ describe('DependencyEngine', () => {
     expect(isErr(result)).toBe(true);
   });
 
-  it('repairs changed source edges while preserving a complete graph', async () => {
-    const engine = new DependencyEngine(createSilentLogger());
-    const previousFiles = [
-      file('src/a.ts', [imported('./b', 1)]),
-      file('src/b.ts'),
-      file('src/c.ts'),
-    ];
-    const initial = await engine.buildDependencyGraph(previousFiles, 'C:/repo');
-    if (isErr(initial)) throw initial.error;
+  it.each([
+    ['Windows', 'C:/repo'],
+    ['POSIX', '/repo'],
+  ])(
+    'repairs changed source edges for %s absolute paths while preserving a complete graph',
+    async (_platform, rootPath) => {
+      const engine = new DependencyEngine(createSilentLogger());
+      const previousFiles = [
+        file('src/a.ts', [imported('./b', 1)]),
+        file('src/b.ts'),
+        file('src/c.ts'),
+      ];
+      const initial = await engine.buildDependencyGraph(previousFiles, rootPath);
+      if (isErr(initial)) throw initial.error;
 
-    const currentFiles = [
-      file('src/a.ts', [imported('./c', 1)]),
-      file('src/b.ts'),
-      file('src/c.ts'),
-    ];
-    const repaired = await engine.buildDependencyGraphIncremental?.({
-      files: currentFiles,
-      previousFiles,
-      previousGraph: initial.value,
-      rootPath: 'C:/repo',
-      changedPaths: ['C:/repo/src/a.ts'],
-    });
-    if (!repaired || isErr(repaired)) throw repaired?.error ?? new Error('Repair unavailable');
+      const currentFiles = [
+        file('src/a.ts', [imported('./c', 1)]),
+        file('src/b.ts'),
+        file('src/c.ts'),
+      ];
+      const repaired = await engine.buildDependencyGraphIncremental?.({
+        files: currentFiles,
+        previousFiles,
+        previousGraph: initial.value,
+        rootPath,
+        changedPaths: [`${rootPath}/src/a.ts`],
+      });
+      if (!repaired || isErr(repaired)) throw repaired?.error ?? new Error('Repair unavailable');
 
-    expect(repaired.value.getDependencies('src/a.ts')).toEqual(['src/c.ts']);
-    expect(repaired.value.getDependents('src/b.ts')).toEqual([]);
-    expect(repaired.value.getDependents('src/c.ts')).toEqual(['src/a.ts']);
-  });
+      expect(repaired.value.getDependencies('src/a.ts')).toEqual(['src/c.ts']);
+      expect(repaired.value.getDependents('src/b.ts')).toEqual([]);
+      expect(repaired.value.getDependents('src/c.ts')).toEqual(['src/a.ts']);
+    },
+  );
 });
 
 describe('ModuleBoundaryAnalyzer', () => {

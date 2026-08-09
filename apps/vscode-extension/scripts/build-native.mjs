@@ -55,7 +55,7 @@ export function buildNative({
     'better-sqlite3',
   );
   const isolatedPackage = path.join(moduleDir, 'node_modules', 'better-sqlite3');
-  cpSync(sourcePackage, isolatedPackage, { recursive: true });
+  cpSync(sourcePackage, isolatedPackage, { recursive: true, dereference: true });
   rmSync(path.join(isolatedPackage, 'build'), { recursive: true, force: true });
   writeFileSync(
     path.join(moduleDir, 'package.json'),

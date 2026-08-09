@@ -237,12 +237,16 @@ function normalizeFilePath(filePath: string, rootPath: string): string {
   const normalized = normalizePath(filePath);
   const normalizedRoot = normalizePath(rootPath).replace(/\/$/u, '');
   if (
-    path.isAbsolute(filePath) &&
+    isAbsolutePathAcrossPlatforms(normalized) &&
     normalized.toLowerCase().startsWith(`${normalizedRoot.toLowerCase()}/`)
   ) {
     return normalized.slice(normalizedRoot.length + 1);
   }
   return normalized.replace(/^\.\//u, '');
+}
+
+function isAbsolutePathAcrossPlatforms(filePath: string): boolean {
+  return path.posix.isAbsolute(filePath) || path.win32.isAbsolute(filePath);
 }
 
 function normalizePath(value: string): string {
