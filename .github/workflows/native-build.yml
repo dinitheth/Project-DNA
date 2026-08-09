@@ -107,6 +107,8 @@ jobs:
       - name: Resolve Electron runtime
         if: matrix.runtime == 'electron'
         shell: bash
+        env:
+          NATIVE_TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
           runtime_root="$RUNNER_TEMP/project-dna-electron-${NATIVE_TARGET}"
