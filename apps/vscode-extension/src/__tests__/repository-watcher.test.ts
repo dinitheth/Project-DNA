@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DNAEventNames,
@@ -15,7 +16,7 @@ interface FakeWatcher {
 }
 
 const vscodeState = vi.hoisted(() => ({
-  workspaceFolders: [{ uri: { fsPath: 'G:/repo-a' } }] as Array<{
+  workspaceFolders: [] as Array<{
     uri: { fsPath: string };
   }>,
   workspaceListener: null as (() => void) | null,
@@ -72,9 +73,14 @@ vi.mock('vscode', () => ({
 
 import { RepositoryWatcher } from '../repository-watcher.js';
 
+const repositoryA = path.resolve(path.parse(process.cwd()).root, 'repo-a');
+const repositoryB = path.resolve(path.parse(process.cwd()).root, 'repo-b');
+const normalizedRepositoryA = normalizeFixturePath(repositoryA);
+const normalizedRepositoryB = normalizeFixturePath(repositoryB);
+
 describe('RepositoryWatcher', () => {
   beforeEach(() => {
-    vscodeState.workspaceFolders = [{ uri: { fsPath: 'G:/repo-a' } }];
+    vscodeState.workspaceFolders = [{ uri: { fsPath: repositoryA } }];
     vscodeState.workspaceListener = null;
     vscodeState.watchers = [];
   });
@@ -86,23 +92,27 @@ describe('RepositoryWatcher', () => {
     const repositoryWatcher = new RepositoryWatcher(eventBus, () => undefined);
     const watcher = currentWatcher();
 
-    emit(watcher.createListeners, 'G:/repo-a/src/z.ts');
-    emit(watcher.changeListeners, 'G:/repo-a/src/z.ts');
-    emit(watcher.changeListeners, 'G:/repo-a/src/a.ts');
+    const sourceA = path.join(repositoryA, 'src', 'a.ts');
+    const sourceZ = path.join(repositoryA, 'src', 'z.ts');
+    emit(watcher.createListeners, sourceZ);
+    emit(watcher.changeListeners, sourceZ);
+    emit(watcher.changeListeners, sourceA);
     await flushMicrotasks();
 
     expect(published).toHaveLength(1);
     expect(published[0]?.watcherEpoch).toBe(1);
     expect(published[0]?.sequence).toBe(1);
     expect(published[0]?.changes).toEqual([
-      { kind: 'modified', path: 'G:/repo-a/src/a.ts' },
-      { kind: 'created', path: 'G:/repo-a/src/z.ts' },
+      { kind: 'modified', path: normalizeFixturePath(sourceA) },
+      { kind: 'created', path: normalizeFixturePath(sourceZ) },
     ]);
 
-    emit(watcher.deleteListeners, 'G:/repo-a/src/z.ts');
-    emit(watcher.createListeners, 'G:/repo-a/src/z.ts');
+    emit(watcher.deleteListeners, sourceZ);
+    emit(watcher.createListeners, sourceZ);
     await flushMicrotasks();
-    expect(published[1]?.changes).toEqual([{ kind: 'modified', path: 'G:/repo-a/src/z.ts' }]);
+    expect(published[1]?.changes).toEqual([
+      { kind: 'modified', path: normalizeFixturePath(sourceZ) },
+    ]);
     repositoryWatcher.dispose();
   });
 
@@ -118,11 +128,11 @@ describe('RepositoryWatcher', () => {
     );
     const initialWatcher = currentWatcher();
 
-    vscodeState.workspaceFolders = [{ uri: { fsPath: 'G:/repo-b' } }];
+    vscodeState.workspaceFolders = [{ uri: { fsPath: repositoryB } }];
     vscodeState.workspaceListener?.();
     expect(initialWatcher.disposed).toBe(true);
     expect(invalidations[0]).toMatchObject({
-      rootPath: 'G:/repo-b',
+      rootPath: normalizedRepositoryB,
       watcherEpoch: 2,
       reason: 'workspace-change',
     });
@@ -131,7 +141,7 @@ describe('RepositoryWatcher', () => {
     vscodeState.workspaceListener?.();
     expect(secondWatcher.disposed).toBe(true);
     expect(invalidations[1]).toMatchObject({
-      rootPath: 'G:/repo-b',
+      rootPath: normalizedRepositoryB,
       watcherEpoch: 3,
       reason: 'restart',
     });
@@ -139,7 +149,7 @@ describe('RepositoryWatcher', () => {
     vscodeState.workspaceFolders = [];
     vscodeState.workspaceListener?.();
     expect(currentWatcher().disposed).toBe(true);
-    expect(workspaces).toEqual(['G:/repo-b', 'G:/repo-b', null]);
+    expect(workspaces).toEqual([normalizedRepositoryB, normalizedRepositoryB, null]);
     repositoryWatcher.dispose();
   });
 
@@ -153,14 +163,14 @@ describe('RepositoryWatcher', () => {
     const initialWatcher = currentWatcher();
 
     for (let index = 0; index <= 10_000; index++) {
-      emit(initialWatcher.changeListeners, `G:/repo-a/src/file-${index}.ts`);
+      emit(initialWatcher.changeListeners, path.join(repositoryA, 'src', `file-${index}.ts`));
     }
     await flushMicrotasks();
 
     expect(initialWatcher.disposed).toBe(true);
     expect(invalidations).toHaveLength(1);
     expect(invalidations[0]).toMatchObject({
-      rootPath: 'G:/repo-a',
+      rootPath: normalizedRepositoryA,
       watcherEpoch: 2,
       reason: 'overflow',
     });
@@ -182,4 +192,8 @@ function emit(listeners: Array<(uri: { fsPath: string }) => void>, fsPath: strin
 async function flushMicrotasks(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
+}
+
+function normalizeFixturePath(filePath: string): string {
+  return filePath.replaceAll('\\', '/').replace(/\/+$/u, '');
 }
