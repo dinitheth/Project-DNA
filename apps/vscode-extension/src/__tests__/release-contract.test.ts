@@ -344,7 +344,7 @@ describe('M5 release contract', () => {
       'darwin-x64',
       'darwin-arm64',
       'node: 22.23.2',
-      'node: 24.19.0',
+      'builder-node: 24.19.0',
       'NATIVE_RUNTIME: ${{ matrix.runtime }}',
       'pnpm install --frozen-lockfile',
       'pnpm build:native',
@@ -359,6 +359,14 @@ describe('M5 release contract', () => {
     expect(nativeWorkflow).toContain('SHASUMS256.txt');
     expect(nativeWorkflow).toContain('test "$(find native -type f -name better_sqlite3.node');
     expect(nativeWorkflow).toContain('unzip -t release/project-dna-a.vsix');
+    expect(nativeWorkflow).toContain('git config --global core.autocrlf false');
+    expect(nativeWorkflow).toContain(
+      'runtime_root="$RUNNER_TEMP/project-dna-electron-${NATIVE_TARGET}"',
+    );
+    expect(nativeWorkflow).not.toContain('$GITHUB_WORKSPACE/.electron-runtime');
+    expect(nativeWorkflow.indexOf('Configure deterministic line endings')).toBeLessThan(
+      nativeWorkflow.indexOf('uses: actions/checkout@v4'),
+    );
   });
 
   it('keeps unspecified Marketplace metadata deferred', () => {

@@ -29,29 +29,38 @@ jobs:
             target: win32-x64
             runtime: electron
             node: 22.23.2
+            builder-node: ''
             electron-archive: electron-v42.7.1-win32-x64.zip
           - runner: ubuntu-22.04
             target: linux-x64
             runtime: electron
             node: 22.23.2
+            builder-node: ''
             electron-archive: electron-v42.7.1-linux-x64.zip
           - runner: ubuntu-22.04
             target: linux-x64
             runtime: node
-            node: 24.19.0
+            node: 22.23.2
+            builder-node: 24.19.0
             electron-archive: ''
           - runner: macos-15-intel
             target: darwin-x64
             runtime: electron
             node: 22.23.2
+            builder-node: ''
             electron-archive: electron-v42.7.1-darwin-x64.zip
           - runner: macos-15
             target: darwin-arm64
             runtime: electron
             node: 22.23.2
+            builder-node: ''
             electron-archive: electron-v42.7.1-darwin-arm64.zip
 
     steps:
+      - name: Configure deterministic line endings
+        shell: bash
+        run: git config --global core.autocrlf false
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -70,11 +79,7 @@ jobs:
         shell: bash
         run: |
           test "$(node --version)" = "v${{ matrix.node }}"
-          if [ "${{ matrix.runtime }}" = "node" ]; then
-            test "$(node -p 'process.versions.modules')" = "137"
-          else
-            test "$(node --version)" = "v22.23.2"
-          fi
+          test "$(node --version)" = "v22.23.2"
           pnpm --version | grep -Fx "${PNPM_VERSION}"
 
       - name: Install dependencies
@@ -86,30 +91,44 @@ jobs:
           node -e "const p=require('./apps/vscode-extension/node_modules/@electron/rebuild/package.json');if(p.version!=='4.2.0')throw new Error('unexpected @electron/rebuild '+p.version)"
           node -e "const p=require('./apps/vscode-extension/node_modules/better-sqlite3/package.json');if(p.version!=='12.11.1')throw new Error('unexpected better-sqlite3 '+p.version)"
 
+      - name: Set up Linux Node ABI builder
+        if: matrix.runtime == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.builder-node }}
+
+      - name: Assert Linux Node ABI builder
+        if: matrix.runtime == 'node'
+        shell: bash
+        run: |
+          test "$(node --version)" = "v24.19.0"
+          test "$(node -p 'process.versions.modules')" = "137"
+
       - name: Resolve Electron runtime
         if: matrix.runtime == 'electron'
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p .electron-runtime
+          runtime_root="$RUNNER_TEMP/project-dna-electron-${NATIVE_TARGET}"
+          mkdir -p "$runtime_root"
           archive="${{ matrix['electron-archive'] }}"
-          curl --fail --location --retry 3 --output ".electron-runtime/$archive" "https://github.com/electron/electron/releases/download/v${ELECTRON_VERSION}/$archive"
-          curl --fail --location --retry 3 --output .electron-runtime/SHASUMS256.txt "https://github.com/electron/electron/releases/download/v${ELECTRON_VERSION}/SHASUMS256.txt"
-          expected="$(awk -v name="$archive" '$2 == "*" name {print $1}' .electron-runtime/SHASUMS256.txt)"
+          curl --fail --location --retry 3 --output "$runtime_root/$archive" "https://github.com/electron/electron/releases/download/v${ELECTRON_VERSION}/$archive"
+          curl --fail --location --retry 3 --output "$runtime_root/SHASUMS256.txt" "https://github.com/electron/electron/releases/download/v${ELECTRON_VERSION}/SHASUMS256.txt"
+          expected="$(awk -v name="$archive" '$2 == "*" name {print $1}' "$runtime_root/SHASUMS256.txt")"
           test -n "$expected"
           if command -v sha256sum >/dev/null 2>&1; then
-            actual="$(sha256sum ".electron-runtime/$archive" | awk '{print $1}')"
+            actual="$(sha256sum "$runtime_root/$archive" | awk '{print $1}')"
           else
-            actual="$(shasum -a 256 ".electron-runtime/$archive" | awk '{print $1}')"
+            actual="$(shasum -a 256 "$runtime_root/$archive" | awk '{print $1}')"
           fi
           test "$actual" = "$expected"
-          unzip -q ".electron-runtime/$archive" -d .electron-runtime/app
+          unzip -q "$runtime_root/$archive" -d "$runtime_root/app"
           if [ "${{ matrix.target }}" = "win32-x64" ]; then
-            echo "ELECTRON_EXECUTABLE=$GITHUB_WORKSPACE/.electron-runtime/app/electron.exe" >> "$GITHUB_ENV"
+            echo "ELECTRON_EXECUTABLE=$runtime_root/app/electron.exe" >> "$GITHUB_ENV"
           elif [[ "${{ matrix.target }}" == darwin-* ]]; then
-            echo "ELECTRON_EXECUTABLE=$GITHUB_WORKSPACE/.electron-runtime/app/Electron.app/Contents/MacOS/Electron" >> "$GITHUB_ENV"
+            echo "ELECTRON_EXECUTABLE=$runtime_root/app/Electron.app/Contents/MacOS/Electron" >> "$GITHUB_ENV"
           else
-            echo "ELECTRON_EXECUTABLE=$GITHUB_WORKSPACE/.electron-runtime/app/electron" >> "$GITHUB_ENV"
+            echo "ELECTRON_EXECUTABLE=$runtime_root/app/electron" >> "$GITHUB_ENV"
           fi
 
       - name: Build native binding from source
@@ -130,7 +149,7 @@ jobs:
           if [ "$NATIVE_RUNTIME" = node ]; then suffix=node-abi137; else suffix=electron-abi146; fi
           artifact="native/$NATIVE_TARGET/$suffix/better_sqlite3.node"
           test -s "$artifact"
-          test "$(find native -type f -name better_sqlite3.node | wc -l)" = 1
+          test "$(find native -type f -name better_sqlite3.node | wc -l | tr -d '[:space:]')" = 1
 
       - name: Run existing verification gates
         if: matrix.runtime == 'electron'
@@ -150,6 +169,10 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
+      - name: Configure deterministic line endings
+        shell: bash
+        run: git config --global core.autocrlf false
+
       - name: Checkout
         uses: actions/checkout@v4
 
