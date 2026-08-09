@@ -23,6 +23,16 @@ afterEach(async () => {
 });
 
 describe('SqliteStorage', () => {
+  it('loads an explicitly supplied native binding without default discovery', async () => {
+    const bindingPath = require.resolve('better-sqlite3/build/Release/better_sqlite3.node');
+    const storage = new SqliteStorage(':memory:', createSilentLogger(), {
+      nativeBinding: bindingPath,
+    });
+    const saved = await storage.save('binding', 'explicit', { valid: true });
+    expect(saved.ok).toBe(true);
+    await storage.close();
+  });
+
   it('supports namespaced CRUD, upserts, existence checks, and sorted key listing', async () => {
     const storage = new SqliteStorage(':memory:', createSilentLogger());
 

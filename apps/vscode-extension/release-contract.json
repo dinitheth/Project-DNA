@@ -1,0 +1,157 @@
+{
+  "extension": {
+    "publisher": "project-dna",
+    "name": "vscode-extension",
+    "id": "project-dna.vscode-extension",
+    "version": "1.0.0",
+    "activationEvents": ["onStartupFinished"],
+    "vscodeEngine": ">=1.132.0 <1.133.0",
+    "apiFloor": "1.100.0",
+    "typesPackage": "1.100.0",
+    "extensionKind": ["workspace"],
+    "untrustedWorkspaces": { "supported": true },
+    "virtualWorkspaces": { "supported": false }
+  },
+  "runtime": {
+    "toolchainNode": "22.23.2",
+    "toolchainNodeRange": ">=22.23.2 <23",
+    "packageManager": "pnpm@9.15.4",
+    "electron": { "version": "42.7.1", "abi": "146" },
+    "remoteNode": { "version": "24.19.0", "abi": "137" },
+    "nativeBuild": {
+      "betterSqlite3": "12.11.1",
+      "electronRebuild": "4.2.0"
+    },
+    "packaging": { "vsce": "3.9.2", "sourceDateEpoch": "315532800" },
+    "bindingResolutionInputs": [
+      "process.platform",
+      "process.arch",
+      "process.versions.modules",
+      "process.versions.electron"
+    ],
+    "allowAbiFallback": false,
+    "allowRuntimeDownload": false,
+    "allowRuntimeCompilation": false
+  },
+  "platforms": {
+    "local": ["win32-x64", "linux-x64", "darwin-x64", "darwin-arm64"],
+    "remote": ["linux-x64"],
+    "remoteEnvironments": ["remote-ssh", "wsl2", "dev-containers", "codespaces"],
+    "linuxMinimumGlibc": "2.35",
+    "unsupported": [
+      "win32-arm64",
+      "linux-arm64",
+      "linux-armhf",
+      "linux-glibc-below-2.35",
+      "alpine-x64",
+      "alpine-arm64",
+      "web",
+      "windows-remote",
+      "darwin-remote",
+      "virtual-workspace",
+      "multi-root-workspace"
+    ]
+  },
+  "remoteValidation": {
+    "required": true,
+    "realVscodeServerExtensionHost": true,
+    "baseOs": "ubuntu-22.04",
+    "architecture": "linux-x64",
+    "minimumGlibc": "2.35",
+    "vscodeVersion": "1.132.x",
+    "installedVsixRequired": true,
+    "nodeOnlySmokeTestIsSufficient": false
+  },
+  "vsix": {
+    "dependencies": false,
+    "allowedApplicationFiles": [
+      "package.json",
+      "dist/extension.js",
+      "dist/ast-worker.js",
+      "dist/webview/index.html",
+      "dist/webview/assets/index.js",
+      "dist/webview/assets/index.css",
+      "resources/icon.svg"
+    ],
+    "requiredApplicationFiles": ["package.json", "resources/icon.svg"],
+    "allowedTreeSitterFiles": [
+      "node_modules/web-tree-sitter/package.json",
+      "node_modules/web-tree-sitter/LICENSE",
+      "node_modules/web-tree-sitter/tree-sitter.js",
+      "node_modules/web-tree-sitter/tree-sitter.wasm",
+      "node_modules/tree-sitter-wasms/package.json",
+      "node_modules/tree-sitter-wasms/LICENSE",
+      "node_modules/tree-sitter-wasms/out/tree-sitter-c_sharp.wasm",
+      "node_modules/tree-sitter-wasms/out/tree-sitter-go.wasm",
+      "node_modules/tree-sitter-wasms/out/tree-sitter-java.wasm",
+      "node_modules/tree-sitter-wasms/out/tree-sitter-python.wasm",
+      "node_modules/tree-sitter-wasms/out/tree-sitter-rust.wasm"
+    ],
+    "sqliteRuntimeAllowlistDeferred": false,
+    "allowedSqliteFiles": [
+      "node_modules/better-sqlite3/package.json",
+      "node_modules/better-sqlite3/lib/index.js",
+      "node_modules/better-sqlite3/lib/database.js",
+      "node_modules/better-sqlite3/lib/sqlite-error.js",
+      "node_modules/better-sqlite3/lib/util.js",
+      "node_modules/better-sqlite3/lib/methods/aggregate.js",
+      "node_modules/better-sqlite3/lib/methods/backup.js",
+      "node_modules/better-sqlite3/lib/methods/function.js",
+      "node_modules/better-sqlite3/lib/methods/inspect.js",
+      "node_modules/better-sqlite3/lib/methods/pragma.js",
+      "node_modules/better-sqlite3/lib/methods/serialize.js",
+      "node_modules/better-sqlite3/lib/methods/table.js",
+      "node_modules/better-sqlite3/lib/methods/transaction.js",
+      "node_modules/better-sqlite3/lib/methods/wrappers.js"
+    ],
+    "nativeBindings": {
+      "win32-x64": ["native/win32-x64/electron-abi146/better_sqlite3.node"],
+      "linux-x64": [
+        "native/linux-x64/electron-abi146/better_sqlite3.node",
+        "native/linux-x64/node-abi137/better_sqlite3.node"
+      ],
+      "darwin-x64": ["native/darwin-x64/electron-abi146/better_sqlite3.node"],
+      "darwin-arm64": ["native/darwin-arm64/electron-abi146/better_sqlite3.node"]
+    },
+    "forbiddenContents": [
+      "workspace:*",
+      "source-code",
+      "tests",
+      "source-maps",
+      "type-declarations",
+      "pnpm-store-paths",
+      "package-manager-lockfiles",
+      "environment-files",
+      "logs",
+      "sqlite-databases",
+      "benchmark-repositories",
+      "unused-tree-sitter-grammars",
+      "wrong-target-native-bindings",
+      "git-metadata",
+      "build-caches",
+      "temporary-files"
+    ]
+  },
+  "unsupportedRuntimeBehavior": {
+    "resolveBeforeStorage": true,
+    "createDatabase": false,
+    "runMigrations": false,
+    "startWatcher": false,
+    "startWorkers": false,
+    "publishSnapshots": false,
+    "registerDisabledCommands": true,
+    "renderCompatibilityError": true,
+    "showOneActivationError": true,
+    "preserveExistingDatabase": true,
+    "errorTemplate": "Project DNA cannot start on <platform>-<arch>: <runtime> module ABI <abi> is not supported by Project DNA <version>. Supported runtime: <expected>. Your existing Project DNA database was not modified."
+  },
+  "runners": {
+    "win32-x64": "windows-2025",
+    "linux-x64": "ubuntu-22.04",
+    "darwin-x64": "macos-15-intel",
+    "darwin-arm64": "macos-15"
+  },
+  "marketplaceMetadata": {
+    "deferred": ["categories", "keywords", "repository", "homepage", "bugs", "pricing", "icon"]
+  }
+}

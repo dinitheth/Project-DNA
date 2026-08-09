@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 const execFile = promisify(execFileCallback);
 
 const EXPECTED_PACKAGE_MANAGER = 'pnpm@9.15.4';
-const EXPECTED_NODE_ENGINE = '>=20';
+const EXPECTED_NODE_ENGINE = '>=22.23.2 <23';
 const TEST_FILE_PATTERN = /\.(?:test|spec)\.[cm]?[jt]sx?$/u;
 
 /**

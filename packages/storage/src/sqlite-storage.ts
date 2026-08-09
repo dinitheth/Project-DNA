@@ -73,12 +73,15 @@ export class SqliteStorage implements ITransactionalStoragePort, IStorageInspect
   constructor(
     dbPath: string,
     private readonly logger: Logger,
+    options: { readonly nativeBinding?: string } = {},
   ) {
     if (dbPath !== ':memory:') {
       mkdirSync(path.dirname(path.resolve(dbPath)), { recursive: true });
     }
 
-    const database = new Database(dbPath);
+    const database = options.nativeBinding
+      ? new Database(dbPath, { nativeBinding: options.nativeBinding })
+      : new Database(dbPath);
     try {
       database.pragma('foreign_keys = ON');
       database.pragma('busy_timeout = 5000');

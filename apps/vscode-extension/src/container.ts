@@ -36,6 +36,7 @@ export interface ContainerOptions {
   readonly storagePath?: string;
   readonly performanceRecorder?: AnalysisPerformanceRecorder;
   readonly astEngineOptions?: AstEngineOptions;
+  readonly nativeBindingPath?: string;
 }
 
 export function createContainer(options: ContainerOptions | Logger = {}): Container {
@@ -47,7 +48,10 @@ export function createContainer(options: ContainerOptions | Logger = {}): Contai
   container.register(TOKENS.EventBus, () => new EventBus<DNAEventMap>());
   container.register(
     TOKENS.StoragePort,
-    (current) => new SqliteStorage(storagePath, current.resolve<Logger>(TOKENS.Logger)),
+    (current) =>
+      new SqliteStorage(storagePath, current.resolve<Logger>(TOKENS.Logger), {
+        nativeBinding: resolved.nativeBindingPath,
+      }),
   );
   container.register(
     TOKENS.RepositoryScanner,

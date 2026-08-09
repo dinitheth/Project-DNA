@@ -5,7 +5,18 @@
   "version": "1.0.0",
   "publisher": "project-dna",
   "engines": {
-    "vscode": "^1.100.0"
+    "vscode": ">=1.132.0 <1.133.0"
+  },
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": {
+      "supported": false
+    }
   },
   "activationEvents": [
     "onStartupFinished"
@@ -78,9 +89,11 @@
     "web-tree-sitter": "^0.24.0"
   },
   "devDependencies": {
+    "@electron/rebuild": "4.2.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
-    "@types/vscode": "^1.80.0",
+    "@types/vscode": "1.100.0",
+    "@vscode/vsce": "3.9.2",
     "@types/node": "^20.0.0",
     "@vitejs/plugin-react": "^4.3.0",
     "autoprefixer": "^10.4.0",
@@ -102,6 +115,11 @@
     "typecheck": "tsc --noEmit && tsc -p webview/tsconfig.json --noEmit",
     "lint": "eslint src/ webview/src/ --max-warnings=0",
     "lint:fix": "eslint src/ webview/src/ --max-warnings=0 --fix",
+    "build:native": "node scripts/build-native.mjs",
+    "stage": "node scripts/stage-extension.mjs",
+    "integrity": "node scripts/create-integrity-manifest.mjs",
+    "validate:package": "node scripts/validate-package.mjs",
+    "package:vsix": "pnpm build:extension && pnpm build:webview && node scripts/validate-package.mjs --package",
     "clean": "rimraf dist"
   }
 }
