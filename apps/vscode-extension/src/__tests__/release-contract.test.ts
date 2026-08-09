@@ -297,6 +297,13 @@ describe('M5 release contract', () => {
     expect(nativeBuildScript).toContain("'--only',");
     expect(nativeBuildScript).toContain("'better-sqlite3',");
     expect(nativeBuildScript).toContain("'--build-from-source',");
+    expect(nativeBuildScript).toContain("'--force',");
+    expect(nativeBuildScript).toContain('process.env.RUNNER_TEMP ?? os.tmpdir()');
+    expect(nativeBuildScript).toContain("'project-dna-native-build'");
+    expect(nativeBuildScript).toContain("'--module-dir',");
+    expect(nativeBuildScript).toContain("'.',");
+    expect(nativeBuildScript).toContain("{ cwd: moduleDir, stdio: 'inherit' }");
+    expect(nativeBuildScript).toContain('`electron-abi${ELECTRON_ABI}`');
     expect(nativeBuildScript).toContain("db.pragma('quick_check',{simple:true})");
 
     expect(stagingScript).toContain('contract.vsix.allowedApplicationFiles');
@@ -357,6 +364,10 @@ describe('M5 release contract', () => {
     expect(nativeWorkflow.match(/runtime: node/gu)).toHaveLength(1);
     expect(nativeWorkflow).toContain('test "$(node -p \'process.versions.modules\')" = "137"');
     expect(nativeWorkflow).toContain('SHASUMS256.txt');
+    expect(nativeWorkflow).toContain('awk -v name="$archive" \'$2 == "*" name {print $1}\'');
+    expect(nativeWorkflow).toContain("crypto.createHash('sha256')");
+    expect(nativeWorkflow).toContain('fs.readFileSync(file)');
+    expect(nativeWorkflow).not.toContain('actual="$(sha256sum');
     expect(nativeWorkflow).toContain('test "$(find native -type f -name better_sqlite3.node');
     expect(nativeWorkflow).toContain('unzip -t release/project-dna-a.vsix');
     expect(nativeWorkflow).toContain('git config --global core.autocrlf false');

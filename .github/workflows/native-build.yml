@@ -118,11 +118,16 @@ jobs:
           curl --fail --location --retry 3 --output "$runtime_root/SHASUMS256.txt" "https://github.com/electron/electron/releases/download/v${ELECTRON_VERSION}/SHASUMS256.txt"
           expected="$(awk -v name="$archive" '$2 == "*" name {print $1}' "$runtime_root/SHASUMS256.txt")"
           test -n "$expected"
-          if command -v sha256sum >/dev/null 2>&1; then
-            actual="$(sha256sum "$runtime_root/$archive" | awk '{print $1}')"
-          else
-            actual="$(shasum -a 256 "$runtime_root/$archive" | awk '{print $1}')"
-          fi
+          actual="$(
+            node -e "
+              const fs = require('node:fs');
+              const crypto = require('node:crypto');
+              const file = process.argv[1];
+              process.stdout.write(
+                crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')
+              );
+            " "$runtime_root/$archive"
+          )"
           test "$actual" = "$expected"
           unzip -q "$runtime_root/$archive" -d "$runtime_root/app"
           if [ "${{ matrix.target }}" = "win32-x64" ]; then

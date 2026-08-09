@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -43,7 +44,8 @@ export function buildNative({
 }) {
   validateTarget(target, runtime);
   if (runtime === 'node') assertNodeBuilder(process.version, process.versions.modules);
-  const moduleDir = path.join(root, '.native-build', `${target}-${runtime}`);
+  const buildRoot = process.env.RUNNER_TEMP ?? os.tmpdir();
+  const moduleDir = path.join(buildRoot, 'project-dna-native-build', `${target}-${runtime}`);
   const output = nativeArtifactPath(root, target, runtime);
   rmSync(moduleDir, { recursive: true, force: true });
   mkdirSync(path.dirname(output), { recursive: true });
@@ -83,9 +85,9 @@ export function buildNative({
         '--arch',
         target.split('-')[1],
         '--module-dir',
-        moduleDir,
+        '.',
       ],
-      { cwd: root, stdio: 'inherit' },
+      { cwd: moduleDir, stdio: 'inherit' },
     );
   } else {
     const rebuildRequire = createRequire(localRequire.resolve('@electron/rebuild'));
