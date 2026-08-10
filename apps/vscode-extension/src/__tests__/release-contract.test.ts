@@ -331,7 +331,14 @@ describe('M5 release contract', () => {
     }
     expect(packageValidationScript).toContain('staging-a');
     expect(packageValidationScript).toContain('staging-b');
-    expect(packageValidationScript).toContain("'vsce', 'package', '--no-dependencies'");
+    expect(packageValidationScript).toContain('validateManifestForPackaging');
+    expect(packageValidationScript).toContain('createDefaultProcessors');
+    expect(packageValidationScript).toContain('processFiles');
+    expect(packageValidationScript).toContain("vsceRequire('yazl')");
+    expect(packageValidationScript).toContain('stagedFiles: validatedA.files');
+    expect(packageValidationScript).toContain('stagedFiles: validatedB.files');
+    expect(packageValidationScript).not.toContain("'--dependencies'");
+    expect(packageValidationScript).not.toContain("'--no-dependencies'");
     expect(packageValidationScript).toContain('SOURCE_DATE_EPOCH');
     expect(packageValidationScript).toContain('comparePackages(vsixA, vsixB)');
     expect(extensionPackage.scripts['build:native']).toBe('node scripts/build-native.mjs');

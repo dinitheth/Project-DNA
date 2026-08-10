@@ -1,12 +1,16 @@
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { createWriteStream, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createIntegrityManifest } from './create-integrity-manifest.mjs';
 import { stageExtension } from './stage-extension.mjs';
 
 const extensionRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const require = createRequire(import.meta.url);
+const vsce = require('@vscode/vsce/out/package.js');
+const vsceRequire = createRequire(require.resolve('@vscode/vsce/package.json'));
+const { ZipFile } = vsceRequire('yazl');
 
 export function validateStaging({ stagingRoot, contract, target, runtime }) {
   const actual = collectFiles(stagingRoot);
@@ -34,13 +38,36 @@ export function comparePackages(firstPath, secondPath) {
   }
 }
 
-export function packageDeterministically({
+export async function createVsixFromStaging({
+  stagingRoot,
+  stagedFiles,
+  outputPath,
+  sourceDateEpoch,
+}) {
+  const manifest = vsce.validateManifestForPackaging(
+    JSON.parse(readFileSync(path.join(stagingRoot, 'package.json'), 'utf8')),
+  );
+  const options = {
+    cwd: stagingRoot,
+    dependencies: false,
+    packagePath: outputPath,
+  };
+  const inputFiles = stagedFiles.map((relativePath) => ({
+    path: `extension/${relativePath}`,
+    localPath: path.join(stagingRoot, ...relativePath.split('/')),
+  }));
+  const files = await vsce.processFiles(vsce.createDefaultProcessors(manifest, options), inputFiles);
+  await vsce.printAndValidatePackagedFiles(files, stagingRoot, manifest, options);
+  await writeDeterministicVsix(files, outputPath, sourceDateEpoch);
+  return files.map((file) => file.path).sort((a, b) => a.localeCompare(b));
+}
+
+export async function packageDeterministically({
   extensionRoot: root = extensionRoot,
   contract,
   target,
   runtime,
   sourceDateEpoch = process.env.SOURCE_DATE_EPOCH ?? contract.runtime.packaging.sourceDateEpoch,
-  runner = execFileSync,
 }) {
   const releaseRoot = path.join(root, 'release');
   const stagingA = path.join(releaseRoot, 'staging-a');
@@ -48,20 +75,21 @@ export function packageDeterministically({
   const vsixA = path.join(releaseRoot, 'project-dna-a.vsix');
   const vsixB = path.join(releaseRoot, 'project-dna-b.vsix');
   const nativeFiles = contract.vsix.nativeBindings[target] ?? [];
-  for (const stagingRoot of [stagingA, stagingB]) {
-    stageExtension({ stagingRoot, target, nativeFiles, contract });
-    validateStaging({ stagingRoot, contract, target, runtime });
-  }
-  const env = { ...process.env, SOURCE_DATE_EPOCH: sourceDateEpoch };
-  runner('pnpm', ['exec', 'vsce', 'package', '--no-dependencies', '--out', vsixA], {
-    cwd: stagingA,
-    env,
-    stdio: 'inherit',
+  stageExtension({ stagingRoot: stagingA, target, nativeFiles, contract });
+  stageExtension({ stagingRoot: stagingB, target, nativeFiles, contract });
+  const validatedA = validateStaging({ stagingRoot: stagingA, contract, target, runtime });
+  const validatedB = validateStaging({ stagingRoot: stagingB, contract, target, runtime });
+  await createVsixFromStaging({
+    stagingRoot: stagingA,
+    stagedFiles: validatedA.files,
+    outputPath: vsixA,
+    sourceDateEpoch,
   });
-  runner('pnpm', ['exec', 'vsce', 'package', '--no-dependencies', '--out', vsixB], {
-    cwd: stagingB,
-    env,
-    stdio: 'inherit',
+  await createVsixFromStaging({
+    stagingRoot: stagingB,
+    stagedFiles: validatedB.files,
+    outputPath: vsixB,
+    sourceDateEpoch,
   });
   comparePackages(vsixA, vsixB);
   const integrityPath = path.join(releaseRoot, 'integrity.json');
@@ -82,6 +110,32 @@ export function packageDeterministically({
     },
   });
   return { vsixPath: vsixA, integrityPath, integrity };
+}
+
+async function writeDeterministicVsix(files, outputPath, sourceDateEpoch) {
+  mkdirSync(path.dirname(outputPath), { recursive: true });
+  const zip = new ZipFile();
+  const archiveOptions = { mtime: new Date(Number(sourceDateEpoch) * 1000) };
+  for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
+    const options = { ...archiveOptions, ...(file.mode === undefined ? {} : { mode: file.mode }) };
+    if ('contents' in file) {
+      zip.addBuffer(
+        typeof file.contents === 'string' ? Buffer.from(file.contents, 'utf8') : file.contents,
+        file.path,
+        options,
+      );
+    } else {
+      zip.addFile(file.localPath, file.path, options);
+    }
+  }
+  await new Promise((resolve, reject) => {
+    const output = createWriteStream(outputPath);
+    zip.outputStream.once('error', reject);
+    output.once('error', reject);
+    output.once('finish', resolve);
+    zip.outputStream.pipe(output);
+    zip.end();
+  });
 }
 
 function collectFiles(root, current = root) {
@@ -105,20 +159,27 @@ function hashDirectory(root, files) {
 }
 
 if (isMain(import.meta.url)) {
+  runMain().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
+
+async function runMain() {
   if (process.argv[2] === '--package') {
     const contract = JSON.parse(
       readFileSync(path.join(extensionRoot, 'release-contract.json'), 'utf8'),
     );
-    packageDeterministically({
+    await packageDeterministically({
       contract,
       target: process.env.NATIVE_TARGET ?? `${process.platform}-${process.arch}`,
       runtime: process.env.NATIVE_RUNTIME ?? 'electron',
     });
-    process.exit(0);
+    return;
   }
   if (process.argv[2] === '--compare') {
     comparePackages(process.argv[3], process.argv[4]);
-    process.exit(0);
+    return;
   }
   const root = path.resolve(process.env.STAGING_DIR ?? path.join('release', 'staging'));
   const contract = JSON.parse(
