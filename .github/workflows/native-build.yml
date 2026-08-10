@@ -252,3 +252,58 @@ jobs:
             apps/vscode-extension/release/integrity.json
           if-no-files-found: error
           retention-days: 7
+
+  installed-extension-host-linux-x64:
+    name: installed-extension-host-linux-x64
+    needs: package
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Configure deterministic line endings
+        shell: bash
+        run: git config --global core.autocrlf false
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up frozen pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Set up frozen Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.2
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download canonical VSIX artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: project-dna-vsix
+          path: apps/vscode-extension/release
+
+      - name: Install pinned Playwright Chromium
+        working-directory: apps/vscode-extension
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/project-dna-playwright-1.62.1
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Validate installed VSIX in official VS Code Server
+        working-directory: apps/vscode-extension
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/project-dna-playwright-1.62.1
+        run: pnpm validate:installed-server
+
+      - name: Upload installed Extension Host logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installed-extension-host-linux-x64-logs
+          path: ${{ runner.temp }}/project-dna-installed-server/logs
+          if-no-files-found: ignore
+          retention-days: 7

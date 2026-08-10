@@ -80,6 +80,7 @@ interface PackageManifest {
     readonly '@electron/rebuild': string;
     readonly '@types/vscode': string;
     readonly '@vscode/vsce': string;
+    readonly playwright: string;
   };
   readonly scripts: {
     readonly 'build:native': string;
@@ -87,6 +88,7 @@ interface PackageManifest {
     readonly stage: string;
     readonly integrity: string;
     readonly 'validate:package': string;
+    readonly 'validate:installed-server': string;
   };
 }
 
@@ -110,6 +112,14 @@ const nativeBuildScript = readText('./scripts/build-native.mjs');
 const stagingScript = readText('./scripts/stage-extension.mjs');
 const integrityScript = readText('./scripts/create-integrity-manifest.mjs');
 const packageValidationScript = readText('./scripts/validate-package.mjs');
+const installedServerValidationScript = readText('./scripts/validate-installed-vsix-server.mjs');
+const installedDriverPackage = readJson<{
+  readonly engines: { readonly vscode: string };
+  readonly extensionKind: readonly string[];
+  readonly activationEvents: readonly string[];
+  readonly main: string;
+}>('./test/installed-vsix-driver/package.json');
+const installedDriverSource = readText('./test/installed-vsix-driver/extension.cjs');
 const nativeWorkflow = readFileSync(
   path.resolve(extensionRoot, '../../.github/workflows/native-build.yml'),
   'utf8',
@@ -125,9 +135,11 @@ describe('M5 release contract', () => {
     expect(contract.runtime.remoteNode).toEqual({ version: '24.19.0', abi: '137' });
     expect(extensionPackage.devDependencies['@electron/rebuild']).toBe('4.2.0');
     expect(extensionPackage.devDependencies['@vscode/vsce']).toBe('3.9.2');
+    expect(extensionPackage.devDependencies.playwright).toBe('1.62.1');
     expect(extensionPackage.dependencies['better-sqlite3']).toBe('^12.11.1');
     expect(lockfile).toContain("'@electron/rebuild@4.2.0':");
     expect(lockfile).toContain("'@vscode/vsce@3.9.2':");
+    expect(lockfile).toContain('playwright@1.62.1:');
     expect(lockfile).toContain('better-sqlite3@12.11.1:');
   });
 
@@ -385,6 +397,90 @@ describe('M5 release contract', () => {
     expect(nativeWorkflow.indexOf('Configure deterministic line endings')).toBeLessThan(
       nativeWorkflow.indexOf('uses: actions/checkout@v4'),
     );
+  });
+
+  it('requires installed VSIX validation in the official remote Extension Host', () => {
+    expect(extensionPackage.scripts['validate:installed-server']).toBe(
+      'node scripts/validate-installed-vsix-server.mjs',
+    );
+    expect(installedDriverPackage).toEqual({
+      name: 'project-dna-installed-vsix-driver',
+      displayName: 'Project DNA Installed VSIX Driver',
+      description:
+        'CI-only driver for validating Project DNA in an installed VS Code Server Extension Host.',
+      version: '1.0.0',
+      publisher: 'project-dna-tests',
+      private: true,
+      engines: { vscode: '1.132.x' },
+      extensionKind: ['workspace'],
+      activationEvents: ['onStartupFinished'],
+      main: './extension.cjs',
+    });
+
+    for (const requiredWorkflowValue of [
+      'installed-extension-host-linux-x64:',
+      'needs: package',
+      'runs-on: ubuntu-22.04',
+      'timeout-minutes: 25',
+      'name: project-dna-vsix',
+      'path: apps/vscode-extension/release',
+      'PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/project-dna-playwright-1.62.1',
+      'pnpm validate:installed-server',
+      'if: failure()',
+      '${{ runner.temp }}/project-dna-installed-server/logs',
+    ]) {
+      expect(nativeWorkflow).toContain(requiredWorkflowValue);
+    }
+
+    for (const requiredScriptValue of [
+      "const VSCODE_VERSION = '1.132.0'",
+      '/server-linux-x64/stable',
+      "const VSCODE_SERVER_SHA256 = 'adf5816366a9a8c430745f96fd783df70e7606a35311999aac53b70b257aebc0'",
+      'const HARD_TIMEOUT_MS = 12 * 60 * 1000',
+      "path.join('release', 'project-dna-a.vsix')",
+      "requiredEnvironment('RUNNER_TEMP')",
+      "requiredEnvironment('GITHUB_WORKSPACE')",
+      "path.join(validationRoot, 'server-data')",
+      "path.join(validationRoot, 'extensions')",
+      "path.join(validationRoot, 'workspace')",
+      "path.join(validationRoot, 'browser-profile')",
+      "'127.0.0.1'",
+      "'--port'",
+      "'0'",
+      "randomBytes(32).toString('hex')",
+      "await import('playwright')",
+      'await cleanup(resources)',
+      "process.env.VSIX_PATH ?? path.join('release', 'project-dna-a.vsix')",
+      'integrity.files.find((file) => file.path === NATIVE_BINDING)',
+    ]) {
+      expect(installedServerValidationScript).toContain(requiredScriptValue);
+    }
+    expect(installedServerValidationScript.indexOf('verifyVsixIntegrity({')).toBeLessThan(
+      installedServerValidationScript.indexOf("'--install-extension'"),
+    );
+    expect(installedServerValidationScript).not.toContain('--extensionDevelopmentPath');
+    expect(installedServerValidationScript).not.toContain('@vscode/test-electron');
+    expect(installedServerValidationScript).not.toContain('@vscode/test-cli');
+
+    for (const requiredDriverValue of [
+      "assertEqual(vscode.version, '1.132.0'",
+      "assertEqual(process.platform, 'linux'",
+      "assertEqual(process.arch, 'x64'",
+      "assertEqual(process.versions.modules, '137'",
+      'process.versions.electron === undefined',
+      'vscode.env.remoteName',
+      "const NATIVE_BINDING = 'native/linux-x64/node-abi137/better_sqlite3.node'",
+      'assertPathOutside(installedExtensionPath, repositoryWorkspace',
+      "JSON.stringify(['workspace'])",
+      'await projectExtension.activate()',
+      "await vscode.commands.executeCommand('project-dna.analyzeRepository')",
+      "'project-dna.sqlite'",
+      "const SQLITE_HEADER_HEX = '53514c69746520666f726d6174203300'",
+      'rowsAfter > rowsBefore',
+      'nativeBinding: bindingPath',
+    ]) {
+      expect(installedDriverSource).toContain(requiredDriverValue);
+    }
   });
 
   it('keeps unspecified Marketplace metadata deferred', () => {
