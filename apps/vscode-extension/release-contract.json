@@ -5,7 +5,7 @@
     "id": "project-dna.vscode-extension",
     "version": "1.0.0",
     "activationEvents": ["onStartupFinished"],
-    "vscodeEngine": ">=1.132.0 <1.133.0",
+    "vscodeEngine": "1.132.x",
     "apiFloor": "1.100.0",
     "typesPackage": "1.100.0",
     "extensionKind": ["workspace"],
