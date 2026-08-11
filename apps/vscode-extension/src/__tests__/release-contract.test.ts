@@ -305,7 +305,9 @@ describe('M5 release contract', () => {
     expect(nativeBuildScript).toContain("const ELECTRON_VERSION = '42.7.1'");
     expect(nativeBuildScript).toContain("const ELECTRON_ABI = '146'");
     expect(nativeBuildScript).toContain("const NODE_VERSION = 'v24.19.0'");
+    expect(nativeBuildScript).toContain("const NODE_HEADERS_VERSION = '24.18.0'");
     expect(nativeBuildScript).toContain("const NODE_ABI = '137'");
+    expect(nativeBuildScript).toContain('`--target=${NODE_HEADERS_VERSION}`');
     expect(nativeBuildScript).toContain("'--only',");
     expect(nativeBuildScript).toContain("'better-sqlite3',");
     expect(nativeBuildScript).toContain("'--build-from-source',");

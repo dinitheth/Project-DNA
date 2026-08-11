@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 const ELECTRON_VERSION = '42.7.1';
 const ELECTRON_ABI = '146';
 const NODE_VERSION = 'v24.19.0';
+const NODE_HEADERS_VERSION = '24.18.0';
 const NODE_ABI = '137';
 const localRequire = createRequire(
   path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../package.json'),
@@ -94,7 +95,13 @@ export function buildNative({
     const nodeGypCli = rebuildRequire.resolve('node-gyp/bin/node-gyp.js');
     runner(
       process.execPath,
-      [nodeGypCli, 'rebuild', '--build-from-source', '--target=24.19.0', '--arch=x64'],
+      [
+        nodeGypCli,
+        'rebuild',
+        '--build-from-source',
+        `--target=${NODE_HEADERS_VERSION}`,
+        '--arch=x64',
+      ],
       { cwd: isolatedPackage, stdio: 'inherit' },
     );
   }
