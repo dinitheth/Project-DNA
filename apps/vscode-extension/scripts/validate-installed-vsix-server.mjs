@@ -134,7 +134,7 @@ async function runValidation({ paths, resources, repositoryWorkspace, signal }) 
   );
 
   await createDriverVsix(paths.driverVsix, signal);
-  for (const extension of [vsixPath]) {
+  for (const extension of [vsixPath, paths.driverVsix]) {
     await runCommand(
       serverExecutable,
       [
@@ -165,9 +165,6 @@ async function runValidation({ paths, resources, repositoryWorkspace, signal }) 
     serverExecutable,
     [
       '--start-server',
-      '--install-extension',
-      paths.driverVsix,
-      '--force',
       '--host',
       '127.0.0.1',
       '--port',

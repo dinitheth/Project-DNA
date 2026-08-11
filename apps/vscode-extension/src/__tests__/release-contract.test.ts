@@ -466,12 +466,11 @@ describe('M5 release contract', () => {
     expect(installedServerValidationScript.indexOf('verifyVsixIntegrity({')).toBeLessThan(
       installedServerValidationScript.indexOf("'--install-extension'"),
     );
-    expect(installedServerValidationScript).toContain('for (const extension of [vsixPath])');
-    expect(installedServerValidationScript).not.toContain(
+    expect(installedServerValidationScript).toContain(
       'for (const extension of [vsixPath, paths.driverVsix])',
     );
-    expect(installedServerValidationScript).toContain(
-      "'--start-server',\n      '--install-extension',\n      paths.driverVsix,\n      '--force',",
+    expect(installedServerValidationScript).not.toContain(
+      "'--start-server',\n      '--install-extension',\n      paths.driverVsix,",
     );
     expect(installedServerValidationScript).not.toContain('--extensionDevelopmentPath');
     expect(installedServerValidationScript).not.toContain('@vscode/test-electron');
