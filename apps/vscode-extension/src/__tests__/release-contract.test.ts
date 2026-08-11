@@ -412,6 +412,7 @@ describe('M5 release contract', () => {
       publisher: 'project-dna-tests',
       private: true,
       engines: { vscode: '1.132.x' },
+      capabilities: { untrustedWorkspaces: { supported: true } },
       extensionKind: ['workspace'],
       activationEvents: ['onStartupFinished'],
       main: './extension.cjs',

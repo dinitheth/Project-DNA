@@ -8,6 +8,11 @@
   "engines": {
     "vscode": "1.132.x"
   },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    }
+  },
   "extensionKind": [
     "workspace"
   ],
