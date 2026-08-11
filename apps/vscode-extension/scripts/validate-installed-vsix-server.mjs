@@ -26,6 +26,7 @@ const VSCODE_SERVER_URL = `https://update.code.visualstudio.com/${VSCODE_VERSION
 const VSCODE_SERVER_SHA256 = 'a49c72b8d9e47faceef53e366c65af1be159bf4818dcb77579241af28de0a7d6';
 const HARD_TIMEOUT_MS = 12 * 60 * 1000;
 const PROJECT_EXTENSION_ID = 'project-dna.vscode-extension';
+const DRIVER_EXTENSION_ID = 'project-dna-tests.project-dna-installed-vsix-driver';
 const NATIVE_BINDING = 'native/linux-x64/node-abi137/better_sqlite3.node';
 const scriptRoot = path.dirname(fileURLToPath(import.meta.url));
 const extensionRoot = path.resolve(scriptRoot, '..');
@@ -150,6 +151,7 @@ async function runValidation({ paths, resources, repositoryWorkspace, signal }) 
       { signal },
     );
   }
+  await verifyInstalledExtensions(serverExecutable, paths, signal);
 
   const token = randomBytes(32).toString('hex');
   writeFileSync(paths.token, `${token}\n`, { encoding: 'utf8', mode: 0o600 });
@@ -243,12 +245,13 @@ async function runValidation({ paths, resources, repositoryWorkspace, signal }) 
 
 function createPaths(validationRoot) {
   const downloads = path.join(validationRoot, 'downloads');
+  const serverData = path.join(validationRoot, 'server-data');
   const results = path.join(validationRoot, 'results');
   const logs = path.join(validationRoot, 'logs');
   return {
     validationRoot,
     downloads,
-    serverData: path.join(validationRoot, 'server-data'),
+    serverData,
     extensions: path.join(validationRoot, 'extensions'),
     workspace: path.join(validationRoot, 'workspace'),
     browserProfile: path.join(validationRoot, 'browser-profile'),
@@ -258,7 +261,15 @@ function createPaths(validationRoot) {
     serverArchive: path.join(downloads, `vscode-server-linux-x64-web-${VSCODE_VERSION}.tar.gz`),
     driverVsix: path.join(downloads, 'project-dna-installed-vsix-driver.vsix'),
     token: path.join(validationRoot, 'connection-token'),
-    result: path.join(results, 'installed-extension-host.json'),
+    result: path.join(
+      serverData,
+      'data',
+      'User',
+      'globalStorage',
+      DRIVER_EXTENSION_ID,
+      'installed-extension-host.json',
+    ),
+    extensionListLog: path.join(logs, 'installed-extensions.txt'),
     serverLog: path.join(logs, 'server.log'),
     browserLog: path.join(logs, 'browser.log'),
   };
@@ -302,6 +313,39 @@ async function createDriverVsix(outputPath, signal) {
     { cwd: driverRoot, signal },
   );
   assert(existsSync(outputPath), `installed VSIX driver was not packaged: ${outputPath}`);
+}
+
+async function verifyInstalledExtensions(serverExecutable, paths, signal) {
+  const result = await runCommand(
+    serverExecutable,
+    [
+      '--list-extensions',
+      '--show-versions',
+      '--extensions-dir',
+      paths.extensions,
+      '--server-data-dir',
+      paths.serverData,
+      '--accept-server-license-terms',
+    ],
+    { signal },
+  );
+  writeFileSync(
+    paths.extensionListLog,
+    `${result.stdout}${result.stderr ? `\n[stderr]\n${result.stderr}` : ''}`,
+    'utf8',
+  );
+  const installedExtensions = new Set(
+    result.stdout
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter(Boolean),
+  );
+  for (const expected of [`${PROJECT_EXTENSION_ID}@1.0.0`, `${DRIVER_EXTENSION_ID}@1.0.0`]) {
+    assert(
+      installedExtensions.has(expected),
+      `isolated extension profile is missing ${expected}:\n${result.stdout}\n${result.stderr}`,
+    );
+  }
 }
 
 async function downloadFile(url, destination, signal) {
@@ -573,6 +617,28 @@ function collectFailureLogs(paths) {
   }
   if (existsSync(paths.result)) {
     cpSync(paths.result, path.join(paths.logs, path.basename(paths.result)));
+  }
+  collectExtensionScanFiles(paths.extensions, paths.logs, 'extensions');
+  collectExtensionScanFiles(paths.serverData, paths.logs, 'server-data');
+}
+
+function collectExtensionScanFiles(sourceRoot, logsRoot, sourceName) {
+  if (!existsSync(sourceRoot)) return;
+  const diagnosticNames = new Set([
+    'extensions.json',
+    'extensions.user.cache',
+    'extensions.builtin.cache',
+  ]);
+  for (const relativePath of collectFiles(sourceRoot)) {
+    if (!diagnosticNames.has(path.posix.basename(relativePath))) continue;
+    const destination = path.join(
+      logsRoot,
+      'extension-scan',
+      sourceName,
+      ...relativePath.split('/'),
+    );
+    mkdirSync(path.dirname(destination), { recursive: true });
+    cpSync(path.join(sourceRoot, ...relativePath.split('/')), destination);
   }
 }
 

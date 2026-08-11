@@ -16,7 +16,7 @@ const NATIVE_BINDING = 'native/linux-x64/node-abi137/better_sqlite3.node';
 const SQLITE_HEADER_HEX = '53514c69746520666f726d6174203300';
 
 async function activate(context) {
-  const resultPath = requiredEnvironment('PROJECT_DNA_INSTALLED_TEST_RESULT');
+  const resultPath = path.join(context.globalStorageUri.fsPath, 'installed-extension-host.json');
   try {
     const result = await validateInstalledExtension(context);
     writeResult(resultPath, { success: true, ...result });

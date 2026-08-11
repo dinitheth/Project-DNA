@@ -444,6 +444,12 @@ describe('M5 release contract', () => {
       "path.join(validationRoot, 'extensions')",
       "path.join(validationRoot, 'workspace')",
       "path.join(validationRoot, 'browser-profile')",
+      "'--list-extensions'",
+      "'--show-versions'",
+      '`${PROJECT_EXTENSION_ID}@1.0.0`',
+      '`${DRIVER_EXTENSION_ID}@1.0.0`',
+      "'extensions.user.cache'",
+      "'extensions.builtin.cache'",
       "'127.0.0.1'",
       "'--port'",
       "'0'",
@@ -492,9 +498,13 @@ describe('M5 release contract', () => {
       "const SQLITE_HEADER_HEX = '53514c69746520666f726d6174203300'",
       'rowsAfter > rowsBefore',
       'nativeBinding: bindingPath',
+      "path.join(context.globalStorageUri.fsPath, 'installed-extension-host.json')",
     ]) {
       expect(installedDriverSource).toContain(requiredDriverValue);
     }
+    expect(installedDriverSource).not.toContain(
+      "requiredEnvironment('PROJECT_DNA_INSTALLED_TEST_RESULT')",
+    );
   });
 
   it('keeps unspecified Marketplace metadata deferred', () => {
