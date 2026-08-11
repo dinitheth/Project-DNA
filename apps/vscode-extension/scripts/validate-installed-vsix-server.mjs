@@ -22,8 +22,8 @@ import { fileURLToPath } from 'node:url';
 
 const VSCODE_VERSION = '1.132.0';
 const VSCODE_SERVER_COMMIT = 'df53daabb18cd157bdb08c7f01c34df936cf12f4';
-const VSCODE_SERVER_URL = `https://update.code.visualstudio.com/${VSCODE_VERSION}/server-linux-x64/stable`;
-const VSCODE_SERVER_SHA256 = 'adf5816366a9a8c430745f96fd783df70e7606a35311999aac53b70b257aebc0';
+const VSCODE_SERVER_URL = `https://update.code.visualstudio.com/${VSCODE_VERSION}/server-linux-x64-web/stable`;
+const VSCODE_SERVER_SHA256 = 'a49c72b8d9e47faceef53e366c65af1be159bf4818dcb77579241af28de0a7d6';
 const HARD_TIMEOUT_MS = 12 * 60 * 1000;
 const PROJECT_EXTENSION_ID = 'project-dna.vscode-extension';
 const NATIVE_BINDING = 'native/linux-x64/node-abi137/better_sqlite3.node';
@@ -67,7 +67,7 @@ async function main() {
     controller.abort(new Error(`installed VSIX validation exceeded ${HARD_TIMEOUT_MS} ms`));
   }, HARD_TIMEOUT_MS);
   timeout.unref();
-  const resources = { browserContext: undefined, server: undefined };
+  const resources = { browserContext: undefined, server: undefined, serverOutput: undefined };
   let failure;
   try {
     await runValidation({
@@ -78,6 +78,9 @@ async function main() {
     });
   } catch (error) {
     failure = error;
+    if (resources.serverOutput) {
+      console.error(`VS Code Server output before failure:\n${resources.serverOutput.read()}`);
+    }
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -116,7 +119,7 @@ async function runValidation({ paths, resources, repositoryWorkspace, signal }) 
   await runCommand('tar', ['-xzf', paths.serverArchive, '-C', paths.downloads], {
     signal,
   });
-  const serverRoot = path.join(paths.downloads, 'vscode-server-linux-x64');
+  const serverRoot = path.join(paths.downloads, 'vscode-server-linux-x64-web');
   const serverExecutable = path.join(serverRoot, 'bin', 'code-server');
   assert(
     existsSync(serverExecutable),
@@ -178,12 +181,22 @@ async function runValidation({ paths, resources, repositoryWorkspace, signal }) 
     ],
     {
       cwd: paths.validationRoot,
+      detached: true,
       env: serverEnvironment,
       stdio: ['ignore', 'pipe', 'pipe'],
     },
   );
   resources.server = server;
-  const port = await waitForServerPort(server, paths.serverLog, signal);
+  resources.serverOutput = captureServerOutput(server, paths.serverLog);
+  const startupUrl = await waitForServerWebUrl(server, resources.serverOutput, signal);
+  const workbenchUrl = new URL(startupUrl);
+  assertEqual(workbenchUrl.protocol, 'http:', 'VS Code Server web protocol');
+  assert(
+    workbenchUrl.hostname === 'localhost' || workbenchUrl.hostname === '127.0.0.1',
+    `VS Code Server web host must be loopback: ${workbenchUrl.hostname}`,
+  );
+  assertEqual(workbenchUrl.searchParams.get('tkn'), token, 'VS Code Server connection token');
+  workbenchUrl.hostname = '127.0.0.1';
 
   const { chromium } = await import('playwright');
   throwIfAborted(signal);
@@ -205,9 +218,15 @@ async function runValidation({ paths, resources, repositoryWorkspace, signal }) 
       `[requestfailed] ${request.method()} ${request.url()} ${request.failure()?.errorText ?? ''}`,
     ),
   );
-  const response = await page.goto(`http://127.0.0.1:${port}/?tkn=${encodeURIComponent(token)}`, {
+  const response = await page.goto(workbenchUrl.href, {
     waitUntil: 'domcontentloaded',
     timeout: 60_000,
+  });
+  await logWorkbenchResponse({
+    response,
+    requestedUrl: workbenchUrl.href,
+    startupUrl,
+    logPath: paths.browserLog,
   });
   assert(response?.ok() === true, `VS Code Server workbench returned HTTP ${response?.status()}`);
 
@@ -236,7 +255,7 @@ function createPaths(validationRoot) {
     results,
     logs,
     integrityExtraction: path.join(validationRoot, 'integrity-extracted'),
-    serverArchive: path.join(downloads, `vscode-server-linux-x64-${VSCODE_VERSION}.tar.gz`),
+    serverArchive: path.join(downloads, `vscode-server-linux-x64-web-${VSCODE_VERSION}.tar.gz`),
     driverVsix: path.join(downloads, 'project-dna-installed-vsix-driver.vsix'),
     token: path.join(validationRoot, 'connection-token'),
     result: path.join(results, 'installed-extension-host.json'),
@@ -305,39 +324,65 @@ async function downloadFile(url, destination, signal) {
   throw lastError ?? new Error(`download failed: ${url}`);
 }
 
-function waitForServerPort(server, logPath, signal) {
+function captureServerOutput(server, logPath) {
   writeFileSync(logPath, '', 'utf8');
-  return new Promise((resolve, reject) => {
-    let output = '';
-    let settled = false;
-    const handleData = (chunk) => {
-      const text = chunk.toString();
-      output += text;
-      appendFileSync(logPath, text, 'utf8');
-      const match = output.match(/Extension host agent listening on (\d+)/u);
-      if (match) finish(undefined, Number(match[1]));
-    };
-    const handleExit = (code, exitSignal) =>
-      finish(
-        new Error(`VS Code Server exited before listening: code=${code} signal=${exitSignal}`),
+  let output = '';
+  const handleData = (chunk) => {
+    const text = chunk.toString();
+    output += text;
+    appendFileSync(logPath, text, 'utf8');
+  };
+  server.stdout?.on('data', handleData);
+  server.stderr?.on('data', handleData);
+  return {
+    read: () => output,
+    dispose: () => {
+      server.stdout?.off('data', handleData);
+      server.stderr?.off('data', handleData);
+    },
+  };
+}
+
+async function waitForServerWebUrl(server, serverOutput, signal) {
+  while (true) {
+    throwIfAborted(signal);
+    const match = serverOutput.read().match(/Web UI available at (https?:\/\/\S+)/u);
+    if (match) return match[1];
+    if (server.exitCode !== null || server.signalCode !== null) {
+      throw new Error(
+        `VS Code Server exited before publishing its Web UI URL: code=${server.exitCode} signal=${server.signalCode}`,
       );
-    const handleError = (error) => finish(error);
-    const handleAbort = () => finish(abortError(signal));
-    const finish = (error, port) => {
-      if (settled) return;
-      settled = true;
-      server.off('exit', handleExit);
-      server.off('error', handleError);
-      signal.removeEventListener('abort', handleAbort);
-      if (error) reject(error);
-      else resolve(port);
-    };
-    server.stdout?.on('data', handleData);
-    server.stderr?.on('data', handleData);
-    server.once('exit', handleExit);
-    server.once('error', handleError);
-    signal.addEventListener('abort', handleAbort, { once: true });
-  });
+    }
+    await delay(50, signal);
+  }
+}
+
+async function logWorkbenchResponse({ response, requestedUrl, startupUrl, logPath }) {
+  let headers = {};
+  let bodyPrefix = '';
+  if (response) {
+    try {
+      headers = await response.allHeaders();
+    } catch (error) {
+      headers = { diagnosticError: String(error) };
+    }
+    try {
+      bodyPrefix = (await response.text()).slice(0, 1_024);
+    } catch (error) {
+      bodyPrefix = `<unable to read response body: ${String(error)}>`;
+    }
+  }
+  const diagnostic = {
+    startupUrl,
+    requestedUrl,
+    finalUrl: response?.url() ?? null,
+    status: response?.status() ?? null,
+    headers,
+    bodyPrefix,
+  };
+  const message = `[workbench-response] ${JSON.stringify(diagnostic, null, 2)}`;
+  appendLog(logPath, message);
+  console.log(message);
 }
 
 async function waitForResult(resultPath, signal, server) {
@@ -449,18 +494,76 @@ async function runCommand(command, args, { cwd, signal }) {
 }
 
 async function cleanup(resources) {
-  if (resources.browserContext) {
-    try {
-      await resources.browserContext.close();
-    } catch (error) {
-      console.error('Failed to close Playwright context', error);
+  const cleanupTasks = [];
+  if (resources.browserContext) cleanupTasks.push(closePlaywright(resources.browserContext));
+  if (resources.server) cleanupTasks.push(terminateServer(resources.server));
+  const results = await Promise.allSettled(cleanupTasks);
+  for (const result of results) {
+    if (result.status === 'rejected') console.error('Cleanup failed', result.reason);
+  }
+  resources.serverOutput?.dispose();
+  resources.server?.stdout?.destroy();
+  resources.server?.stderr?.destroy();
+}
+
+async function closePlaywright(browserContext) {
+  try {
+    await withDeadline(browserContext.close(), 10_000, 'Playwright context close timed out');
+  } catch (error) {
+    const browser = browserContext.browser();
+    if (!browser) throw error;
+    await withDeadline(browser.close(), 5_000, 'Playwright browser close timed out');
+  }
+}
+
+async function terminateServer(server) {
+  killProcessGroup(server, 'SIGTERM');
+  if (server.exitCode === null) {
+    await Promise.race([onceExit(server), delayWithoutSignal(5_000)]);
+  }
+  if (isProcessGroupRunning(server)) {
+    killProcessGroup(server, 'SIGKILL');
+    if (server.exitCode === null) {
+      await Promise.race([onceExit(server), delayWithoutSignal(5_000)]);
     }
   }
-  if (resources.server && resources.server.exitCode === null) {
-    resources.server.kill('SIGTERM');
-    await Promise.race([onceExit(resources.server), delayWithoutSignal(5_000)]);
-    if (resources.server.exitCode === null) resources.server.kill('SIGKILL');
+}
+
+function killProcessGroup(child, signal) {
+  if (typeof child.pid !== 'number') return;
+  try {
+    process.kill(-child.pid, signal);
+  } catch (error) {
+    if (error?.code !== 'ESRCH') throw error;
   }
+}
+
+function isProcessGroupRunning(child) {
+  if (typeof child.pid !== 'number') return false;
+  try {
+    process.kill(-child.pid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ESRCH') return false;
+    throw error;
+  }
+}
+
+function withDeadline(promise, milliseconds, message) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(message)), milliseconds);
+    timeout.unref();
+    promise.then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
 }
 
 function collectFailureLogs(paths) {
