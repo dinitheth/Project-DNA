@@ -4,10 +4,11 @@ import {
   type IProjectDNAService,
   type PipelineProgress,
 } from '@project-dna/dna-core';
-import { Container, Err, ExtensionMessageSchema } from '@project-dna/shared';
+import { Container, Err, ExtensionMessageSchema, Ok } from '@project-dna/shared';
 
 const vscodeState = vi.hoisted(() => ({
   registeredCommand: null as (() => Promise<void>) | null,
+  showInformationMessage: vi.fn<(message: string) => Promise<string | undefined>>(),
 }));
 
 vi.mock('vscode', () => ({
@@ -36,7 +37,7 @@ vi.mock('vscode', () => ({
     ) => task({ report() {} }, { onCancellationRequested: () => ({ dispose() {} }) }),
     showWarningMessage: async () => undefined,
     showErrorMessage: async () => undefined,
-    showInformationMessage: async () => undefined,
+    showInformationMessage: (message: string) => vscodeState.showInformationMessage(message),
   },
 }));
 
@@ -46,6 +47,34 @@ import { SidebarProvider } from '../sidebar/sidebar-provider.js';
 describe('command-triggered analysis publication', () => {
   beforeEach(() => {
     vscodeState.registeredCommand = null;
+    vscodeState.showInformationMessage.mockReset();
+    vscodeState.showInformationMessage.mockResolvedValue(undefined);
+  });
+
+  it('resolves a successful command without waiting for notification dismissal', async () => {
+    vscodeState.showInformationMessage.mockImplementation(() => new Promise(() => undefined));
+    const service = {
+      onProgress() {
+        return () => undefined;
+      },
+      async analyze() {
+        return Ok({ entityCount: 2, health: { overallScore: 91 } });
+      },
+    } as unknown as IProjectDNAService;
+    const container = { resolve: () => service } as unknown as Container;
+    registerAnalyzeRepositoryCommand({ subscriptions: { push() {} } } as never, container);
+
+    await expect(
+      Promise.race([
+        vscodeState.registeredCommand?.(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('analysis command remained pending')), 100),
+        ),
+      ]),
+    ).resolves.toBeUndefined();
+    expect(vscodeState.showInformationMessage).toHaveBeenCalledWith(
+      'Project DNA ready: 2 entities, health 91/100',
+    );
   });
 
   it('emits analysisStarted before progress for analysis initiated by a VS Code command', async () => {

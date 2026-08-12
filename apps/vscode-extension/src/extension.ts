@@ -29,7 +29,7 @@ export async function activate(context: vscode.ExtensionContext) {
     const version = String(context.extension.packageJSON.version ?? 'unknown');
     const message = formatCompatibilityError(error, version);
     registerUnsupportedRuntime(context, message);
-    await vscode.window.showErrorMessage(message);
+    void vscode.window.showErrorMessage(message);
     return;
   }
 

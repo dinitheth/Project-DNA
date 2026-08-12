@@ -8,10 +8,10 @@ export function registerRefreshDnaCommand(context: vscode.ExtensionContext, cont
       const service = container.resolve<IProjectDNAService>(TOKENS.ProjectDNAService);
       const result = await service.refresh();
       if (isErr(result)) {
-        await vscode.window.showErrorMessage(`Project DNA refresh failed: ${result.error.message}`);
+        void vscode.window.showErrorMessage(`Project DNA refresh failed: ${result.error.message}`);
         return;
       }
-      await vscode.window.showInformationMessage(
+      void vscode.window.showInformationMessage(
         `Project DNA refreshed to version ${result.value.version}.`,
       );
     }),

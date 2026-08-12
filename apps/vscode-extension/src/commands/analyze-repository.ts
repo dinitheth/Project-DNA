@@ -10,7 +10,7 @@ export function registerAnalyzeRepositoryCommand(
     vscode.commands.registerCommand('project-dna.analyzeRepository', async () => {
       const rootPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       if (!rootPath) {
-        await vscode.window.showWarningMessage('Project DNA: Open a workspace folder first.');
+        void vscode.window.showWarningMessage('Project DNA: Open a workspace folder first.');
         return;
       }
       const service = container.resolve<IProjectDNAService>(TOKENS.ProjectDNAService);
@@ -37,12 +37,10 @@ export function registerAnalyzeRepositoryCommand(
         },
       );
       if (isErr(result)) {
-        await vscode.window.showErrorMessage(
-          `Project DNA analysis failed: ${result.error.message}`,
-        );
+        void vscode.window.showErrorMessage(`Project DNA analysis failed: ${result.error.message}`);
         return;
       }
-      await vscode.window.showInformationMessage(
+      void vscode.window.showInformationMessage(
         `Project DNA ready: ${result.value.entityCount} entities, health ${result.value.health.overallScore}/100`,
       );
     }),

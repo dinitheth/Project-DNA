@@ -14,6 +14,7 @@ const vscode = require('vscode');
 const PROJECT_EXTENSION_ID = 'project-dna.vscode-extension';
 const NATIVE_BINDING = 'native/linux-x64/node-abi137/better_sqlite3.node';
 const SQLITE_HEADER_HEX = '53514c69746520666f726d6174203300';
+const COMMAND_TIMEOUT_MS = 30_000;
 
 async function activate(context) {
   const resultPath = path.join(context.globalStorageUri.fsPath, 'installed-extension-host.json');
@@ -87,7 +88,11 @@ async function validateInstalledExtension(context) {
   const requireFromProject = createRequire(path.join(installedExtensionPath, 'package.json'));
   const Database = requireFromProject('./node_modules/better-sqlite3');
   const rowsBefore = countStoredRows(Database, databasePath, bindingPath);
-  await vscode.commands.executeCommand('project-dna.analyzeRepository');
+  await withDeadline(
+    vscode.commands.executeCommand('project-dna.analyzeRepository'),
+    COMMAND_TIMEOUT_MS,
+    'project-dna.analyzeRepository failed to resolve within 30 seconds',
+  );
   const rowsAfter = countStoredRows(Database, databasePath, bindingPath);
   assert(rowsAfter > rowsBefore, 'Project DNA command did not persist analysis results');
 
@@ -128,6 +133,14 @@ function countStoredRows(Database, databasePath, bindingPath) {
   } finally {
     database.close();
   }
+}
+
+function withDeadline(promise, timeoutMs, message) {
+  let timeout;
+  const deadline = new Promise((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timeout));
 }
 
 function writeResult(resultPath, result) {

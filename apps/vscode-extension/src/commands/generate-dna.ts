@@ -11,7 +11,7 @@ export function registerGenerateDnaCommand(context: vscode.ExtensionContext, con
         await vscode.commands.executeCommand('project-dna.analyzeRepository');
         return;
       }
-      await vscode.window.showInformationMessage(
+      void vscode.window.showInformationMessage(
         `Project DNA v${current.value.version}: ${current.value.profile.description}, health ${current.value.health.overallScore}/100.`,
       );
     }),
