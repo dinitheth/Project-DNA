@@ -111,35 +111,69 @@ export default function App() {
 
   return (
     <div className="flex h-screen flex-col bg-vscode-background p-4 text-vscode-foreground">
-      <nav className="mb-4 border-b border-panel-border pb-2" aria-label="Project DNA views">
-        <div className="grid grid-cols-2 gap-2">
-          {(['overview', 'architecture', 'knowledge', 'dependencies'] as SidebarRoute[]).map(
-            (route) => (
-              <button
-                key={route}
-                className={`justify-self-start rounded px-3 py-1 capitalize ${navigation.route === route ? 'bg-vscode-button text-vscode-buttonForeground' : 'hover:bg-list-hover'}`}
-                onClick={() => navigate(route)}
-              >
-                {route}
-              </button>
-            ),
-          )}
-        </div>
-        <div className="mt-2">
-          <button
-            className={`w-full rounded px-3 py-1 text-left capitalize ${navigation.route === 'settings' ? 'bg-vscode-button text-vscode-buttonForeground' : 'hover:bg-list-hover'}`}
-            onClick={() => navigate('settings')}
-          >
-            settings
-          </button>
-        </div>
-      </nav>
+      <SidebarNavigation activeRoute={navigation.route} onNavigate={navigate} />
       <main className="flex-1 overflow-auto">{renderView()}</main>
     </div>
   );
 }
 
-function StatusPanel({
+export function SidebarNavigation({
+  activeRoute,
+  onNavigate,
+}: {
+  activeRoute: SidebarRoute;
+  onNavigate: (route: SidebarRoute) => void;
+}) {
+  return (
+    <nav className="mb-4 border-b border-panel-border pb-2" aria-label="Project DNA views">
+      <div className="grid grid-cols-2 gap-2">
+        {(['overview', 'architecture', 'knowledge', 'dependencies'] as SidebarRoute[]).map(
+          (route) => (
+            <RouteButton
+              active={activeRoute === route}
+              key={route}
+              onClick={() => onNavigate(route)}
+              route={route}
+            />
+          ),
+        )}
+      </div>
+      <div className="mt-2">
+        <RouteButton
+          active={activeRoute === 'settings'}
+          fullWidth
+          onClick={() => onNavigate('settings')}
+          route="settings"
+        />
+      </div>
+    </nav>
+  );
+}
+
+function RouteButton({
+  active,
+  fullWidth = false,
+  onClick,
+  route,
+}: {
+  active: boolean;
+  fullWidth?: boolean;
+  onClick: () => void;
+  route: SidebarRoute;
+}) {
+  return (
+    <button
+      aria-current={active ? 'page' : undefined}
+      className={`${fullWidth ? 'w-full text-left' : 'justify-self-start'} rounded px-3 py-1 capitalize ${active ? 'bg-vscode-button text-vscode-buttonForeground' : 'hover:bg-list-hover'}`}
+      onClick={onClick}
+      type="button"
+    >
+      {route}
+    </button>
+  );
+}
+
+export function StatusPanel({
   title,
   message,
   actionLabel,
@@ -154,22 +188,37 @@ function StatusPanel({
   progress?: number;
   tone?: 'default' | 'error';
 }) {
+  const boundedProgress = progress === undefined ? undefined : Math.min(100, Math.max(0, progress));
   return (
     <div className="rounded border border-panel-border bg-panel p-4">
-      <h2 className={`text-lg font-semibold ${tone === 'error' ? 'text-error' : ''}`}>{title}</h2>
-      <p className="mt-2 text-sm leading-relaxed text-description">{message}</p>
-      {progress !== undefined ? (
-        <div className="mt-4 h-2 overflow-hidden rounded bg-progress-background">
+      <div
+        aria-atomic="true"
+        aria-live={tone === 'error' ? 'assertive' : 'polite'}
+        role={tone === 'error' ? 'alert' : 'status'}
+      >
+        <h2 className={`text-lg font-semibold ${tone === 'error' ? 'text-error' : ''}`}>{title}</h2>
+        <p className="mt-2 text-sm leading-relaxed text-description">{message}</p>
+        {boundedProgress !== undefined ? (
           <div
-            className="h-full rounded bg-progress transition-all"
-            style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
-          />
-        </div>
-      ) : null}
+            aria-label={`${title}: ${message}`}
+            aria-valuemax={100}
+            aria-valuemin={0}
+            aria-valuenow={boundedProgress}
+            className="mt-4 h-2 overflow-hidden rounded bg-progress-background"
+            role="progressbar"
+          >
+            <div
+              className="h-full rounded bg-progress transition-all"
+              style={{ width: `${boundedProgress}%` }}
+            />
+          </div>
+        ) : null}
+      </div>
       {actionLabel && onAction ? (
         <button
           className="mt-4 rounded bg-vscode-button px-3 py-1.5 text-vscode-buttonForeground hover:bg-vscode-buttonHover"
           onClick={onAction}
+          type="button"
         >
           {actionLabel}
         </button>
