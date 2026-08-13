@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { EvolutionData, RepositoryData, WorkspaceRelativePath } from '@project-dna/shared';
 import { Badge, EmptyCollection, MetricCard, ProgressBar, Section } from '../components/ui';
 import { Panel, StatusIndicator, TreeView, type TreeItem } from '@project-dna/ui-components';
@@ -23,6 +23,19 @@ export function OverviewView({
     .sort((left, right) => left - right);
   const [fromVersion, setFromVersion] = useState(availableVersions.at(-2) ?? availableVersions[0]);
   const [toVersion, setToVersion] = useState(availableVersions.at(-1));
+
+  useEffect(() => {
+    setFromVersion((current) =>
+      current !== undefined && availableVersions.includes(current)
+        ? current
+        : (availableVersions.at(-2) ?? availableVersions[0]),
+    );
+    setToVersion((current) =>
+      current !== undefined && availableVersions.includes(current)
+        ? current
+        : availableVersions.at(-1),
+    );
+  }, [availableVersions.join(',')]);
 
   if (!data) return <EmptyCollection>Repository overview data is not available.</EmptyCollection>;
 
