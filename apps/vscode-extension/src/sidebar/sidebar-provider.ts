@@ -314,7 +314,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     message?: string,
   ): Promise<void> {
     if (this.webviewView !== sourceView) return;
-    await sourceView.webview.postMessage({
+    await safePostMessage(sourceView, {
       type: 'workspaceTargetResult',
       requestId,
       path,
@@ -445,7 +445,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     error?: string,
   ): Promise<void> {
     if (this.webviewView !== sourceView) return;
-    await sourceView.webview.postMessage({
+    await safePostMessage(sourceView, {
       type: 'entityDetail',
       requestId,
       analysisVersion,
@@ -542,7 +542,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     error?: string,
   ): Promise<void> {
     if (this.webviewView !== sourceView) return;
-    await sourceView.webview.postMessage({
+    await safePostMessage(sourceView, {
       type: 'evolutionComparison',
       requestId,
       analysisVersion,
@@ -633,7 +633,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     const target = this.webviewView;
     const generation = this.navigationGeneration;
     const revision = this.navigationRevision;
-    const delivered = await target.webview.postMessage({
+    const delivered = await safePostNavigation(target, {
       type: 'navigateTo',
       route: this.currentRoute,
       generation,
@@ -674,6 +674,25 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         <script nonce="${nonce}" src="${scriptUri}"></script>
       </body>
       </html>`;
+  }
+}
+
+async function safePostNavigation(
+  view: vscode.WebviewView,
+  message: Extract<ExtensionMessage, { type: 'navigateTo' }>,
+): Promise<boolean> {
+  try {
+    return await view.webview.postMessage(message);
+  } catch {
+    return false;
+  }
+}
+
+async function safePostMessage(view: vscode.WebviewView, message: ExtensionMessage): Promise<void> {
+  try {
+    await view.webview.postMessage(message);
+  } catch {
+    // The webview may be disposed between the active-view check and delivery.
   }
 }
 
