@@ -435,6 +435,7 @@ are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
 - Typed, persisted sidebar navigation with provider-authoritative command routing and webview recreation recovery
 - Query-backed Architecture, Dependencies, Knowledge Graph, Health, Risks, Critical Components, and Evolution intelligence views
 - Accessible reusable webview primitives for badges, status indicators, collapsible panels, section headers, icons, and keyboard-navigable nested trees
+- Actionable intelligence navigation with provider-validated workspace targets, query-backed entity details, and deterministic evolution comparisons
 - Deterministic cross-platform native validation and byte-identical VSIX packaging, including a real installed VS Code Server 1.132.0 Extension Host acceptance gate
 - Typed `Result<T>` error handling, cancellation support, dependency injection, and error-isolated EventBus coordination
 - ESLint 9 flat configuration and production extension/webview build
@@ -443,8 +444,8 @@ are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Next
 
-- Add focused installed-extension integration coverage for intelligence view interactions
-- Define the next user-facing intelligence workflow without changing the frozen native and release contracts
+- Expand installed-extension integration coverage for actionable intelligence interactions
+- Continue product discovery for the next user-facing intelligence workflow without changing the frozen native and release contracts
 
 ---
 

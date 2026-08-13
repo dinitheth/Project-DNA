@@ -6,7 +6,7 @@ critical implementation issue has been documented and approved.
 
 ## Prerequisites
 
-- Node.js 20
+- Node.js 22.23.2
 - pnpm 9.15.4
 - Git
 
