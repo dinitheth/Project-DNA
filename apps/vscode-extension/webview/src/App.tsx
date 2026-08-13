@@ -1,4 +1,5 @@
-import { useEffect, useReducer, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import type { SidebarRoute } from '@project-dna/shared';
 import { useMessage } from './hooks/useMessage';
 import { useVSCodeApi } from './hooks/useVSCodeApi';
 import { initialAnalysisState, reduceAnalysisState } from './state/analysis-state';
@@ -7,12 +8,15 @@ import { ArchitectureView } from './views/architecture-view';
 import { KnowledgeView } from './views/knowledge-view';
 import { DependenciesView } from './views/dependencies-view';
 import { SettingsView } from './views/settings-view';
-
-type ViewType = 'overview' | 'architecture' | 'knowledge' | 'dependencies' | 'settings';
+import { SidebarNavigationController, type NavigationState } from './state/navigation-state';
 
 export default function App() {
   const vscode = useVSCodeApi();
-  const [currentView, setCurrentView] = useState<ViewType>('overview');
+  const navigationController = useRef<SidebarNavigationController | null>(null);
+  navigationController.current ??= new SidebarNavigationController(vscode);
+  const [navigation, setNavigation] = useState<NavigationState>(() =>
+    navigationController.current!.getSnapshot(),
+  );
   const [analysis, dispatchAnalysis] = useReducer(reduceAnalysisState, initialAnalysisState);
   const {
     status,
@@ -25,11 +29,21 @@ export default function App() {
     knowledge,
   } = analysis;
 
-  useMessage(dispatchAnalysis);
+  const handleMessage = useCallback((message: Parameters<typeof dispatchAnalysis>[0]) => {
+    if (message.type === 'navigateTo') {
+      navigationController.current?.receive(message);
+      return;
+    }
+    dispatchAnalysis(message);
+  }, []);
+  useMessage(handleMessage);
 
   useEffect(() => {
-    vscode.postMessage({ type: 'ready' });
-  }, [vscode]);
+    const controller = navigationController.current!;
+    const unsubscribe = controller.subscribe(setNavigation);
+    controller.start();
+    return unsubscribe;
+  }, []);
 
   const analyze = () => vscode.postMessage({ type: 'requestAnalysis' });
   const refresh = () => vscode.postMessage({ type: 'requestRefresh' });
@@ -73,7 +87,7 @@ export default function App() {
       );
     }
 
-    switch (currentView) {
+    switch (navigation.route) {
       case 'overview':
         return <OverviewView data={repository} error={error} onRefresh={refresh} />;
       case 'architecture':
@@ -87,28 +101,29 @@ export default function App() {
     }
   };
 
-  const navigate = (view: ViewType) => {
-    setCurrentView(view);
-    vscode.postMessage({ type: 'navigateTo', view });
+  const navigate = (route: SidebarRoute) => {
+    navigationController.current?.navigate(route);
   };
 
   return (
     <div className="flex h-screen flex-col bg-vscode-background p-4 text-vscode-foreground">
       <nav className="mb-4 border-b border-panel-border pb-2" aria-label="Project DNA views">
         <div className="grid grid-cols-2 gap-2">
-          {(['overview', 'architecture', 'knowledge', 'dependencies'] as ViewType[]).map((view) => (
-            <button
-              key={view}
-              className={`justify-self-start rounded px-3 py-1 capitalize ${currentView === view ? 'bg-vscode-button text-vscode-buttonForeground' : 'hover:bg-list-hover'}`}
-              onClick={() => navigate(view)}
-            >
-              {view}
-            </button>
-          ))}
+          {(['overview', 'architecture', 'knowledge', 'dependencies'] as SidebarRoute[]).map(
+            (route) => (
+              <button
+                key={route}
+                className={`justify-self-start rounded px-3 py-1 capitalize ${navigation.route === route ? 'bg-vscode-button text-vscode-buttonForeground' : 'hover:bg-list-hover'}`}
+                onClick={() => navigate(route)}
+              >
+                {route}
+              </button>
+            ),
+          )}
         </div>
         <div className="mt-2">
           <button
-            className={`w-full rounded px-3 py-1 text-left capitalize ${currentView === 'settings' ? 'bg-vscode-button text-vscode-buttonForeground' : 'hover:bg-list-hover'}`}
+            className={`w-full rounded px-3 py-1 text-left capitalize ${navigation.route === 'settings' ? 'bg-vscode-button text-vscode-buttonForeground' : 'hover:bg-list-hover'}`}
             onClick={() => navigate('settings')}
           >
             settings

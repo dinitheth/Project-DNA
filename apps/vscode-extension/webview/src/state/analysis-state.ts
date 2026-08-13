@@ -100,6 +100,7 @@ export function reduceAnalysisState(
     case 'dependencyData':
     case 'knowledgeData':
     case 'themeChanged':
+    case 'navigateTo':
       return state;
   }
 }
