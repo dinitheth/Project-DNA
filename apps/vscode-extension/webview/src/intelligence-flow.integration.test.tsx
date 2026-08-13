@@ -7,6 +7,11 @@ import { ArchitectureView } from './views/architecture-view.js';
 import { DependenciesView } from './views/dependencies-view.js';
 import { KnowledgeView } from './views/knowledge-view.js';
 import { OverviewView } from './views/overview-view.js';
+import { initialEntityDetailState, reduceEntityDetailState } from './state/entity-detail-state.js';
+import {
+  initialEvolutionComparisonState,
+  reduceEvolutionComparisonState,
+} from './state/evolution-comparison-state.js';
 
 describe('intelligence snapshot webview integration', () => {
   it('validates one atomic snapshot and renders every intelligence surface from accepted state', () => {
@@ -51,7 +56,91 @@ describe('intelligence snapshot webview integration', () => {
       ),
     ).toContain('Latest snapshot v1');
   });
+
+  it('correlates validated actionable responses with the latest webview selection', () => {
+    let entity = reduceEntityDetailState(initialEntityDetailState, {
+      type: 'select',
+      requestId: 1,
+      analysisVersion: 3,
+      entityId: 'entity-a',
+    });
+    entity = reduceEntityDetailState(entity, {
+      type: 'select',
+      requestId: 2,
+      analysisVersion: 3,
+      entityId: 'entity-b',
+    });
+    let comparison = reduceEvolutionComparisonState(initialEvolutionComparisonState, {
+      type: 'select',
+      requestId: 4,
+      analysisVersion: 3,
+      fromVersion: 1,
+      toVersion: 3,
+    });
+    const listener = createExtensionMessageListener((message) => {
+      entity = reduceEntityDetailState(entity, { type: 'message', message });
+      comparison = reduceEvolutionComparisonState(comparison, { type: 'message', message });
+    });
+
+    listener({ data: entityResponse(1, 'entity-a') } as MessageEvent<unknown>);
+    listener({ data: entityResponse(2, 'entity-b') } as MessageEvent<unknown>);
+    listener({ data: comparisonResponse() } as MessageEvent<unknown>);
+
+    expect(entity.entityId).toBe('entity-b');
+    expect(entity.entity?.name).toBe('Entity B');
+    expect(comparison.comparison?.toVersion).toBe(3);
+  });
 });
+
+function entityResponse(requestId: number, entityId: string) {
+  return {
+    type: 'entityDetail',
+    requestId,
+    analysisVersion: 3,
+    entityId,
+    entity: {
+      id: entityId,
+      name: entityId === 'entity-b' ? 'Entity B' : 'Entity A',
+      kind: 'file',
+      path: `src/${entityId}.ts`,
+      purpose: 'Fixture',
+      role: 'service',
+      domain: null,
+      criticality: 'medium',
+      complexity: 1,
+      health: 0.9,
+      dependencies: [],
+      dependents: [],
+      risks: [],
+      knowledgeReferences: [],
+    },
+  };
+}
+
+function comparisonResponse() {
+  return {
+    type: 'evolutionComparison',
+    requestId: 4,
+    analysisVersion: 3,
+    fromVersion: 1,
+    toVersion: 3,
+    comparison: {
+      fromVersion: 1,
+      toVersion: 3,
+      addedEntities: [],
+      removedEntities: [],
+      changedEntities: [],
+      healthDelta: { overall: 1, dimensions: {} },
+      newRisks: [],
+      resolvedRisks: [],
+      addedEdges: 0,
+      removedEdges: 0,
+      newDomains: [],
+      removedDomains: [],
+      architecturalSignificance: 0.1,
+    },
+  };
+}
 
 function snapshot() {
   return ExtensionMessageSchema.parse({

@@ -26,6 +26,44 @@ describe('extension message listener', () => {
 
     expect(handler).not.toHaveBeenCalled();
   });
+
+  it('validates actionable intelligence responses before delivery', () => {
+    const handler = vi.fn();
+    const listener = createExtensionMessageListener(handler);
+
+    listener({
+      data: {
+        type: 'entityDetail',
+        requestId: 1,
+        analysisVersion: 2,
+        entityId: 'entity-1',
+        entity: null,
+        error: 'Entity not found.',
+      },
+    } as MessageEvent<unknown>);
+    listener({
+      data: {
+        type: 'evolutionComparison',
+        requestId: 2,
+        analysisVersion: 4,
+        fromVersion: 2,
+        toVersion: 4,
+        comparison: null,
+        error: 'Comparison unavailable.',
+      },
+    } as MessageEvent<unknown>);
+    listener({
+      data: {
+        type: 'workspaceTargetResult',
+        requestId: 3,
+        path: '../escape.ts',
+        outcome: 'opened',
+      },
+    } as MessageEvent<unknown>);
+
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(handler).not.toHaveBeenCalledWith(expect.objectContaining({ path: '../escape.ts' }));
+  });
 });
 
 function createSnapshot() {
