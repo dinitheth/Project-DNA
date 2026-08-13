@@ -17,6 +17,17 @@ describe('sidebar navigation state', () => {
     );
   });
 
+  it('preserves unrelated persisted webview state', () => {
+    const harness = createHarness();
+    harness.persisted = { entityDetail: { status: 'loading' } };
+    const controller = new SidebarNavigationController(harness.transport);
+    controller.start();
+
+    expect(harness.persisted).toEqual(
+      expect.objectContaining({ entityDetail: { status: 'loading' }, route: 'overview' }),
+    );
+  });
+
   it('persists pending state and resumes it after recreation without request-id collision', () => {
     const harness = createHarness();
     const first = new SidebarNavigationController(harness.transport);

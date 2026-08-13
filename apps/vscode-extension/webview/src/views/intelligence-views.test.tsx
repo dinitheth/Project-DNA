@@ -53,6 +53,7 @@ describe('architecture and dependency views', () => {
       <KnowledgeView
         data={knowledgeData()}
         onOpenWorkspaceTarget={() => undefined}
+        onSelectEntity={() => undefined}
         semanticGraph={semanticGraphData()}
       />,
     );

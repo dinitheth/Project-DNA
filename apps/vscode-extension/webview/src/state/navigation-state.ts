@@ -169,13 +169,19 @@ export class SidebarNavigationController {
   }
 
   private persist(): void {
+    const current = this.transport.getState();
     this.transport.setState({
+      ...(isRecord(current) ? current : {}),
       ...this.state,
       inFlight: this.inFlight,
       queuedRoute: this.queuedRoute,
       nextRequestId: this.nextRequestId,
     });
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 function restoreNavigationState(candidate: unknown): PersistedNavigationState {

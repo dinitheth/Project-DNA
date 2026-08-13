@@ -9,16 +9,31 @@ import { KnowledgeView } from './views/knowledge-view';
 import { DependenciesView } from './views/dependencies-view';
 import { SettingsView } from './views/settings-view';
 import { SidebarNavigationController, type NavigationState } from './state/navigation-state';
+import {
+  reduceEntityDetailState,
+  restoreEntityDetailState,
+  type EntityDetailState,
+} from './state/entity-detail-state';
 
 export default function App() {
   const vscode = useVSCodeApi();
   const navigationController = useRef<SidebarNavigationController | null>(null);
   const workspaceTargetRequestId = useRef(0);
+  const restoredEntityDetail = useRef(restoreEntityDetailState(vscode.getState()));
+  const entityDetailRequestId = useRef(
+    restoredEntityDetail.current.requestId === Number.MAX_SAFE_INTEGER
+      ? 0
+      : restoredEntityDetail.current.requestId + 1,
+  );
   navigationController.current ??= new SidebarNavigationController(vscode);
   const [navigation, setNavigation] = useState<NavigationState>(() =>
     navigationController.current!.getSnapshot(),
   );
   const [analysis, dispatchAnalysis] = useReducer(reduceAnalysisState, initialAnalysisState);
+  const [entityDetail, dispatchEntityDetail] = useReducer(
+    reduceEntityDetailState,
+    restoredEntityDetail.current,
+  );
   const {
     status,
     workspaceRoot,
@@ -37,6 +52,7 @@ export default function App() {
       navigationController.current?.receive(message);
       return;
     }
+    dispatchEntityDetail({ type: 'message', message });
     dispatchAnalysis(message);
   }, []);
   useMessage(handleMessage);
@@ -46,6 +62,24 @@ export default function App() {
     const unsubscribe = controller.subscribe(setNavigation);
     controller.start();
     return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    const current = vscode.getState();
+    vscode.setState({
+      ...(current && typeof current === 'object' ? current : {}),
+      entityDetail,
+    });
+  }, [entityDetail, vscode]);
+
+  useEffect(() => {
+    if (entityDetail.status !== 'loading' || !entityDetail.entityId) return;
+    vscode.postMessage({
+      type: 'requestEntityDetail',
+      requestId: entityDetail.requestId,
+      analysisVersion: entityDetail.analysisVersion,
+      entityId: entityDetail.entityId,
+    });
   }, []);
 
   const analyze = () => vscode.postMessage({ type: 'requestAnalysis' });
@@ -58,6 +92,25 @@ export default function App() {
       vscode.postMessage({ type: 'openWorkspaceTarget', requestId, path });
     },
     [vscode],
+  );
+  const selectEntity = useCallback(
+    (entityId: string) => {
+      const requestId = entityDetailRequestId.current;
+      entityDetailRequestId.current = requestId === Number.MAX_SAFE_INTEGER ? 0 : requestId + 1;
+      dispatchEntityDetail({
+        type: 'select',
+        requestId,
+        entityId,
+        analysisVersion: analysis.latestVersion,
+      });
+      vscode.postMessage({
+        type: 'requestEntityDetail',
+        requestId,
+        analysisVersion: analysis.latestVersion,
+        entityId,
+      });
+    },
+    [analysis.latestVersion, vscode],
   );
 
   const renderView = () => {
@@ -118,6 +171,7 @@ export default function App() {
             data={knowledge}
             onOpenWorkspaceTarget={openWorkspaceTarget}
             semanticGraph={semanticGraph}
+            onSelectEntity={selectEntity}
           />
         );
       case 'dependencies':
@@ -134,8 +188,66 @@ export default function App() {
   return (
     <div className="flex h-screen flex-col bg-vscode-background p-4 text-vscode-foreground">
       <SidebarNavigation activeRoute={navigation.route} onNavigate={navigate} />
-      <main className="flex-1 overflow-auto">{renderView()}</main>
+      <main className="flex-1 overflow-auto">
+        {renderView()}
+        <EntityDetailPanel detail={entityDetail} onOpenWorkspaceTarget={openWorkspaceTarget} />
+      </main>
     </div>
+  );
+}
+
+function EntityDetailPanel({
+  detail,
+  onOpenWorkspaceTarget,
+}: {
+  detail: EntityDetailState;
+  onOpenWorkspaceTarget: (path: WorkspaceRelativePath) => void;
+}) {
+  if (detail.status === 'idle') return null;
+  return (
+    <section aria-live="polite" className="mt-4 rounded border border-panel-border bg-panel p-4">
+      <h2 className="text-lg font-semibold">Entity details</h2>
+      {detail.status === 'loading' ? <p>Loading {detail.entityId}…</p> : null}
+      {detail.status === 'error' ? <p role="alert">{detail.error}</p> : null}
+      {detail.entity ? (
+        <>
+          <p className="mt-2 font-medium">{detail.entity.name}</p>
+          <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
+            <dt>ID</dt>
+            <dd>{detail.entity.id}</dd>
+            <dt>Kind</dt>
+            <dd>{detail.entity.kind}</dd>
+            <dt>Purpose</dt>
+            <dd>{detail.entity.purpose}</dd>
+            <dt>Role</dt>
+            <dd>{detail.entity.role}</dd>
+            <dt>Domain</dt>
+            <dd>{detail.entity.domain ?? 'Unknown'}</dd>
+            <dt>Criticality</dt>
+            <dd>{detail.entity.criticality}</dd>
+            <dt>Health</dt>
+            <dd>{Math.round(detail.entity.health * 100)}%</dd>
+            <dt>Complexity</dt>
+            <dd>{detail.entity.complexity}</dd>
+            <dt>Dependencies</dt>
+            <dd>{detail.entity.dependencies.join(', ') || 'None'}</dd>
+            <dt>Dependents</dt>
+            <dd>{detail.entity.dependents.join(', ') || 'None'}</dd>
+            <dt>Risks</dt>
+            <dd>{detail.entity.risks.join(', ') || 'None'}</dd>
+            <dt>Knowledge</dt>
+            <dd>{detail.entity.knowledgeReferences.join(', ') || 'None'}</dd>
+          </dl>
+          <button
+            className="mt-3 rounded bg-vscode-button px-3 py-1 text-vscode-buttonForeground"
+            onClick={() => onOpenWorkspaceTarget(detail.entity!.path)}
+            type="button"
+          >
+            Open {detail.entity.path}
+          </button>
+        </>
+      ) : null}
+    </section>
   );
 }
 

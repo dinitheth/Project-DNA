@@ -33,6 +33,7 @@ describe('intelligence snapshot webview integration', () => {
         <KnowledgeView
           data={state.knowledge}
           onOpenWorkspaceTarget={() => undefined}
+          onSelectEntity={() => undefined}
           semanticGraph={state.semanticGraph}
         />,
       ),

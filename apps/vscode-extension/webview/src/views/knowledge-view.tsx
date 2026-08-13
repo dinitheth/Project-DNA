@@ -5,10 +5,12 @@ import { Panel, TreeView, type TreeItem } from '@project-dna/ui-components';
 export function KnowledgeView({
   data,
   onOpenWorkspaceTarget,
+  onSelectEntity,
   semanticGraph,
 }: {
   data: KnowledgeData | null;
   onOpenWorkspaceTarget: (path: WorkspaceRelativePath) => void;
+  onSelectEntity: (entityId: string) => void;
   semanticGraph: SemanticGraphData | null;
 }) {
   if (!data) return <EmptyCollection>Knowledge intelligence is not available.</EmptyCollection>;
@@ -120,6 +122,11 @@ export function KnowledgeView({
               ariaLabel="Semantic knowledge graph"
               defaultExpandedIds={graphItems.map(({ id }) => id)}
               items={graphItems}
+              onSelect={(item) => {
+                if (item.id.startsWith('graph:') && !item.id.includes(':edge:')) {
+                  onSelectEntity(item.id.slice('graph:'.length));
+                }
+              }}
             />
           </>
         )}
