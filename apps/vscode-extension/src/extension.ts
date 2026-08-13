@@ -51,8 +51,6 @@ export async function activate(context: vscode.ExtensionContext) {
     }
   }
 
-  registerAllCommands(context, container);
-
   const sidebarProvider = new SidebarProvider(
     context.extensionUri,
     container.resolve<IProjectDNAService>(TOKENS.ProjectDNAService),
@@ -60,8 +58,9 @@ export async function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(
     sidebarProvider,
-    vscode.window.registerWebviewViewProvider('project-dna.sidebar.webview', sidebarProvider),
+    vscode.window.registerWebviewViewProvider(VIEW_IDS.sidebar, sidebarProvider),
   );
+  registerAllCommands(context, container, sidebarProvider);
   const repositoryWatcher = new RepositoryWatcher(
     container.resolve<EventBus<DNAEventMap>>(TOKENS.EventBus),
     (rootPath) => sidebarProvider.handleWorkspaceChanged(rootPath),

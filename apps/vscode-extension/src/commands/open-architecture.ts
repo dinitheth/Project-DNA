@@ -1,13 +1,15 @@
 import * as vscode from 'vscode';
-import { Container } from '@project-dna/shared';
+import { COMMAND_IDS, VIEW_IDS } from '@project-dna/shared';
+import type { SidebarProvider } from '../sidebar/sidebar-provider.js';
 
 export function registerOpenArchitectureCommand(
   context: vscode.ExtensionContext,
-  _container: Container,
+  sidebarProvider: SidebarProvider,
 ) {
   context.subscriptions.push(
-    vscode.commands.registerCommand('project-dna.openArchitecture', async () => {
-      vscode.window.showInformationMessage('Project DNA: Opening Architecture...');
+    vscode.commands.registerCommand(COMMAND_IDS.openArchitecture, async () => {
+      await vscode.commands.executeCommand(`${VIEW_IDS.sidebar}.focus`);
+      sidebarProvider.navigateTo('architecture');
     }),
   );
 }

@@ -3,6 +3,7 @@ import {
   WebviewMessageSchema,
   isErr,
   type ExtensionMessage,
+  type SidebarRoute,
   type WebviewMessage,
 } from '@project-dna/shared';
 import type { IProjectDNAService } from '@project-dna/dna-core';
@@ -16,6 +17,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
   private activeRootPath: string | null = null;
   private publicationOperation: Promise<void> | null = null;
   private publicationRequested = false;
+  private currentRoute: SidebarRoute = 'overview';
+  private navigationGeneration = 0;
+  private navigationRevision = 0;
+  private deliveredNavigationRevision = -1;
+  private navigationRequestId: number | undefined;
+  private lastClientRequestId = -1;
+  private hasAuthoritativeNavigation = false;
+  private webviewReady = false;
   private disposed = false;
   private readonly unsubscribeProgress: () => void;
   private readonly unsubscribeReady: () => void;
@@ -69,14 +78,27 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     void this.postMessage({ type: 'analysisUnavailable', rootPath });
   }
 
+  public navigateTo(route: SidebarRoute): void {
+    this.hasAuthoritativeNavigation = true;
+    this.navigationRequestId = undefined;
+    this.acceptNavigation(route);
+    void this.deliverNavigation();
+  }
+
   public resolveWebviewView(
     webviewView: vscode.WebviewView,
     _context: vscode.WebviewViewResolveContext,
     _token: vscode.CancellationToken,
   ): void {
     this.webviewView = webviewView;
+    this.webviewReady = false;
+    this.deliveredNavigationRevision = -1;
+    this.lastClientRequestId = -1;
     webviewView.onDidDispose(() => {
-      if (this.webviewView === webviewView) this.webviewView = undefined;
+      if (this.webviewView === webviewView) {
+        this.webviewView = undefined;
+        this.webviewReady = false;
+      }
     });
     webviewView.webview.options = {
       enableScripts: true,
@@ -84,6 +106,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     };
     webviewView.webview.html = this.getHtmlForWebview(webviewView.webview);
     webviewView.webview.onDidReceiveMessage((candidate: unknown) => {
+      if (this.webviewView !== webviewView) return;
       const parsed = WebviewMessageSchema.safeParse(candidate);
       if (!parsed.success) return;
       void this.handleMessage(parsed.data);
@@ -101,6 +124,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
   private async handleMessage(message: WebviewMessage): Promise<void> {
     switch (message.type) {
       case 'ready':
+        this.webviewReady = true;
+        this.restoreOrReconcileNavigation(message.route, message.generation, message.revision);
+        await this.deliverNavigation();
+        await this.publishCurrentData();
+        return;
       case 'requestRepositoryData':
       case 'requestArchitectureData':
       case 'requestDependencyData':
@@ -114,6 +142,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         await this.runExclusive(() => this.refreshAnalysis());
         return;
       case 'navigateTo':
+        if (
+          message.generation !== this.navigationGeneration ||
+          message.revision !== this.navigationRevision ||
+          message.requestId <= this.lastClientRequestId
+        ) {
+          return;
+        }
+        this.hasAuthoritativeNavigation = true;
+        this.lastClientRequestId = message.requestId;
+        this.navigationRequestId = message.requestId;
+        this.acceptNavigation(message.route);
+        await this.deliverNavigation();
         return;
       case 'updateSettings':
         await this.postMessage({
@@ -234,6 +274,83 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     return (await this.webviewView?.webview.postMessage(message)) ?? false;
   }
 
+  private acceptNavigation(route: SidebarRoute): void {
+    this.currentRoute = route;
+    if (this.navigationRevision === Number.MAX_SAFE_INTEGER) {
+      if (this.navigationGeneration === Number.MAX_SAFE_INTEGER) {
+        throw new Error('Sidebar navigation version space is exhausted.');
+      }
+      this.navigationGeneration++;
+      this.navigationRevision = 0;
+      this.deliveredNavigationRevision = -1;
+      return;
+    }
+    this.navigationRevision++;
+  }
+
+  private restoreOrReconcileNavigation(
+    route: SidebarRoute,
+    generation: number,
+    revision: number,
+  ): void {
+    if (!this.hasAuthoritativeNavigation) {
+      this.currentRoute = route;
+      this.navigationGeneration = generation;
+      this.navigationRevision = revision;
+      this.deliveredNavigationRevision = revision;
+      return;
+    }
+    if (
+      route === this.currentRoute &&
+      generation === this.navigationGeneration &&
+      revision === this.navigationRevision
+    ) {
+      this.deliveredNavigationRevision = revision;
+      return;
+    }
+    if (
+      isNewerNavigationVersion(
+        generation,
+        revision,
+        this.navigationGeneration,
+        this.navigationRevision,
+      )
+    ) {
+      this.navigationGeneration = generation;
+      this.navigationRevision = revision;
+      this.acceptNavigation(this.currentRoute);
+    }
+  }
+
+  private async deliverNavigation(): Promise<void> {
+    if (
+      !this.webviewReady ||
+      !this.webviewView ||
+      this.deliveredNavigationRevision >= this.navigationRevision
+    ) {
+      return;
+    }
+    const target = this.webviewView;
+    const generation = this.navigationGeneration;
+    const revision = this.navigationRevision;
+    const delivered = await target.webview.postMessage({
+      type: 'navigateTo',
+      route: this.currentRoute,
+      generation,
+      revision,
+      requestId: this.navigationRequestId,
+    });
+    if (
+      delivered &&
+      this.webviewView === target &&
+      this.navigationGeneration === generation &&
+      this.navigationRevision === revision &&
+      revision > this.deliveredNavigationRevision
+    ) {
+      this.deliveredNavigationRevision = revision;
+    }
+  }
+
   private getHtmlForWebview(webview: vscode.Webview): string {
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'assets', 'index.js'),
@@ -276,4 +393,16 @@ function samePath(left: string, right: string): boolean {
   return process.platform === 'win32'
     ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
     : normalizedLeft === normalizedRight;
+}
+
+function isNewerNavigationVersion(
+  generation: number,
+  revision: number,
+  currentGeneration: number,
+  currentRevision: number,
+): boolean {
+  return (
+    generation > currentGeneration ||
+    (generation === currentGeneration && revision > currentRevision)
+  );
 }

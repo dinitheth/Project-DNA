@@ -198,7 +198,7 @@ describe('command-triggered analysis publication', () => {
         startedAt: 1,
       });
     }
-    receiveMessage?.({ type: 'ready' });
+    receiveMessage?.({ type: 'ready', route: 'overview', generation: 0, revision: 0 });
     await Promise.resolve();
 
     expect(posted.map((message) => ExtensionMessageSchema.parse(message).type)).toEqual([
