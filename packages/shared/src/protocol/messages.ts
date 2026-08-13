@@ -36,6 +36,26 @@ export const WorkspaceRelativePathSchema = z
 
 export type WorkspaceRelativePath = z.infer<typeof WorkspaceRelativePathSchema>;
 
+const EntityDetailSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  kind: z.string(),
+  path: WorkspaceRelativePathSchema,
+  purpose: z.string(),
+  role: z.string(),
+  domain: z.string().nullable(),
+  criticality: z.string(),
+  complexity: z.number().nonnegative(),
+  health: z.number().min(0).max(1),
+  dependencies: z.array(z.string()).max(100),
+  dependents: z.array(z.string()).max(100),
+  risks: z.array(z.string()).max(100),
+  knowledgeReferences: z.array(z.string()).max(100),
+});
+
+export const EntityDetailDataSchema = EntityDetailSchema;
+export type EntityDetailData = z.infer<typeof EntityDetailDataSchema>;
+
 const HealthDimensionsSchema = z.object({
   architectureHealth: z.number().min(0).max(100),
   dependencyHealth: z.number().min(0).max(100),
@@ -378,6 +398,14 @@ export const ExtensionMessageSchema = z.discriminatedUnion('type', [
     outcome: z.enum(['opened', 'missing', 'rejected', 'failed']),
     message: z.string().optional(),
   }),
+  z.object({
+    type: z.literal('entityDetail'),
+    requestId: SafeNonnegativeIntegerSchema,
+    analysisVersion: SafeNonnegativeIntegerSchema,
+    entityId: z.string(),
+    entity: EntityDetailSchema.nullable(),
+    error: z.string().optional(),
+  }),
 ]);
 
 export type ExtensionMessage = z.infer<typeof ExtensionMessageSchema>;
@@ -410,6 +438,12 @@ export const WebviewMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('openWorkspaceTarget'),
     requestId: SafeNonnegativeIntegerSchema,
     path: WorkspaceRelativePathSchema,
+  }),
+  z.object({
+    type: z.literal('requestEntityDetail'),
+    requestId: SafeNonnegativeIntegerSchema,
+    analysisVersion: SafeNonnegativeIntegerSchema,
+    entityId: z.string().min(1),
   }),
 ]);
 

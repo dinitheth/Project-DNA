@@ -188,6 +188,27 @@ describe('webview message protocol', () => {
     }
   });
 
+  it('validates versioned entity detail requests and responses', () => {
+    expect(
+      WebviewMessageSchema.safeParse({
+        type: 'requestEntityDetail',
+        requestId: 1,
+        analysisVersion: 2,
+        entityId: 'entity-1',
+      }).success,
+    ).toBe(true);
+    expect(
+      ExtensionMessageSchema.safeParse({
+        type: 'entityDetail',
+        requestId: 1,
+        analysisVersion: 2,
+        entityId: 'entity-1',
+        entity: null,
+        error: 'Entity not found',
+      }).success,
+    ).toBe(true);
+  });
+
   it('validates live repository payloads at the extension-to-webview boundary', () => {
     const data = createRepositoryData();
 

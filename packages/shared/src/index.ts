@@ -26,6 +26,7 @@ export type { Logger } from './logger/logger.js';
 export type {
   ArchitectureData,
   DependencyData,
+  EntityDetailData,
   EvolutionData,
   ExtensionMessage,
   KnowledgeData,
@@ -39,6 +40,7 @@ export type {
 export {
   ArchitectureDataSchema,
   DependencyDataSchema,
+  EntityDetailDataSchema,
   EvolutionDataSchema,
   ExtensionMessageSchema,
   KnowledgeDataSchema,
