@@ -1,11 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Badge } from './badge.js';
 import { Icon } from './icon.js';
 import { Panel } from './panel.js';
 import { SectionHeader } from './section-header.js';
 import { StatusIndicator } from './status-indicator.js';
-import { TreeView } from './tree-view.js';
+import { activateTreeItem, TreeView, type TreeItem } from './tree-view.js';
 
 describe('accessible UI components', () => {
   it('renders semantic badge variants and labelled or decorative icons', () => {
@@ -68,5 +68,16 @@ describe('accessible UI components', () => {
     expect(markup).toContain('aria-expanded="true"');
     expect(markup).toContain('aria-level="2"');
     expect(markup.match(/tabindex="0"/gu)).toHaveLength(1);
+  });
+
+  it('routes pointer and keyboard activation through the same selection behavior', () => {
+    const onSelect = vi.fn();
+    const toggle = vi.fn();
+    const item: TreeItem = { id: 'architecture', label: 'Architecture' };
+
+    activateTreeItem(item, onSelect, toggle);
+
+    expect(onSelect).toHaveBeenCalledWith(item);
+    expect(toggle).toHaveBeenCalledWith(item);
   });
 });

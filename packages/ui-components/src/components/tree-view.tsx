@@ -51,11 +51,12 @@ export function TreeView({
     });
   };
 
+  const activate = (item: TreeItem) => activateTreeItem(item, onSelect, toggle);
+
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>, item: TreeItem) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      onSelect?.(item);
-      if (item.children?.length) toggle(item);
+      activate(item);
       return;
     }
     if (!isTreeKey(event.key)) return;
@@ -90,9 +91,8 @@ export function TreeView({
               className="flex w-full items-start gap-1 rounded px-2 py-1 text-left hover:bg-[var(--vscode-list-hoverBackground)] focus:bg-[var(--vscode-list-focusBackground)] focus:outline focus:outline-1 focus:outline-[var(--vscode-focusBorder)]"
               onClick={() => {
                 focus(item.id);
-                onSelect?.(item);
+                activate(item);
               }}
-              onDoubleClick={() => toggle(item)}
               onKeyDown={(event) => handleKeyDown(event, item)}
               ref={(element) => {
                 if (element) itemRefs.current.set(item.id, element);
@@ -122,6 +122,15 @@ export function TreeView({
       })}
     </ul>
   );
+}
+
+export function activateTreeItem(
+  item: TreeItem,
+  onSelect: ((item: TreeItem) => void) | undefined,
+  toggle: (item: TreeItem) => void,
+): void {
+  onSelect?.(item);
+  toggle(item);
 }
 
 function isTreeKey(value: string): value is TreeKey {
