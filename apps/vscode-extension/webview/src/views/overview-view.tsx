@@ -18,12 +18,13 @@ export function OverviewView({
   onCompareEvolution: (fromVersion: number, toVersion: number) => void;
   onRefresh: () => void;
 }) {
-  if (!data) return <EmptyCollection>Repository overview data is not available.</EmptyCollection>;
   const availableVersions = [...(evolution?.history ?? [])]
     .map(({ version }) => version)
     .sort((left, right) => left - right);
   const [fromVersion, setFromVersion] = useState(availableVersions.at(-2) ?? availableVersions[0]);
   const [toVersion, setToVersion] = useState(availableVersions.at(-1));
+
+  if (!data) return <EmptyCollection>Repository overview data is not available.</EmptyCollection>;
 
   const criticalItems: TreeItem[] = data.criticalComponents.map((component, index) => ({
     id: `critical:${index}:${component.path}`,
