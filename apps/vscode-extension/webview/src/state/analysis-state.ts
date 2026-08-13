@@ -1,6 +1,7 @@
 import type {
   ArchitectureData,
   DependencyData,
+  EvolutionData,
   ExtensionMessage,
   KnowledgeData,
   RepositoryData,
@@ -24,6 +25,7 @@ export interface AnalysisState {
   readonly dependencies: DependencyData | null;
   readonly knowledge: KnowledgeData | null;
   readonly semanticGraph: SemanticGraphData | null;
+  readonly evolution: EvolutionData | null;
   readonly latestVersion: number;
 }
 
@@ -37,6 +39,7 @@ export const initialAnalysisState: AnalysisState = {
   dependencies: null,
   knowledge: null,
   semanticGraph: null,
+  evolution: null,
   latestVersion: 0,
 };
 
@@ -93,6 +96,7 @@ export function reduceAnalysisState(
         dependencies: message.data.dependencies,
         knowledge: message.data.knowledge,
         semanticGraph: message.data.semanticGraph,
+        evolution: message.data.evolution,
         latestVersion: message.version,
       };
     case 'analysisComplete':

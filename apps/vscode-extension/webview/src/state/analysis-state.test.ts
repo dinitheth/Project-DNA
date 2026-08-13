@@ -16,6 +16,7 @@ describe('analysis state', () => {
       edges: [],
       truncated: false,
     });
+    expect(ready.evolution).toEqual({ latestSnapshot: null, history: [] });
 
     const mismatched = reduceAnalysisState(ready, createSnapshot(3, 4));
     expect(mismatched).toBe(ready);

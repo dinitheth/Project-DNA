@@ -28,6 +28,7 @@ export default function App() {
     dependencies,
     knowledge,
     semanticGraph,
+    evolution,
   } = analysis;
 
   const handleMessage = useCallback((message: Parameters<typeof dispatchAnalysis>[0]) => {
@@ -90,7 +91,9 @@ export default function App() {
 
     switch (navigation.route) {
       case 'overview':
-        return <OverviewView data={repository} error={error} onRefresh={refresh} />;
+        return (
+          <OverviewView data={repository} evolution={evolution} error={error} onRefresh={refresh} />
+        );
       case 'architecture':
         return <ArchitectureView data={architecture} />;
       case 'knowledge':

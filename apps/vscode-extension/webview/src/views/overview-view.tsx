@@ -1,16 +1,45 @@
-import type { RepositoryData } from '@project-dna/shared';
+import type { EvolutionData, RepositoryData } from '@project-dna/shared';
 import { Badge, EmptyCollection, MetricCard, ProgressBar, Section } from '../components/ui';
+import { Panel, StatusIndicator, TreeView, type TreeItem } from '@project-dna/ui-components';
 
 export function OverviewView({
   data,
+  evolution,
   error,
   onRefresh,
 }: {
   data: RepositoryData | null;
+  evolution: EvolutionData | null;
   error: string | null;
   onRefresh: () => void;
 }) {
   if (!data) return <EmptyCollection>Repository overview data is not available.</EmptyCollection>;
+
+  const criticalItems: TreeItem[] = data.criticalComponents.map((component, index) => ({
+    id: `critical:${index}:${component.path}`,
+    label: component.name,
+    description: `${component.path} · ${formatLabel(component.criticality)} · score ${Math.round(component.score * 100)}%`,
+    children: [
+      {
+        id: `critical:${index}:reason`,
+        label: component.reason,
+        description: 'Criticality rationale',
+      },
+    ],
+  }));
+
+  const evolutionItems: TreeItem[] = (evolution?.history ?? []).map((snapshot) => ({
+    id: `evolution:${snapshot.id}`,
+    label: `v${snapshot.version} · ${formatLabel(snapshot.trigger)}`,
+    description: `${new Date(snapshot.timestamp).toISOString()} · ${snapshot.gitCommitHash ?? 'no commit'}`,
+    children: Object.entries(snapshot.metrics)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, value]) => ({
+        id: `evolution:${snapshot.id}:metric:${key}`,
+        label: `${formatLabel(key)}: ${value}`,
+        description: 'Snapshot metric',
+      })),
+  }));
 
   return (
     <div className="pb-4">
@@ -131,6 +160,43 @@ export function OverviewView({
           </div>
         )}
       </Section>
+
+      <Panel collapsible title="Critical components">
+        {criticalItems.length === 0 ? (
+          <EmptyCollection>No critical components were identified.</EmptyCollection>
+        ) : (
+          <TreeView
+            ariaLabel="Critical components"
+            defaultExpandedIds={criticalItems.map(({ id }) => id)}
+            items={criticalItems}
+          />
+        )}
+      </Panel>
+
+      <Panel collapsible title="Evolution">
+        {!evolution || evolutionItems.length === 0 ? (
+          <EmptyCollection>No evolution snapshots are available.</EmptyCollection>
+        ) : (
+          <>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <StatusIndicator
+                label={
+                  evolution.latestSnapshot
+                    ? `Latest snapshot v${evolution.latestSnapshot.version}`
+                    : 'Latest snapshot unavailable'
+                }
+                status={evolution.latestSnapshot ? 'success' : 'idle'}
+              />
+              <Badge>{evolutionItems.length} snapshots</Badge>
+            </div>
+            <TreeView
+              ariaLabel="Evolution snapshots"
+              defaultExpandedIds={evolutionItems.map(({ id }) => id)}
+              items={evolutionItems}
+            />
+          </>
+        )}
+      </Panel>
 
       <div className="text-xs text-description">
         Analyzed {new Date(data.analyzedAt).toLocaleString()} in {formatDuration(data.durationMs)}

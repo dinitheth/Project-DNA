@@ -1,6 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { ArchitectureData, DependencyData } from '@project-dna/shared';
+import type {
+  ArchitectureData,
+  DependencyData,
+  EvolutionData,
+  RepositoryData,
+} from '@project-dna/shared';
 import type { KnowledgeData, SemanticGraphData } from '@project-dna/shared';
 import { ArchitectureView } from './architecture-view.js';
 import { DependenciesView } from './dependencies-view.js';
@@ -43,6 +48,22 @@ describe('architecture and dependency views', () => {
     expect(markup).toContain('Order service');
     expect(markup).toContain('Serves → orders');
     expect(markup).toContain('2 nodes');
+  });
+
+  it('renders critical components and evolution snapshots in the overview', async () => {
+    const { OverviewView } = await import('./overview-view.js');
+    const markup = renderToStaticMarkup(
+      <OverviewView
+        data={repositoryData()}
+        evolution={evolutionData()}
+        error={null}
+        onRefresh={() => undefined}
+      />,
+    );
+    expect(markup).toContain('aria-label="Critical components"');
+    expect(markup).toContain('Repository service');
+    expect(markup).toContain('aria-label="Evolution snapshots"');
+    expect(markup).toContain('Latest snapshot v3');
   });
 });
 
@@ -119,6 +140,88 @@ function semanticGraphData(): SemanticGraphData {
         kind: 'serves',
         weight: 0.8,
         confidence: 0.9,
+      },
+    ],
+  };
+}
+
+function repositoryData(): RepositoryData {
+  return {
+    name: 'fixture',
+    description: 'Fixture repository',
+    rootPath: 'C:/repo',
+    version: 3,
+    analyzedAt: 1,
+    durationMs: 100,
+    projectType: 'service',
+    repositorySize: 'small',
+    packageManager: 'pnpm',
+    testFramework: null,
+    ciSystem: null,
+    languages: [],
+    frameworks: [],
+    counts: { modules: 1, entities: 1, domains: 0, capabilities: 0, knowledgeNodes: 0, risks: 0 },
+    coverage: { scanned: 1, parsed: 1, skipped: 0, failed: 0 },
+    health: {
+      overallScore: 90,
+      trend: 'improving',
+      dimensions: {
+        architectureHealth: 90,
+        dependencyHealth: 90,
+        complexityHealth: 90,
+        knowledgeHealth: 90,
+        riskHealth: 90,
+      },
+    },
+    complexity: {
+      averageComplexity: 1,
+      maxComplexity: 1,
+      mostComplexFile: null,
+      complexCodePercentage: 0,
+      averageNestingDepth: 0,
+      maxNestingDepth: 0,
+    },
+    risks: {
+      overallRiskScore: 10,
+      totalRisks: 0,
+      bySeverity: { critical: 0, high: 0, medium: 0, low: 0, info: 0 },
+      topRisks: [],
+    },
+    criticalComponents: [
+      {
+        name: 'Repository service',
+        path: 'src/service.ts',
+        criticality: 'high',
+        score: 0.9,
+        reason: 'Central dependency hub',
+      },
+    ],
+    story: { summary: 'summary', healthSummary: 'healthy', criticalPath: 'service', risks: [] },
+  };
+}
+
+function evolutionData(): EvolutionData {
+  return {
+    latestSnapshot: {
+      id: 's3',
+      version: 3,
+      timestamp: 1,
+      trigger: 'manual',
+      projectDnaHash: 'hash',
+      gitCommitHash: 'abc',
+      metrics: { health: 90 },
+      isFullSnapshot: true,
+    },
+    history: [
+      {
+        id: 's3',
+        version: 3,
+        timestamp: 1,
+        trigger: 'manual',
+        projectDnaHash: 'hash',
+        gitCommitHash: 'abc',
+        metrics: { health: 90 },
+        isFullSnapshot: true,
       },
     ],
   };
