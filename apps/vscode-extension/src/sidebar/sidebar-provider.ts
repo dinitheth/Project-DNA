@@ -141,6 +141,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
       case 'requestKnowledgeData':
         await this.publishCurrentData();
         return;
+      case 'requestEntityDetail':
+        await this.publishEntityDetail(
+          sourceView,
+          message.requestId,
+          message.analysisVersion,
+          message.entityId,
+        );
+        return;
       case 'requestAnalysis':
         await this.runExclusive(() => this.analyzeWorkspace());
         return;
@@ -356,6 +364,86 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         stage: 'sidebar-data',
       });
     }
+  }
+
+  private async publishEntityDetail(
+    sourceView: vscode.WebviewView,
+    requestId: number,
+    analysisVersion: number,
+    entityId: string,
+  ): Promise<void> {
+    if (this.webviewView !== sourceView || this.disposed) return;
+    const current = this.service.getCurrent();
+    if (isErr(current) || !current.value || current.value.version !== analysisVersion) {
+      await this.postEntityDetail(
+        sourceView,
+        requestId,
+        analysisVersion,
+        entityId,
+        null,
+        'Analysis version is no longer current.',
+      );
+      return;
+    }
+    const result = await this.service.getEntity(entityId);
+    if (this.webviewView !== sourceView) return;
+    if (isErr(result)) {
+      await this.postEntityDetail(
+        sourceView,
+        requestId,
+        analysisVersion,
+        entityId,
+        null,
+        result.error.message,
+      );
+      return;
+    }
+    if (!result.value) {
+      await this.postEntityDetail(
+        sourceView,
+        requestId,
+        analysisVersion,
+        entityId,
+        null,
+        'Entity not found.',
+      );
+      return;
+    }
+    await this.postEntityDetail(sourceView, requestId, analysisVersion, entityId, {
+      id: result.value.id,
+      name: result.value.name,
+      kind: result.value.kind,
+      path: result.value.path,
+      purpose: result.value.purpose,
+      role: result.value.architectureRole,
+      domain: result.value.businessDomain,
+      criticality: result.value.criticality,
+      complexity: result.value.complexity,
+      health: result.value.healthScore,
+      dependencies: [...result.value.dependsOn].slice(0, 100),
+      dependents: [...result.value.dependedOnBy].slice(0, 100),
+      risks: [...result.value.risks].slice(0, 100),
+      knowledgeReferences: [...result.value.knowledgeNodeIds].slice(0, 100),
+    });
+  }
+
+  private async postEntityDetail(
+    sourceView: vscode.WebviewView,
+    requestId: number,
+    analysisVersion: number,
+    entityId: string,
+    entity: import('@project-dna/shared').EntityDetailData | null,
+    error?: string,
+  ): Promise<void> {
+    if (this.webviewView !== sourceView) return;
+    await sourceView.webview.postMessage({
+      type: 'entityDetail',
+      requestId,
+      analysisVersion,
+      entityId,
+      entity,
+      error,
+    });
   }
 
   private requestPublication(): void {

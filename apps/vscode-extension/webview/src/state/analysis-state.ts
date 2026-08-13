@@ -110,6 +110,7 @@ export function reduceAnalysisState(
     case 'themeChanged':
     case 'navigateTo':
     case 'workspaceTargetResult':
+    case 'entityDetail':
       return state;
   }
 }

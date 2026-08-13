@@ -96,6 +96,84 @@ describe('SidebarProvider navigation', () => {
     await rm(root, { force: true, recursive: true });
   });
 
+  it('publishes bounded entity details for the requested analysis version', async () => {
+    const service = createService({
+      currentVersion: 3,
+      entity: {
+        id: 'entity-1',
+        kind: 'file',
+        name: 'Repository service',
+        path: 'src/service.ts',
+        purpose: 'Coordinates repository access',
+        architectureRole: 'service',
+        businessDomain: 'repositories',
+        importance: 0.9,
+        criticality: 'high',
+        complexity: 8,
+        healthScore: 0.85,
+        risks: Array.from({ length: 110 }, (_, index) => `risk-${index}`),
+        dependsOn: Array.from({ length: 110 }, (_, index) => `dependency-${index}`),
+        dependedOnBy: ['consumer-1'],
+        belongsToDomain: null,
+        belongsToLayer: null,
+        knowledgeNodeIds: ['knowledge-1'],
+        knowledgeDensity: 0.8,
+        confidence: 0.9,
+        lastAnalyzedAt: 1,
+      },
+    });
+    const harness = createHarness({ service });
+    harness.resolve();
+    harness.receive({
+      type: 'requestEntityDetail',
+      requestId: 4,
+      analysisVersion: 3,
+      entityId: 'entity-1',
+    });
+    await harness.waitForEntityDetailCount(1);
+
+    const [detail] = harness.entityDetails();
+    expect(detail).toEqual(
+      expect.objectContaining({
+        requestId: 4,
+        analysisVersion: 3,
+        entityId: 'entity-1',
+        entity: expect.objectContaining({ path: 'src/service.ts' }),
+      }),
+    );
+    expect(detail?.entity?.dependencies).toHaveLength(100);
+    expect(detail?.entity?.risks).toHaveLength(100);
+  });
+
+  it('rejects stale entity versions and ignores results after view disposal', async () => {
+    const deferred = createDeferred<ReturnType<typeof Ok<never>>>();
+    const service = createService({ currentVersion: 2 });
+    service.getEntity = vi.fn(() => deferred.promise as never);
+    const harness = createHarness({ service });
+    harness.resolve();
+    harness.receive({
+      type: 'requestEntityDetail',
+      requestId: 0,
+      analysisVersion: 1,
+      entityId: 'stale',
+    });
+    await harness.waitForEntityDetailCount(1);
+    expect(harness.entityDetails()[0]).toEqual(
+      expect.objectContaining({ entity: null, error: 'Analysis version is no longer current.' }),
+    );
+
+    harness.receive({
+      type: 'requestEntityDetail',
+      requestId: 1,
+      analysisVersion: 2,
+      entityId: 'pending',
+    });
+    harness.disposeView();
+    deferred.resolve(Ok(null) as never);
+    await Promise.resolve();
+    expect(harness.entityDetails()).toHaveLength(1);
+  });
+
   it('delivers navigation while the webview is already resolved and ready', async () => {
     const harness = createHarness();
     harness.resolve();
@@ -405,19 +483,10 @@ function createHarness(
     navigationPostResults?: Array<boolean | Promise<boolean>>;
     rootPath?: string;
     getRootPath?: () => string | undefined;
+    service?: IProjectDNAService;
   } = {},
 ) {
-  const service = {
-    onProgress() {
-      return () => undefined;
-    },
-    onReady() {
-      return () => undefined;
-    },
-    getCurrent() {
-      return Ok(null);
-    },
-  } as unknown as IProjectDNAService;
+  const service = options.service ?? createService();
   const messages: unknown[] = [];
   let receiveMessage: ((message: unknown) => void) | undefined;
   let disposeView: (() => void) | undefined;
@@ -499,6 +568,11 @@ function createHarness(
         .map((message) => ExtensionMessageSchema.parse(message))
         .filter((message) => message.type === 'workspaceTargetResult');
     },
+    entityDetails() {
+      return messages
+        .map((message) => ExtensionMessageSchema.parse(message))
+        .filter((message) => message.type === 'entityDetail');
+    },
     async waitForNavigationCount(count: number) {
       if (count === 0) {
         await this.waitForUnavailableCount(1);
@@ -515,7 +589,27 @@ function createHarness(
     async waitForWorkspaceTargetResultCount(count: number) {
       await vi.waitFor(() => expect(this.workspaceTargetResults()).toHaveLength(count));
     },
+    async waitForEntityDetailCount(count: number) {
+      await vi.waitFor(() => expect(this.entityDetails()).toHaveLength(count));
+    },
   };
+}
+
+function createService(options: { currentVersion?: number; entity?: unknown } = {}) {
+  return {
+    onProgress() {
+      return () => undefined;
+    },
+    onReady() {
+      return () => undefined;
+    },
+    getCurrent() {
+      return Ok(options.currentVersion ? { version: options.currentVersion } : null);
+    },
+    async getEntity() {
+      return Ok(options.entity ?? null);
+    },
+  } as unknown as IProjectDNAService;
 }
 
 async function createTemporaryWorkspace(): Promise<string> {
