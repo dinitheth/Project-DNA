@@ -27,6 +27,7 @@ export default function App() {
     architecture,
     dependencies,
     knowledge,
+    semanticGraph,
   } = analysis;
 
   const handleMessage = useCallback((message: Parameters<typeof dispatchAnalysis>[0]) => {
@@ -93,7 +94,7 @@ export default function App() {
       case 'architecture':
         return <ArchitectureView data={architecture} />;
       case 'knowledge':
-        return <KnowledgeView data={knowledge} />;
+        return <KnowledgeView data={knowledge} semanticGraph={semanticGraph} />;
       case 'dependencies':
         return <DependenciesView data={dependencies} />;
       case 'settings':

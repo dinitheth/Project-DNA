@@ -9,6 +9,13 @@ describe('analysis state', () => {
 
     expect(ready.status).toBe('ready');
     expect(ready.repository?.version).toBe(2);
+    expect(ready.semanticGraph).toEqual({
+      nodeCount: 0,
+      edgeCount: 0,
+      nodes: [],
+      edges: [],
+      truncated: false,
+    });
 
     const mismatched = reduceAnalysisState(ready, createSnapshot(3, 4));
     expect(mismatched).toBe(ready);
@@ -191,6 +198,8 @@ function createSnapshot(messageVersion: number, repositoryVersion: number, rootP
         hotspots: [],
       },
       knowledge: { domains: [], capabilities: [], nodes: [] },
+      semanticGraph: { nodeCount: 0, edgeCount: 0, nodes: [], edges: [], truncated: false },
+      evolution: { latestSnapshot: null, history: [] },
     },
   });
 }

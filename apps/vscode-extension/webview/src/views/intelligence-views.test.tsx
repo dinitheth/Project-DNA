@@ -1,8 +1,10 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { ArchitectureData, DependencyData } from '@project-dna/shared';
+import type { KnowledgeData, SemanticGraphData } from '@project-dna/shared';
 import { ArchitectureView } from './architecture-view.js';
 import { DependenciesView } from './dependencies-view.js';
+import { KnowledgeView } from './knowledge-view.js';
 
 describe('architecture and dependency views', () => {
   it('renders architecture layers and evidence as labelled nested trees', () => {
@@ -31,6 +33,16 @@ describe('architecture and dependency views', () => {
     expect(renderToStaticMarkup(<DependenciesView data={null} />)).toContain(
       'Dependency intelligence is not available.',
     );
+  });
+
+  it('renders semantic knowledge nodes and their relationships', () => {
+    const markup = renderToStaticMarkup(
+      <KnowledgeView data={knowledgeData()} semanticGraph={semanticGraphData()} />,
+    );
+    expect(markup).toContain('aria-label="Semantic knowledge graph"');
+    expect(markup).toContain('Order service');
+    expect(markup).toContain('Serves → orders');
+    expect(markup).toContain('2 nodes');
   });
 });
 
@@ -68,6 +80,45 @@ function dependencyData(): DependencyData {
         dependencies: 2,
         dependents: 3,
         totalConnections: 5,
+      },
+    ],
+  };
+}
+
+function knowledgeData(): KnowledgeData {
+  return { domains: [], capabilities: [], nodes: [] };
+}
+
+function semanticGraphData(): SemanticGraphData {
+  return {
+    nodeCount: 2,
+    edgeCount: 1,
+    truncated: false,
+    nodes: [
+      {
+        id: 'orders',
+        label: 'Order service',
+        kind: 'component',
+        weight: 0.8,
+        incomingRelationshipCount: 0,
+        outgoingRelationshipCount: 1,
+      },
+      {
+        id: 'orders-domain',
+        label: 'orders',
+        kind: 'domain',
+        weight: 0.6,
+        incomingRelationshipCount: 1,
+        outgoingRelationshipCount: 0,
+      },
+    ],
+    edges: [
+      {
+        source: 'orders',
+        target: 'orders-domain',
+        kind: 'serves',
+        weight: 0.8,
+        confidence: 0.9,
       },
     ],
   };

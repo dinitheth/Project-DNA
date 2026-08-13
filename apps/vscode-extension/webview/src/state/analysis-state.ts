@@ -4,6 +4,7 @@ import type {
   ExtensionMessage,
   KnowledgeData,
   RepositoryData,
+  SemanticGraphData,
 } from '@project-dna/shared';
 
 export type AppStatus = 'loading' | 'empty' | 'analyzing' | 'ready' | 'error';
@@ -22,6 +23,7 @@ export interface AnalysisState {
   readonly architecture: ArchitectureData | null;
   readonly dependencies: DependencyData | null;
   readonly knowledge: KnowledgeData | null;
+  readonly semanticGraph: SemanticGraphData | null;
   readonly latestVersion: number;
 }
 
@@ -34,6 +36,7 @@ export const initialAnalysisState: AnalysisState = {
   architecture: null,
   dependencies: null,
   knowledge: null,
+  semanticGraph: null,
   latestVersion: 0,
 };
 
@@ -89,6 +92,7 @@ export function reduceAnalysisState(
         architecture: message.data.architecture,
         dependencies: message.data.dependencies,
         knowledge: message.data.knowledge,
+        semanticGraph: message.data.semanticGraph,
         latestVersion: message.version,
       };
     case 'analysisComplete':

@@ -1,8 +1,17 @@
-import type { KnowledgeData } from '@project-dna/shared';
+import type { KnowledgeData, SemanticGraphData } from '@project-dna/shared';
 import { Badge, EmptyCollection, MetricCard, Section } from '../components/ui';
+import { Panel, TreeView, type TreeItem } from '@project-dna/ui-components';
 
-export function KnowledgeView({ data }: { data: KnowledgeData | null }) {
+export function KnowledgeView({
+  data,
+  semanticGraph,
+}: {
+  data: KnowledgeData | null;
+  semanticGraph: SemanticGraphData | null;
+}) {
   if (!data) return <EmptyCollection>Knowledge intelligence is not available.</EmptyCollection>;
+
+  const graphItems = buildGraphItems(semanticGraph);
 
   return (
     <div className="pb-4">
@@ -89,6 +98,57 @@ export function KnowledgeView({ data }: { data: KnowledgeData | null }) {
           </div>
         )}
       </Section>
+
+      <Panel collapsible title="Semantic knowledge graph">
+        {!semanticGraph || graphItems.length === 0 ? (
+          <EmptyCollection>No semantic relationships were generated.</EmptyCollection>
+        ) : (
+          <>
+            <div className="mb-3 flex flex-wrap gap-1">
+              <Badge>{semanticGraph.nodeCount} nodes</Badge>
+              <Badge>{semanticGraph.edgeCount} relationships</Badge>
+              {semanticGraph.truncated ? <Badge>Preview limited</Badge> : null}
+            </div>
+            <TreeView
+              ariaLabel="Semantic knowledge graph"
+              defaultExpandedIds={graphItems.map(({ id }) => id)}
+              items={graphItems}
+            />
+          </>
+        )}
+      </Panel>
     </div>
   );
+}
+
+function buildGraphItems(graph: SemanticGraphData | null): TreeItem[] {
+  if (!graph) return [];
+  const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const edgesBySource = new Map<string, SemanticGraphData['edges']>();
+  for (const edge of graph.edges) {
+    const edges = edgesBySource.get(edge.source) ?? [];
+    edges.push(edge);
+    edgesBySource.set(edge.source, edges);
+  }
+  return [...graph.nodes]
+    .sort((left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id))
+    .map((node) => ({
+      id: `graph:${node.id}`,
+      label: node.label,
+      description: `${formatLabel(node.kind)} · ${node.incomingRelationshipCount} in · ${node.outgoingRelationshipCount} out`,
+      children: (edgesBySource.get(node.id) ?? [])
+        .sort(
+          (left, right) =>
+            left.kind.localeCompare(right.kind) || left.target.localeCompare(right.target),
+        )
+        .map((edge) => ({
+          id: `graph:${node.id}:edge:${edge.target}:${edge.kind}`,
+          label: `${formatLabel(edge.kind)} → ${nodesById.get(edge.target)?.label ?? edge.target}`,
+          description: `confidence ${Math.round(edge.confidence * 100)}%`,
+        })),
+    }));
+}
+
+function formatLabel(value: string): string {
+  return value.replaceAll('-', ' ').replace(/\b\w/gu, (character) => character.toUpperCase());
 }
