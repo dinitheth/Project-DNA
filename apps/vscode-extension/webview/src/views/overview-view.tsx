@@ -7,12 +7,14 @@ export function OverviewView({
   evolution,
   error,
   onOpenWorkspaceTarget,
+  onCompareEvolution,
   onRefresh,
 }: {
   data: RepositoryData | null;
   evolution: EvolutionData | null;
   error: string | null;
   onOpenWorkspaceTarget: (path: WorkspaceRelativePath) => void;
+  onCompareEvolution: (fromVersion: number, toVersion: number) => void;
   onRefresh: () => void;
 }) {
   if (!data) return <EmptyCollection>Repository overview data is not available.</EmptyCollection>;
@@ -206,6 +208,20 @@ export function OverviewView({
               defaultExpandedIds={evolutionItems.map(({ id }) => id)}
               items={evolutionItems}
             />
+            {evolution.history.length >= 2 ? (
+              <button
+                className="mt-3 rounded bg-vscode-button px-3 py-1 text-vscode-buttonForeground"
+                onClick={() => {
+                  const ordered = [...evolution.history].sort(
+                    (left, right) => left.version - right.version,
+                  );
+                  onCompareEvolution(ordered.at(-2)!.version, ordered.at(-1)!.version);
+                }}
+                type="button"
+              >
+                Compare latest snapshots
+              </button>
+            ) : null}
           </>
         )}
       </Panel>

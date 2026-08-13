@@ -14,6 +14,11 @@ import {
   restoreEntityDetailState,
   type EntityDetailState,
 } from './state/entity-detail-state';
+import {
+  initialEvolutionComparisonState,
+  reduceEvolutionComparisonState,
+  type EvolutionComparisonState,
+} from './state/evolution-comparison-state';
 
 export default function App() {
   const vscode = useVSCodeApi();
@@ -34,6 +39,11 @@ export default function App() {
     reduceEntityDetailState,
     restoredEntityDetail.current,
   );
+  const [evolutionComparison, dispatchEvolutionComparison] = useReducer(
+    reduceEvolutionComparisonState,
+    initialEvolutionComparisonState,
+  );
+  const evolutionRequestId = useRef(0);
   const {
     status,
     workspaceRoot,
@@ -53,6 +63,7 @@ export default function App() {
       return;
     }
     dispatchEntityDetail({ type: 'message', message });
+    dispatchEvolutionComparison({ type: 'message', message });
     dispatchAnalysis(message);
   }, []);
   useMessage(handleMessage);
@@ -112,6 +123,27 @@ export default function App() {
     },
     [analysis.latestVersion, vscode],
   );
+  const compareEvolution = useCallback(
+    (fromVersion: number, toVersion: number) => {
+      const requestId = evolutionRequestId.current;
+      evolutionRequestId.current = requestId === Number.MAX_SAFE_INTEGER ? 0 : requestId + 1;
+      dispatchEvolutionComparison({
+        type: 'select',
+        requestId,
+        analysisVersion: analysis.latestVersion,
+        fromVersion,
+        toVersion,
+      });
+      vscode.postMessage({
+        type: 'requestEvolutionComparison',
+        requestId,
+        analysisVersion: analysis.latestVersion,
+        fromVersion,
+        toVersion,
+      });
+    },
+    [analysis.latestVersion, vscode],
+  );
 
   const renderView = () => {
     if (status === 'loading') {
@@ -160,6 +192,7 @@ export default function App() {
             evolution={evolution}
             error={error}
             onOpenWorkspaceTarget={openWorkspaceTarget}
+            onCompareEvolution={compareEvolution}
             onRefresh={refresh}
           />
         );
@@ -191,8 +224,42 @@ export default function App() {
       <main className="flex-1 overflow-auto">
         {renderView()}
         <EntityDetailPanel detail={entityDetail} onOpenWorkspaceTarget={openWorkspaceTarget} />
+        <EvolutionComparisonPanel comparison={evolutionComparison} />
       </main>
     </div>
+  );
+}
+
+function EvolutionComparisonPanel({ comparison }: { comparison: EvolutionComparisonState }) {
+  if (comparison.status === 'idle') return null;
+  return (
+    <section aria-live="polite" className="mt-4 rounded border border-panel-border bg-panel p-4">
+      <h2 className="text-lg font-semibold">Evolution comparison</h2>
+      {comparison.status === 'loading' ? <p>Comparing snapshots…</p> : null}
+      {comparison.status === 'error' ? <p role="alert">{comparison.error}</p> : null}
+      {comparison.comparison ? (
+        <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
+          <dt>Added entities</dt>
+          <dd>{comparison.comparison.addedEntities.length}</dd>
+          <dt>Removed entities</dt>
+          <dd>{comparison.comparison.removedEntities.length}</dd>
+          <dt>Changed entities</dt>
+          <dd>{comparison.comparison.changedEntities.length}</dd>
+          <dt>Health delta</dt>
+          <dd>{comparison.comparison.healthDelta.overall}</dd>
+          <dt>New risks</dt>
+          <dd>{comparison.comparison.newRisks.length}</dd>
+          <dt>Resolved risks</dt>
+          <dd>{comparison.comparison.resolvedRisks.length}</dd>
+          <dt>Graph edges added</dt>
+          <dd>{comparison.comparison.addedEdges}</dd>
+          <dt>Graph edges removed</dt>
+          <dd>{comparison.comparison.removedEdges}</dd>
+          <dt>Architectural significance</dt>
+          <dd>{Math.round(comparison.comparison.architecturalSignificance * 100)}%</dd>
+        </dl>
+      ) : null}
+    </section>
   );
 }
 

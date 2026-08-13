@@ -70,6 +70,7 @@ describe('architecture and dependency views', () => {
         data={repositoryData()}
         evolution={evolutionData()}
         error={null}
+        onCompareEvolution={() => undefined}
         onRefresh={() => undefined}
         onOpenWorkspaceTarget={() => undefined}
       />,

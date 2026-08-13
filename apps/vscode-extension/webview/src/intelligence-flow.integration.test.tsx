@@ -44,6 +44,7 @@ describe('intelligence snapshot webview integration', () => {
           data={state.repository}
           error={state.error}
           evolution={state.evolution}
+          onCompareEvolution={() => undefined}
           onOpenWorkspaceTarget={() => undefined}
           onRefresh={() => undefined}
         />,
