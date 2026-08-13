@@ -56,6 +56,25 @@ const EntityDetailSchema = z.object({
 export const EntityDetailDataSchema = EntityDetailSchema;
 export type EntityDetailData = z.infer<typeof EntityDetailDataSchema>;
 
+export const EvolutionComparisonDataSchema = z.object({
+  fromVersion: SafeNonnegativeIntegerSchema,
+  toVersion: SafeNonnegativeIntegerSchema,
+  addedEntities: z.array(z.string()).max(100),
+  removedEntities: z.array(z.string()).max(100),
+  changedEntities: z
+    .array(z.object({ entityId: z.string(), fields: z.array(z.string()).max(50) }))
+    .max(100),
+  healthDelta: z.object({ overall: z.number(), dimensions: z.record(z.string(), z.number()) }),
+  newRisks: z.array(z.string()).max(100),
+  resolvedRisks: z.array(z.string()).max(100),
+  addedEdges: z.number().int().nonnegative(),
+  removedEdges: z.number().int().nonnegative(),
+  newDomains: z.array(z.string()).max(100),
+  removedDomains: z.array(z.string()).max(100),
+  architecturalSignificance: z.number().min(0).max(1),
+});
+export type EvolutionComparisonData = z.infer<typeof EvolutionComparisonDataSchema>;
+
 const HealthDimensionsSchema = z.object({
   architectureHealth: z.number().min(0).max(100),
   dependencyHealth: z.number().min(0).max(100),
@@ -406,6 +425,15 @@ export const ExtensionMessageSchema = z.discriminatedUnion('type', [
     entity: EntityDetailSchema.nullable(),
     error: z.string().optional(),
   }),
+  z.object({
+    type: z.literal('evolutionComparison'),
+    requestId: SafeNonnegativeIntegerSchema,
+    analysisVersion: SafeNonnegativeIntegerSchema,
+    fromVersion: SafeNonnegativeIntegerSchema,
+    toVersion: SafeNonnegativeIntegerSchema,
+    comparison: EvolutionComparisonDataSchema.nullable(),
+    error: z.string().optional(),
+  }),
 ]);
 
 export type ExtensionMessage = z.infer<typeof ExtensionMessageSchema>;
@@ -444,6 +472,13 @@ export const WebviewMessageSchema = z.discriminatedUnion('type', [
     requestId: SafeNonnegativeIntegerSchema,
     analysisVersion: SafeNonnegativeIntegerSchema,
     entityId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal('requestEvolutionComparison'),
+    requestId: SafeNonnegativeIntegerSchema,
+    analysisVersion: SafeNonnegativeIntegerSchema,
+    fromVersion: SafeNonnegativeIntegerSchema,
+    toVersion: SafeNonnegativeIntegerSchema,
   }),
 ]);
 

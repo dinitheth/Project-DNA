@@ -209,6 +209,29 @@ describe('webview message protocol', () => {
     ).toBe(true);
   });
 
+  it('validates correlated evolution comparison requests', () => {
+    expect(
+      WebviewMessageSchema.safeParse({
+        type: 'requestEvolutionComparison',
+        requestId: 1,
+        analysisVersion: 4,
+        fromVersion: 2,
+        toVersion: 4,
+      }).success,
+    ).toBe(true);
+    expect(
+      ExtensionMessageSchema.safeParse({
+        type: 'evolutionComparison',
+        requestId: 1,
+        analysisVersion: 4,
+        fromVersion: 2,
+        toVersion: 4,
+        comparison: null,
+        error: 'Unavailable',
+      }).success,
+    ).toBe(true);
+  });
+
   it('validates live repository payloads at the extension-to-webview boundary', () => {
     const data = createRepositoryData();
 
