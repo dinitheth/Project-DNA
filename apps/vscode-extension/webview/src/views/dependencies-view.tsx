@@ -1,8 +1,32 @@
 import type { DependencyData } from '@project-dna/shared';
-import { Badge, EmptyCollection, MetricCard, Section } from '../components/ui';
+import { Badge, Panel, TreeView, type TreeItem } from '@project-dna/ui-components';
+import { EmptyCollection, MetricCard } from '../components/ui';
 
 export function DependenciesView({ data }: { data: DependencyData | null }) {
   if (!data) return <EmptyCollection>Dependency intelligence is not available.</EmptyCollection>;
+
+  const hotspotItems: TreeItem[] = data.hotspots.map((hotspot, index) => ({
+    id: `hotspot:${index}:${hotspot.id}`,
+    label: hotspot.label,
+    description: hotspot.path ?? hotspot.id,
+    children: [
+      {
+        id: `hotspot:${index}:dependents`,
+        label: `${hotspot.dependents} dependents`,
+        description: 'Incoming structural relationships',
+      },
+      {
+        id: `hotspot:${index}:dependencies`,
+        label: `${hotspot.dependencies} dependencies`,
+        description: 'Outgoing structural relationships',
+      },
+      {
+        id: `hotspot:${index}:total`,
+        label: `${hotspot.totalConnections} total connections`,
+        description: hotspot.kind,
+      },
+    ],
+  }));
 
   return (
     <div className="pb-4">
@@ -18,54 +42,29 @@ export function DependenciesView({ data }: { data: DependencyData | null }) {
         <MetricCard label="External packages" value={data.nodeKinds.external.toLocaleString()} />
       </div>
 
-      <Section title="Dependency kinds">
-        <div className="flex flex-wrap gap-2">
-          <Badge>{data.edgeTypes.imports} imports</Badge>
-          <Badge>{data.edgeTypes.typeImports} type imports</Badge>
-          <Badge>{data.edgeTypes.reExports} re-exports</Badge>
-          <Badge>{data.edgeTypes.dynamicImports} dynamic imports</Badge>
-          <Badge>{data.edgeTypes.requires} requires</Badge>
-        </div>
-      </Section>
-
-      <Section title="Connection hotspots">
-        {data.hotspots.length === 0 ? (
-          <EmptyCollection>No dependency connections were detected.</EmptyCollection>
-        ) : (
-          <div className="space-y-2">
-            {data.hotspots.map((hotspot) => (
-              <div key={hotspot.id} className="rounded border border-panel-border bg-panel p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium">{hotspot.label}</div>
-                    <div className="truncate text-xs text-description">
-                      {hotspot.path ?? hotspot.id}
-                    </div>
-                  </div>
-                  <Badge>{hotspot.kind}</Badge>
-                </div>
-                <div className="mt-2 grid grid-cols-3 gap-2 text-center text-xs">
-                  <div>
-                    <strong>{hotspot.dependents}</strong>
-                    <br />
-                    <span className="text-description">dependents</span>
-                  </div>
-                  <div>
-                    <strong>{hotspot.dependencies}</strong>
-                    <br />
-                    <span className="text-description">dependencies</span>
-                  </div>
-                  <div>
-                    <strong>{hotspot.totalConnections}</strong>
-                    <br />
-                    <span className="text-description">total</span>
-                  </div>
-                </div>
-              </div>
-            ))}
+      <div className="space-y-3">
+        <Panel collapsible title="Dependency kinds">
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="info">{data.edgeTypes.imports} imports</Badge>
+            <Badge variant="neutral">{data.edgeTypes.typeImports} type imports</Badge>
+            <Badge variant="neutral">{data.edgeTypes.reExports} re-exports</Badge>
+            <Badge variant="warning">{data.edgeTypes.dynamicImports} dynamic imports</Badge>
+            <Badge variant="neutral">{data.edgeTypes.requires} requires</Badge>
           </div>
-        )}
-      </Section>
+        </Panel>
+
+        <Panel collapsible title="Connection hotspots">
+          {hotspotItems.length === 0 ? (
+            <EmptyCollection>No dependency connections were detected.</EmptyCollection>
+          ) : (
+            <TreeView
+              ariaLabel="Dependency connection hotspots"
+              defaultExpandedIds={hotspotItems.map(({ id }) => id)}
+              items={hotspotItems}
+            />
+          )}
+        </Panel>
+      </div>
     </div>
   );
 }
