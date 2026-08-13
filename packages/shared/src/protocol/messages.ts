@@ -8,6 +8,18 @@
 
 import { z } from 'zod';
 
+export const SidebarRouteSchema = z.enum([
+  'overview',
+  'architecture',
+  'knowledge',
+  'dependencies',
+  'settings',
+]);
+
+export type SidebarRoute = z.infer<typeof SidebarRouteSchema>;
+
+const SafeNonnegativeIntegerSchema = z.number().int().nonnegative().safe();
+
 const HealthDimensionsSchema = z.object({
   architectureHealth: z.number().min(0).max(100),
   dependencyHealth: z.number().min(0).max(100),
@@ -267,6 +279,13 @@ export const ExtensionMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('themeChanged'),
     kind: z.enum(['light', 'dark', 'high-contrast']),
   }),
+  z.object({
+    type: z.literal('navigateTo'),
+    route: SidebarRouteSchema,
+    generation: SafeNonnegativeIntegerSchema,
+    revision: SafeNonnegativeIntegerSchema,
+    requestId: SafeNonnegativeIntegerSchema.optional(),
+  }),
 ]);
 
 export type ExtensionMessage = z.infer<typeof ExtensionMessageSchema>;
@@ -280,13 +299,21 @@ export const WebviewMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('requestKnowledgeData') }),
   z.object({
     type: z.literal('navigateTo'),
-    view: z.enum(['overview', 'architecture', 'knowledge', 'dependencies', 'settings']),
+    route: SidebarRouteSchema,
+    generation: SafeNonnegativeIntegerSchema,
+    revision: SafeNonnegativeIntegerSchema,
+    requestId: SafeNonnegativeIntegerSchema,
   }),
   z.object({
     type: z.literal('updateSettings'),
     settings: z.record(z.unknown()),
   }),
-  z.object({ type: z.literal('ready') }),
+  z.object({
+    type: z.literal('ready'),
+    route: SidebarRouteSchema,
+    generation: SafeNonnegativeIntegerSchema,
+    revision: SafeNonnegativeIntegerSchema,
+  }),
 ]);
 
 export type WebviewMessage = z.infer<typeof WebviewMessageSchema>;

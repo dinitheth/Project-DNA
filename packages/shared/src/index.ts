@@ -30,6 +30,7 @@ export type {
   KnowledgeData,
   MessageEnvelope,
   RepositoryData,
+  SidebarRoute,
   WebviewMessage,
 } from './protocol/messages.js';
 export {
@@ -38,6 +39,7 @@ export {
   ExtensionMessageSchema,
   KnowledgeDataSchema,
   RepositoryDataSchema,
+  SidebarRouteSchema,
   WebviewMessageSchema,
 } from './protocol/messages.js';
 

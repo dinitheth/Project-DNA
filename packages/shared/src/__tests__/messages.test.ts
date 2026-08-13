@@ -2,20 +2,143 @@ import { describe, expect, it } from 'vitest';
 import {
   ExtensionMessageSchema,
   RepositoryDataSchema,
+  SidebarRouteSchema,
   WebviewMessageSchema,
 } from '../protocol/messages.js';
 
 describe('webview message protocol', () => {
   it('accepts supported webview requests and rejects unknown message shapes', () => {
-    expect(WebviewMessageSchema.safeParse({ type: 'ready' }).success).toBe(true);
+    expect(
+      WebviewMessageSchema.safeParse({
+        type: 'ready',
+        route: 'overview',
+        generation: 0,
+        revision: 0,
+      }).success,
+    ).toBe(true);
     expect(WebviewMessageSchema.safeParse({ type: 'requestAnalysis' }).success).toBe(true);
     expect(
-      WebviewMessageSchema.safeParse({ type: 'navigateTo', view: 'dependencies' }).success,
+      WebviewMessageSchema.safeParse({
+        type: 'navigateTo',
+        route: 'dependencies',
+        generation: 0,
+        revision: 2,
+        requestId: 1,
+      }).success,
     ).toBe(true);
-    expect(WebviewMessageSchema.safeParse({ type: 'navigateTo', view: 'unknown' }).success).toBe(
-      false,
-    );
+    expect(
+      WebviewMessageSchema.safeParse({
+        type: 'navigateTo',
+        route: 'unknown',
+        generation: 0,
+        revision: 2,
+        requestId: 1,
+      }).success,
+    ).toBe(false);
+    expect(WebviewMessageSchema.safeParse({ type: 'ready' }).success).toBe(false);
     expect(WebviewMessageSchema.safeParse({ type: 'deleteRepository' }).success).toBe(false);
+  });
+
+  it('validates sidebar routes and extension-to-webview navigation revisions', () => {
+    expect(SidebarRouteSchema.options).toEqual([
+      'overview',
+      'architecture',
+      'knowledge',
+      'dependencies',
+      'settings',
+    ]);
+    expect(
+      ExtensionMessageSchema.safeParse({
+        type: 'navigateTo',
+        route: 'architecture',
+        generation: 0,
+        revision: 1,
+      }).success,
+    ).toBe(true);
+    expect(
+      ExtensionMessageSchema.safeParse({
+        type: 'navigateTo',
+        route: 'architecture',
+        generation: 0,
+        revision: -1,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts only safe revisions and request identifiers at every navigation boundary', () => {
+    const safe = Number.MAX_SAFE_INTEGER;
+    const unsafe = safe + 1;
+    const candidates = [
+      {
+        schema: ExtensionMessageSchema,
+        message: { type: 'navigateTo', route: 'architecture', generation: safe, revision: safe },
+        unsafeField: 'generation',
+      },
+      {
+        schema: ExtensionMessageSchema,
+        message: { type: 'navigateTo', route: 'architecture', generation: safe, revision: safe },
+        unsafeField: 'revision',
+      },
+      {
+        schema: ExtensionMessageSchema,
+        message: {
+          type: 'navigateTo',
+          route: 'architecture',
+          generation: safe,
+          revision: safe,
+          requestId: safe,
+        },
+        unsafeField: 'requestId',
+      },
+      {
+        schema: WebviewMessageSchema,
+        message: {
+          type: 'navigateTo',
+          route: 'knowledge',
+          generation: safe,
+          revision: safe,
+          requestId: safe,
+        },
+        unsafeField: 'generation',
+      },
+      {
+        schema: WebviewMessageSchema,
+        message: {
+          type: 'navigateTo',
+          route: 'knowledge',
+          generation: safe,
+          revision: safe,
+          requestId: safe,
+        },
+        unsafeField: 'revision',
+      },
+      {
+        schema: WebviewMessageSchema,
+        message: {
+          type: 'navigateTo',
+          route: 'knowledge',
+          generation: safe,
+          revision: safe,
+          requestId: safe,
+        },
+        unsafeField: 'requestId',
+      },
+      {
+        schema: WebviewMessageSchema,
+        message: { type: 'ready', route: 'overview', generation: safe, revision: safe },
+        unsafeField: 'generation',
+      },
+      {
+        schema: WebviewMessageSchema,
+        message: { type: 'ready', route: 'overview', generation: safe, revision: safe },
+        unsafeField: 'revision',
+      },
+    ] as const;
+
+    for (const { schema, message, unsafeField } of candidates) {
+      expect(schema.safeParse(message).success).toBe(true);
+      expect(schema.safeParse({ ...message, [unsafeField]: unsafe }).success).toBe(false);
+    }
   });
 
   it('validates live repository payloads at the extension-to-webview boundary', () => {
