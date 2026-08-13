@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  EvolutionDataSchema,
   ExtensionMessageSchema,
   RepositoryDataSchema,
+  SemanticGraphDataSchema,
   SidebarRouteSchema,
   WebviewMessageSchema,
 } from '../protocol/messages.js';
@@ -178,10 +180,60 @@ describe('webview message protocol', () => {
           hotspots: [],
         },
         knowledge: { domains: [], capabilities: [], nodes: [] },
+        semanticGraph: createSemanticGraphData(),
+        evolution: createEvolutionData(),
       },
     };
 
     expect(ExtensionMessageSchema.safeParse(message).success).toBe(true);
+  });
+
+  it('validates semantic graph presentation data at runtime', () => {
+    const graph = createSemanticGraphData();
+
+    expect(SemanticGraphDataSchema.safeParse(graph).success).toBe(true);
+    expect(
+      SemanticGraphDataSchema.safeParse({
+        ...graph,
+        nodes: [{ ...graph.nodes[0], weight: 1.1 }],
+      }).success,
+    ).toBe(false);
+    expect(
+      SemanticGraphDataSchema.safeParse({
+        ...graph,
+        edges: [{ ...graph.edges[0], confidence: -0.1 }],
+      }).success,
+    ).toBe(false);
+    expect(
+      SemanticGraphDataSchema.safeParse({
+        ...graph,
+        nodes: [{ ...graph.nodes[0], kind: 'unknown' }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('validates evolution history presentation data at runtime', () => {
+    const evolution = createEvolutionData();
+
+    expect(EvolutionDataSchema.safeParse(evolution).success).toBe(true);
+    expect(
+      EvolutionDataSchema.safeParse({
+        ...evolution,
+        history: [{ ...evolution.history[0], version: -1 }],
+      }).success,
+    ).toBe(false);
+    expect(
+      EvolutionDataSchema.safeParse({
+        ...evolution,
+        latestSnapshot: { ...evolution.latestSnapshot, metrics: { health: Number.NaN } },
+      }).success,
+    ).toBe(false);
+    expect(
+      EvolutionDataSchema.safeParse({
+        ...evolution,
+        history: [{ ...evolution.history[0], trigger: 'unknown' }],
+      }).success,
+    ).toBe(false);
   });
 
   it('preserves the legacy analysis completion contract', () => {
@@ -270,5 +322,66 @@ function createRepositoryData() {
       criticalPath: 'No critical path detected.',
       risks: [],
     },
+  };
+}
+
+function createSemanticGraphData() {
+  return {
+    nodeCount: 2,
+    edgeCount: 1,
+    nodes: [
+      {
+        id: 'entity:service',
+        label: 'Service',
+        kind: 'entity',
+        weight: 0.8,
+        incomingRelationshipCount: 0,
+        outgoingRelationshipCount: 1,
+      },
+      {
+        id: 'domain:core',
+        label: 'Core',
+        kind: 'domain',
+        weight: 0.6,
+        incomingRelationshipCount: 1,
+        outgoingRelationshipCount: 0,
+      },
+    ],
+    edges: [
+      {
+        source: 'entity:service',
+        target: 'domain:core',
+        kind: 'belongs-to',
+        weight: 1,
+        confidence: 0.9,
+      },
+    ],
+    truncated: false,
+  };
+}
+
+function createEvolutionData() {
+  const latestSnapshot = {
+    id: 'snapshot-2',
+    version: 2,
+    timestamp: 2,
+    trigger: 'incremental',
+    projectDnaHash: 'hash-2',
+    gitCommitHash: null,
+    metrics: { 'health.overall': 90 },
+    isFullSnapshot: false,
+  };
+  return {
+    latestSnapshot,
+    history: [
+      latestSnapshot,
+      {
+        ...latestSnapshot,
+        id: 'snapshot-1',
+        version: 1,
+        timestamp: 1,
+        projectDnaHash: 'hash-1',
+      },
+    ],
   };
 }

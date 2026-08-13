@@ -218,6 +218,73 @@ export const KnowledgeDataSchema = z.object({
 
 export type KnowledgeData = z.infer<typeof KnowledgeDataSchema>;
 
+const SemanticGraphNodeKindSchema = z.enum([
+  'module',
+  'domain',
+  'layer',
+  'concept',
+  'capability',
+  'component',
+  'risk',
+  'entity',
+]);
+
+const SemanticGraphEdgeKindSchema = z.enum([
+  'contains',
+  'serves',
+  'depends-on',
+  'implements',
+  'risks',
+  'constrains',
+  'belongs-to',
+  'evolves-from',
+]);
+
+export const SemanticGraphDataSchema = z.object({
+  nodeCount: z.number().int().nonnegative(),
+  edgeCount: z.number().int().nonnegative(),
+  nodes: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      kind: SemanticGraphNodeKindSchema,
+      weight: z.number().min(0).max(1),
+      incomingRelationshipCount: z.number().int().nonnegative(),
+      outgoingRelationshipCount: z.number().int().nonnegative(),
+    }),
+  ),
+  edges: z.array(
+    z.object({
+      source: z.string(),
+      target: z.string(),
+      kind: SemanticGraphEdgeKindSchema,
+      weight: z.number().min(0).max(1),
+      confidence: z.number().min(0).max(1),
+    }),
+  ),
+  truncated: z.boolean(),
+});
+
+export type SemanticGraphData = z.infer<typeof SemanticGraphDataSchema>;
+
+const EvolutionSnapshotDataSchema = z.object({
+  id: z.string(),
+  version: z.number().int().nonnegative(),
+  timestamp: z.number(),
+  trigger: z.enum(['manual', 'incremental', 'scheduled', 'architectural-change']),
+  projectDnaHash: z.string(),
+  gitCommitHash: z.string().nullable(),
+  metrics: z.record(z.string(), z.number()),
+  isFullSnapshot: z.boolean(),
+});
+
+export const EvolutionDataSchema = z.object({
+  latestSnapshot: EvolutionSnapshotDataSchema.nullable(),
+  history: z.array(EvolutionSnapshotDataSchema),
+});
+
+export type EvolutionData = z.infer<typeof EvolutionDataSchema>;
+
 export const ExtensionMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('analysisUnavailable'),
@@ -273,6 +340,8 @@ export const ExtensionMessageSchema = z.discriminatedUnion('type', [
       architecture: ArchitectureDataSchema,
       dependencies: DependencyDataSchema,
       knowledge: KnowledgeDataSchema,
+      semanticGraph: SemanticGraphDataSchema,
+      evolution: EvolutionDataSchema,
     }),
   }),
   z.object({

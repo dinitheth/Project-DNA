@@ -26,19 +26,23 @@ export type { Logger } from './logger/logger.js';
 export type {
   ArchitectureData,
   DependencyData,
+  EvolutionData,
   ExtensionMessage,
   KnowledgeData,
   MessageEnvelope,
   RepositoryData,
+  SemanticGraphData,
   SidebarRoute,
   WebviewMessage,
 } from './protocol/messages.js';
 export {
   ArchitectureDataSchema,
   DependencyDataSchema,
+  EvolutionDataSchema,
   ExtensionMessageSchema,
   KnowledgeDataSchema,
   RepositoryDataSchema,
+  SemanticGraphDataSchema,
   SidebarRouteSchema,
   WebviewMessageSchema,
 } from './protocol/messages.js';
