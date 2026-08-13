@@ -325,7 +325,7 @@ Project DNA/
 
 ### Prerequisites
 
-- Node.js 20
+- Node.js 22.23.2
 - pnpm 9.15.4
 
 ### Setup
@@ -377,7 +377,7 @@ pnpm exec prettier --write path/to/changed-file
 1. Create the Zod schema in `packages/dna-core/src/models/`
 2. Export the schema and type from `packages/dna-core/src/models/index.ts`
 3. If needed, add a DI token in `packages/shared/src/di/tokens.ts`
-4. Run `pnpm turbo run typecheck` to verify
+4. Run `pnpm typecheck` to verify every workspace typecheck script
 
 ### Adding a new engine
 
@@ -431,18 +431,20 @@ are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
 - End-to-end `ProjectDNAService` orchestration across analysis, synthesis, intelligence, aggregate assembly, refresh, queries, and evolution snapshots
 - SQLite persistence for versioned Project DNA aggregates, heavyweight collections, graphs, repository indexes, and evolution history
 - Automatic VS Code workspace restoration with version continuity across extension restarts
-- VS Code composition root wired to all concrete engines, with functional Analyze, Refresh, and Generate DNA commands
+- VS Code composition root wired to all concrete engines, with functional Analyze, Refresh, Generate DNA, Architecture, and Knowledge Graph commands
+- Typed, persisted sidebar navigation with provider-authoritative command routing and webview recreation recovery
+- Query-backed Architecture, Dependencies, Knowledge Graph, Health, Risks, Critical Components, and Evolution intelligence views
+- Accessible reusable webview primitives for badges, status indicators, collapsible panels, section headers, icons, and keyboard-navigable nested trees
+- Deterministic cross-platform native validation and byte-identical VSIX packaging, including a real installed VS Code Server 1.132.0 Extension Host acceptance gate
 - Typed `Result<T>` error handling, cancellation support, dependency injection, and error-isolated EventBus coordination
 - ESLint 9 flat configuration and production extension/webview build
-- 67 automated tests across shared infrastructure, analysis engines, storage, and the VS Code
-  extension
-- M0 developer-experience hardening in progress: deterministic workspace validation, zero-warning
-  linting, cross-platform scripts, and a sequential verification pipeline
+- Automated tests across shared infrastructure, analysis engines, storage, native runtimes, packaging, sidebar protocols, and accessible webview behavior
+- Deterministic workspace validation, zero-warning linting, cross-platform scripts, and a sequential verification pipeline
 
 ### Next
 
-- Add incremental file-watcher analysis
-- Expand VS Code webview panels and UI component behavior
+- Add focused installed-extension integration coverage for intelligence view interactions
+- Define the next user-facing intelligence workflow without changing the frozen native and release contracts
 
 ---
 
