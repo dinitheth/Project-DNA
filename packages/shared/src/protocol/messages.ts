@@ -29,7 +29,7 @@ export const WorkspaceRelativePathSchema = z
     (value) =>
       !value.startsWith('/') &&
       !value.startsWith('\\') &&
-      !/^[a-z]:[\\/]/iu.test(value) &&
+      !/^[a-z]:/iu.test(value) &&
       !value.replaceAll('\\', '/').split('/').includes('..'),
     'Expected a workspace-relative path without parent traversal.',
   );

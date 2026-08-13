@@ -178,6 +178,7 @@ describe('webview message protocol', () => {
       '/etc/passwd',
       '\\\\server\\share',
       'C:\\workspace\\file.ts',
+      'C:workspace\\file.ts',
       '../secrets.txt',
       'src/../../secrets.txt',
       'src\\..\\secrets.txt',
