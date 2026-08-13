@@ -111,6 +111,7 @@ export function reduceAnalysisState(
     case 'navigateTo':
     case 'workspaceTargetResult':
     case 'entityDetail':
+    case 'evolutionComparison':
       return state;
   }
 }

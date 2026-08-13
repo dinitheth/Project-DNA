@@ -149,6 +149,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
           message.entityId,
         );
         return;
+      case 'requestEvolutionComparison':
+        await this.publishEvolutionComparison(
+          sourceView,
+          message.requestId,
+          message.analysisVersion,
+          message.fromVersion,
+          message.toVersion,
+        );
+        return;
       case 'requestAnalysis':
         await this.runExclusive(() => this.analyzeWorkspace());
         return;
@@ -442,6 +451,104 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
       analysisVersion,
       entityId,
       entity,
+      error,
+    });
+  }
+
+  private async publishEvolutionComparison(
+    sourceView: vscode.WebviewView,
+    requestId: number,
+    analysisVersion: number,
+    fromVersion: number,
+    toVersion: number,
+  ): Promise<void> {
+    if (this.webviewView !== sourceView || this.disposed) return;
+    const current = this.service.getCurrent();
+    if (
+      fromVersion >= toVersion ||
+      isErr(current) ||
+      !current.value ||
+      current.value.version !== analysisVersion
+    ) {
+      await this.postEvolutionComparison(
+        sourceView,
+        requestId,
+        analysisVersion,
+        fromVersion,
+        toVersion,
+        null,
+        'Invalid or stale comparison selection.',
+      );
+      return;
+    }
+    const result = await this.service.getDiff(fromVersion, toVersion);
+    if (this.webviewView !== sourceView) return;
+    if (isErr(result)) {
+      await this.postEvolutionComparison(
+        sourceView,
+        requestId,
+        analysisVersion,
+        fromVersion,
+        toVersion,
+        null,
+        result.error.message,
+      );
+      return;
+    }
+    const diff = result.value;
+    await this.postEvolutionComparison(
+      sourceView,
+      requestId,
+      analysisVersion,
+      fromVersion,
+      toVersion,
+      {
+        fromVersion,
+        toVersion,
+        addedEntities: [...diff.addedEntities].sort().slice(0, 100),
+        removedEntities: [...diff.removedEntities].sort().slice(0, 100),
+        changedEntities: [...diff.modifiedEntities]
+          .sort((left, right) => left.entityId.localeCompare(right.entityId))
+          .slice(0, 100)
+          .map((item) => ({
+            entityId: item.entityId,
+            fields: item.changes
+              .map(({ field }) => field)
+              .sort()
+              .slice(0, 50),
+          })),
+        healthDelta: {
+          overall: diff.healthDelta.overall,
+          dimensions: Object.fromEntries(Object.entries(diff.healthDelta.dimensions).sort()),
+        },
+        newRisks: [...diff.newRisks].sort().slice(0, 100),
+        resolvedRisks: [...diff.resolvedRisks].sort().slice(0, 100),
+        addedEdges: diff.addedEdges,
+        removedEdges: diff.removedEdges,
+        newDomains: [...diff.newDomains].sort().slice(0, 100),
+        removedDomains: [...diff.removedDomains].sort().slice(0, 100),
+        architecturalSignificance: diff.architecturalSignificance,
+      },
+    );
+  }
+
+  private async postEvolutionComparison(
+    sourceView: vscode.WebviewView,
+    requestId: number,
+    analysisVersion: number,
+    fromVersion: number,
+    toVersion: number,
+    comparison: import('@project-dna/shared').EvolutionComparisonData | null,
+    error?: string,
+  ): Promise<void> {
+    if (this.webviewView !== sourceView) return;
+    await sourceView.webview.postMessage({
+      type: 'evolutionComparison',
+      requestId,
+      analysisVersion,
+      fromVersion,
+      toVersion,
+      comparison,
       error,
     });
   }

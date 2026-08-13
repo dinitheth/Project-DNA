@@ -174,6 +174,73 @@ describe('SidebarProvider navigation', () => {
     expect(harness.entityDetails()).toHaveLength(1);
   });
 
+  it('publishes a deterministic bounded evolution comparison', async () => {
+    const service = createService({ currentVersion: 4 });
+    service.getDiff = vi.fn(async () =>
+      Ok({
+        fromVersion: 2,
+        toVersion: 4,
+        timestamp: 1,
+        addedEntities: ['z', 'a'],
+        removedEntities: ['y', 'b'],
+        modifiedEntities: [
+          { entityId: 'z', changes: [{ field: 'purpose', from: '', to: 'new' }] },
+          { entityId: 'a', changes: [{ field: 'healthScore', from: 0, to: 1 }] },
+        ],
+        healthDelta: { overall: 4, dimensions: { risk: 2, architecture: 1 } },
+        newRisks: ['risk-z', 'risk-a'],
+        resolvedRisks: [],
+        addedEdges: 2,
+        removedEdges: 1,
+        newDomains: ['sales'],
+        removedDomains: [],
+        architecturalSignificance: 0.4,
+      }),
+    );
+    const harness = createHarness({ service });
+    harness.resolve();
+    harness.receive({
+      type: 'requestEvolutionComparison',
+      requestId: 2,
+      analysisVersion: 4,
+      fromVersion: 2,
+      toVersion: 4,
+    });
+    await harness.waitForEvolutionComparisonCount(1);
+
+    expect(harness.evolutionComparisons()[0]?.comparison).toEqual(
+      expect.objectContaining({ addedEntities: ['a', 'z'], removedEntities: ['b', 'y'] }),
+    );
+    expect(
+      harness
+        .evolutionComparisons()[0]
+        ?.comparison?.changedEntities.map(({ entityId }) => entityId),
+    ).toEqual(['a', 'z']);
+  });
+
+  it('rejects same-version and stale evolution comparisons without querying diffs', async () => {
+    const service = createService({ currentVersion: 4 });
+    service.getDiff = vi.fn();
+    const harness = createHarness({ service });
+    harness.resolve();
+    harness.receive({
+      type: 'requestEvolutionComparison',
+      requestId: 0,
+      analysisVersion: 3,
+      fromVersion: 2,
+      toVersion: 4,
+    });
+    harness.receive({
+      type: 'requestEvolutionComparison',
+      requestId: 1,
+      analysisVersion: 4,
+      fromVersion: 4,
+      toVersion: 4,
+    });
+    await harness.waitForEvolutionComparisonCount(2);
+    expect(service.getDiff).not.toHaveBeenCalled();
+  });
+
   it('delivers navigation while the webview is already resolved and ready', async () => {
     const harness = createHarness();
     harness.resolve();
@@ -573,6 +640,11 @@ function createHarness(
         .map((message) => ExtensionMessageSchema.parse(message))
         .filter((message) => message.type === 'entityDetail');
     },
+    evolutionComparisons() {
+      return messages
+        .map((message) => ExtensionMessageSchema.parse(message))
+        .filter((message) => message.type === 'evolutionComparison');
+    },
     async waitForNavigationCount(count: number) {
       if (count === 0) {
         await this.waitForUnavailableCount(1);
@@ -591,6 +663,9 @@ function createHarness(
     },
     async waitForEntityDetailCount(count: number) {
       await vi.waitFor(() => expect(this.entityDetails()).toHaveLength(count));
+    },
+    async waitForEvolutionComparisonCount(count: number) {
+      await vi.waitFor(() => expect(this.evolutionComparisons()).toHaveLength(count));
     },
   };
 }
