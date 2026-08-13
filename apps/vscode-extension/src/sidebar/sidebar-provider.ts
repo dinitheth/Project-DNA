@@ -26,7 +26,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
   private deliveredNavigationRevision = -1;
   private navigationRequestId: number | undefined;
   private lastClientRequestId = -1;
-  private lastWorkspaceTargetRequestId = -1;
   private hasAuthoritativeNavigation = false;
   private webviewReady = false;
   private disposed = false;
@@ -98,7 +97,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     this.webviewReady = false;
     this.deliveredNavigationRevision = -1;
     this.lastClientRequestId = -1;
-    this.lastWorkspaceTargetRequestId = -1;
     webviewView.onDidDispose(() => {
       if (this.webviewView === webviewView) {
         this.webviewView = undefined;
@@ -150,8 +148,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         await this.runExclusive(() => this.refreshAnalysis());
         return;
       case 'openWorkspaceTarget':
-        if (message.requestId <= this.lastWorkspaceTargetRequestId) return;
-        this.lastWorkspaceTargetRequestId = message.requestId;
         await this.openWorkspaceTarget(sourceView, message.requestId, message.path);
         return;
       case 'navigateTo':
