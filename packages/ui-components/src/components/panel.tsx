@@ -1,44 +1,50 @@
-/**
- * @module Panel
- * Container panel component.
- */
-import React, { useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { cn } from '../utils/cn.js';
+import { Icon } from './icon.js';
 
 export interface PanelProps {
   title: string;
-  children: React.ReactNode;
+  children: ReactNode;
   collapsible?: boolean;
   defaultOpen?: boolean;
   className?: string;
 }
 
-export const Panel: React.FC<PanelProps> = ({
+export function Panel({
   title,
   children,
   collapsible = false,
   defaultOpen = true,
   className,
-}) => {
+}: PanelProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  const contentId = useId();
 
-  // TODO: Implement full collapsible panel with animation
   return (
-    <div className={cn('border border-[var(--vscode-panel-border)]', className)}>
-      <div
-        className="flex items-center justify-between px-3 py-2 bg-[var(--vscode-sideBarSectionHeader-background)]"
-        onClick={() => collapsible && setIsOpen(!isOpen)}
-        role={collapsible ? 'button' : undefined}
-        tabIndex={collapsible ? 0 : undefined}
-      >
-        <span className="text-xs font-semibold uppercase text-[var(--vscode-sideBarSectionHeader-foreground)]">
-          {title}
-        </span>
-        {collapsible && (
-          <span className="text-[var(--vscode-foreground)]">{isOpen ? '▾' : '▸'}</span>
-        )}
+    <section className={cn('rounded border border-[var(--vscode-panel-border)]', className)}>
+      {collapsible ? (
+        <button
+          aria-controls={contentId}
+          aria-expanded={isOpen}
+          className="flex w-full items-center justify-between gap-2 bg-[var(--vscode-sideBarSectionHeader-background)] px-3 py-2 text-left"
+          onClick={() => setIsOpen((open) => !open)}
+          type="button"
+        >
+          <span className="text-xs font-semibold uppercase text-[var(--vscode-sideBarSectionHeader-foreground)]">
+            {title}
+          </span>
+          <Icon name={isOpen ? 'chevron-down' : 'chevron-right'} />
+        </button>
+      ) : (
+        <div className="bg-[var(--vscode-sideBarSectionHeader-background)] px-3 py-2">
+          <span className="text-xs font-semibold uppercase text-[var(--vscode-sideBarSectionHeader-foreground)]">
+            {title}
+          </span>
+        </div>
+      )}
+      <div hidden={!isOpen} id={contentId}>
+        <div className="p-3">{children}</div>
       </div>
-      {isOpen && <div className="p-3">{children}</div>}
-    </div>
+    </section>
   );
-};
+}

@@ -4,6 +4,7 @@
  */
 export * from './utils/cn';
 export * from './components/tree-view';
+export * from './components/tree-state';
 export * from './components/panel';
 export * from './components/badge';
 export * from './components/status-indicator';

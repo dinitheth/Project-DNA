@@ -11,5 +11,6 @@ export default defineWorkspace([
   'packages/knowledge-engine',
   'packages/software-intelligence-engine',
   'packages/storage',
+  'packages/ui-components',
   'apps/vscode-extension',
 ]);

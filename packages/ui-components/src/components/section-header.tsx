@@ -1,28 +1,39 @@
-/**
- * @module SectionHeader
- * Section header with optional action button.
- */
-import React from 'react';
-import { cn } from '../utils/cn';
+import { useId, type ReactNode } from 'react';
+import { cn } from '../utils/cn.js';
 
 export interface SectionHeaderProps {
   title: string;
-  action?: React.ReactNode;
+  action?: ReactNode;
   onAction?: () => void;
+  actionLabel?: string;
   className?: string;
 }
 
-export const SectionHeader: React.FC<SectionHeaderProps> = ({
+export function SectionHeader({
   title,
   action,
   onAction,
+  actionLabel,
   className,
-}) => {
-  // TODO: implement section header layout
+}: SectionHeaderProps) {
+  const headingId = useId();
   return (
-    <div className={cn('flex justify-between items-center', className)}>
-      <h3>{title}</h3>
-      {action && <button onClick={onAction}>{action}</button>}
+    <div
+      aria-labelledby={headingId}
+      className={cn('flex items-center justify-between gap-3', className)}
+    >
+      <h3 className="text-xs font-semibold uppercase tracking-wide" id={headingId}>
+        {title}
+      </h3>
+      {action ? (
+        onAction ? (
+          <button aria-label={actionLabel} onClick={onAction} type="button">
+            {action}
+          </button>
+        ) : (
+          action
+        )
+      ) : null}
     </div>
   );
-};
+}
