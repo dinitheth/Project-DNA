@@ -6,6 +6,7 @@ import {
   SemanticGraphDataSchema,
   SidebarRouteSchema,
   WebviewMessageSchema,
+  WorkspaceRelativePathSchema,
 } from '../protocol/messages.js';
 
 describe('webview message protocol', () => {
@@ -140,6 +141,50 @@ describe('webview message protocol', () => {
     for (const { schema, message, unsafeField } of candidates) {
       expect(schema.safeParse(message).success).toBe(true);
       expect(schema.safeParse({ ...message, [unsafeField]: unsafe }).success).toBe(false);
+    }
+  });
+
+  it('validates correlated workspace-target navigation messages', () => {
+    expect(
+      WebviewMessageSchema.safeParse({
+        type: 'openWorkspaceTarget',
+        requestId: Number.MAX_SAFE_INTEGER,
+        path: 'src/domain/service.ts',
+      }).success,
+    ).toBe(true);
+    expect(
+      ExtensionMessageSchema.safeParse({
+        type: 'workspaceTargetResult',
+        requestId: Number.MAX_SAFE_INTEGER,
+        path: 'src/domain/service.ts',
+        outcome: 'opened',
+      }).success,
+    ).toBe(true);
+    expect(
+      WebviewMessageSchema.safeParse({
+        type: 'openWorkspaceTarget',
+        requestId: Number.MAX_SAFE_INTEGER + 1,
+        path: 'src/domain/service.ts',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts only bounded workspace-relative targets without parent traversal', () => {
+    expect(WorkspaceRelativePathSchema.safeParse('src/domain/service.ts').success).toBe(true);
+    expect(WorkspaceRelativePathSchema.safeParse('src\\domain\\service.ts').success).toBe(true);
+
+    for (const path of [
+      '',
+      '/etc/passwd',
+      '\\\\server\\share',
+      'C:\\workspace\\file.ts',
+      '../secrets.txt',
+      'src/../../secrets.txt',
+      'src\\..\\secrets.txt',
+      `src/unsafe\0name.ts`,
+      'x'.repeat(4097),
+    ]) {
+      expect(WorkspaceRelativePathSchema.safeParse(path).success, path).toBe(false);
     }
   });
 

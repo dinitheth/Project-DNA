@@ -20,6 +20,22 @@ export type SidebarRoute = z.infer<typeof SidebarRouteSchema>;
 
 const SafeNonnegativeIntegerSchema = z.number().int().nonnegative().safe();
 
+export const WorkspaceRelativePathSchema = z
+  .string()
+  .min(1)
+  .max(4096)
+  .refine((value) => !value.includes('\0'), 'Workspace path cannot contain NUL bytes.')
+  .refine(
+    (value) =>
+      !value.startsWith('/') &&
+      !value.startsWith('\\') &&
+      !/^[a-z]:[\\/]/iu.test(value) &&
+      !value.replaceAll('\\', '/').split('/').includes('..'),
+    'Expected a workspace-relative path without parent traversal.',
+  );
+
+export type WorkspaceRelativePath = z.infer<typeof WorkspaceRelativePathSchema>;
+
 const HealthDimensionsSchema = z.object({
   architectureHealth: z.number().min(0).max(100),
   dependencyHealth: z.number().min(0).max(100),
@@ -355,6 +371,13 @@ export const ExtensionMessageSchema = z.discriminatedUnion('type', [
     revision: SafeNonnegativeIntegerSchema,
     requestId: SafeNonnegativeIntegerSchema.optional(),
   }),
+  z.object({
+    type: z.literal('workspaceTargetResult'),
+    requestId: SafeNonnegativeIntegerSchema,
+    path: WorkspaceRelativePathSchema,
+    outcome: z.enum(['opened', 'missing', 'rejected', 'failed']),
+    message: z.string().optional(),
+  }),
 ]);
 
 export type ExtensionMessage = z.infer<typeof ExtensionMessageSchema>;
@@ -382,6 +405,11 @@ export const WebviewMessageSchema = z.discriminatedUnion('type', [
     route: SidebarRouteSchema,
     generation: SafeNonnegativeIntegerSchema,
     revision: SafeNonnegativeIntegerSchema,
+  }),
+  z.object({
+    type: z.literal('openWorkspaceTarget'),
+    requestId: SafeNonnegativeIntegerSchema,
+    path: WorkspaceRelativePathSchema,
   }),
 ]);
 
