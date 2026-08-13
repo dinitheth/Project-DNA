@@ -1,6 +1,9 @@
 import * as vscode from 'vscode';
+import { realpath, stat } from 'node:fs/promises';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 import {
   WebviewMessageSchema,
+  WorkspaceRelativePathSchema,
   isErr,
   type ExtensionMessage,
   type SidebarRoute,
@@ -23,6 +26,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
   private deliveredNavigationRevision = -1;
   private navigationRequestId: number | undefined;
   private lastClientRequestId = -1;
+  private lastWorkspaceTargetRequestId = -1;
   private hasAuthoritativeNavigation = false;
   private webviewReady = false;
   private disposed = false;
@@ -94,6 +98,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     this.webviewReady = false;
     this.deliveredNavigationRevision = -1;
     this.lastClientRequestId = -1;
+    this.lastWorkspaceTargetRequestId = -1;
     webviewView.onDidDispose(() => {
       if (this.webviewView === webviewView) {
         this.webviewView = undefined;
@@ -109,7 +114,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
       if (this.webviewView !== webviewView) return;
       const parsed = WebviewMessageSchema.safeParse(candidate);
       if (!parsed.success) return;
-      void this.handleMessage(parsed.data);
+      void this.handleMessage(parsed.data, webviewView);
     });
   }
 
@@ -121,7 +126,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     this.webviewView = undefined;
   }
 
-  private async handleMessage(message: WebviewMessage): Promise<void> {
+  private async handleMessage(
+    message: WebviewMessage,
+    sourceView: vscode.WebviewView,
+  ): Promise<void> {
     switch (message.type) {
       case 'ready':
         this.webviewReady = true;
@@ -140,6 +148,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         return;
       case 'requestRefresh':
         await this.runExclusive(() => this.refreshAnalysis());
+        return;
+      case 'openWorkspaceTarget':
+        if (message.requestId <= this.lastWorkspaceTargetRequestId) return;
+        this.lastWorkspaceTargetRequestId = message.requestId;
+        await this.openWorkspaceTarget(sourceView, message.requestId, message.path);
         return;
       case 'navigateTo':
         if (
@@ -199,6 +212,102 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     }
 
     await this.service.refresh();
+  }
+
+  private async openWorkspaceTarget(
+    sourceView: vscode.WebviewView,
+    requestId: number,
+    candidatePath: string,
+  ): Promise<void> {
+    if (this.webviewView !== sourceView || this.disposed) return;
+    const pathResult = WorkspaceRelativePathSchema.safeParse(candidatePath);
+    if (!pathResult.success) return;
+    const workspaceRoot = this.getWorkspaceRoot();
+    if (!workspaceRoot) {
+      await this.postWorkspaceTargetResult(
+        sourceView,
+        requestId,
+        candidatePath,
+        'rejected',
+        'No workspace is open.',
+      );
+      return;
+    }
+    const targetPath = resolve(workspaceRoot, pathResult.data);
+    if (!isPathInside(workspaceRoot, targetPath)) {
+      await this.postWorkspaceTargetResult(
+        sourceView,
+        requestId,
+        pathResult.data,
+        'rejected',
+        'Target is outside the workspace.',
+      );
+      return;
+    }
+    try {
+      const targetStat = await stat(targetPath);
+      const [canonicalRoot, canonicalTarget] = await Promise.all([
+        realpath(workspaceRoot),
+        realpath(targetPath),
+      ]);
+      if (
+        this.webviewView !== sourceView ||
+        !samePath(this.getWorkspaceRoot() ?? '', workspaceRoot) ||
+        !isPathInside(canonicalRoot, canonicalTarget)
+      ) {
+        if (this.webviewView === sourceView) {
+          await this.postWorkspaceTargetResult(
+            sourceView,
+            requestId,
+            pathResult.data,
+            'rejected',
+            'Target resolves outside the workspace.',
+          );
+        }
+        return;
+      }
+      const targetUri = vscode.Uri.file(canonicalTarget);
+      if (targetStat.isDirectory()) {
+        await vscode.commands.executeCommand('revealInExplorer', targetUri);
+      } else {
+        const document = await vscode.workspace.openTextDocument(targetUri);
+        if (
+          this.webviewView !== sourceView ||
+          !samePath(this.getWorkspaceRoot() ?? '', workspaceRoot)
+        ) {
+          return;
+        }
+        await vscode.window.showTextDocument(document, { preview: true });
+      }
+      await this.postWorkspaceTargetResult(sourceView, requestId, pathResult.data, 'opened');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const outcome = isFileNotFound(error) ? 'missing' : 'failed';
+      await this.postWorkspaceTargetResult(
+        sourceView,
+        requestId,
+        pathResult.data,
+        outcome,
+        message,
+      );
+    }
+  }
+
+  private async postWorkspaceTargetResult(
+    sourceView: vscode.WebviewView,
+    requestId: number,
+    path: string,
+    outcome: 'opened' | 'missing' | 'rejected' | 'failed',
+    message?: string,
+  ): Promise<void> {
+    if (this.webviewView !== sourceView) return;
+    await sourceView.webview.postMessage({
+      type: 'workspaceTargetResult',
+      requestId,
+      path,
+      outcome,
+      message,
+    });
   }
 
   private async publishCurrentData(): Promise<void> {
@@ -393,6 +502,24 @@ function samePath(left: string, right: string): boolean {
   return process.platform === 'win32'
     ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
     : normalizedLeft === normalizedRight;
+}
+
+export function isPathInside(workspaceRoot: string, targetPath: string): boolean {
+  const root = resolve(workspaceRoot);
+  const relativePath = relative(root, resolve(targetPath));
+  return (
+    relativePath === '' ||
+    (relativePath !== '..' && !isAbsolute(relativePath) && !relativePath.startsWith(`..${sep}`))
+  );
+}
+
+function isFileNotFound(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'ENOENT'
+  );
 }
 
 function isNewerNavigationVersion(

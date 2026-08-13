@@ -34,6 +34,7 @@ export type {
   SemanticGraphData,
   SidebarRoute,
   WebviewMessage,
+  WorkspaceRelativePath,
 } from './protocol/messages.js';
 export {
   ArchitectureDataSchema,
@@ -45,6 +46,7 @@ export {
   SemanticGraphDataSchema,
   SidebarRouteSchema,
   WebviewMessageSchema,
+  WorkspaceRelativePathSchema,
 } from './protocol/messages.js';
 
 // ─── Constants ─────────────────────────────────────────────────────

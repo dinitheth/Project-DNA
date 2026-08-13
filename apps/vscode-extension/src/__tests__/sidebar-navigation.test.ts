@@ -1,18 +1,99 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { IProjectDNAService } from '@project-dna/dna-core';
 import { ExtensionMessageSchema, Ok } from '@project-dna/shared';
 
 vi.mock('vscode', () => ({
   Uri: {
     joinPath: () => ({ toString: () => 'vscode-resource' }),
+    file: (fsPath: string) => ({ fsPath }),
   },
+  commands: { executeCommand: vi.fn() },
+  workspace: { openTextDocument: vi.fn() },
+  window: { showTextDocument: vi.fn() },
 }));
 
 import { SidebarProvider } from '../sidebar/sidebar-provider.js';
+import { isPathInside } from '../sidebar/sidebar-provider.js';
+import * as vscode from 'vscode';
 
 describe('SidebarProvider navigation', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('accepts nested targets only when they remain inside the workspace', () => {
+    expect(isPathInside('C:/repo', 'C:/repo/src/index.ts')).toBe(true);
+    expect(isPathInside('C:/repo', 'C:/other/index.ts')).toBe(false);
+    expect(isPathInside('C:/repo', 'C:/repo/../secrets.txt')).toBe(false);
+    expect(isPathInside('C:/repo', 'C:/repo/..')).toBe(false);
+  });
+
+  it('opens files and reveals directories from the active workspace', async () => {
+    const root = await createTemporaryWorkspace();
+    const sourceDirectory = join(root, 'src');
+    const sourceFile = join(sourceDirectory, 'index.ts');
+    await mkdir(sourceDirectory);
+    await writeFile(sourceFile, 'export {};');
+    vi.mocked(vscode.workspace.openTextDocument).mockImplementation(async (uri) => uri as never);
+
+    const harness = createHarness({ rootPath: root });
+    harness.resolve();
+    harness.receive({ type: 'openWorkspaceTarget', requestId: 0, path: 'src/index.ts' });
+    await harness.waitForWorkspaceTargetResultCount(1);
+    harness.receive({ type: 'openWorkspaceTarget', requestId: 1, path: 'src' });
+    await harness.waitForWorkspaceTargetResultCount(2);
+
+    expect(vscode.workspace.openTextDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ fsPath: sourceFile }),
+    );
+    expect(vscode.window.showTextDocument).toHaveBeenCalledWith(expect.anything(), {
+      preview: true,
+    });
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+      'revealInExplorer',
+      expect.objectContaining({ fsPath: sourceDirectory }),
+    );
+    expect(harness.workspaceTargetResults().map(({ outcome }) => outcome)).toEqual([
+      'opened',
+      'opened',
+    ]);
+    await rm(root, { force: true, recursive: true });
+  });
+
+  it('reports missing targets and ignores duplicate or disposed-view requests', async () => {
+    const root = await createTemporaryWorkspace();
+    const harness = createHarness({ rootPath: root });
+    const firstView = harness.resolve();
+    firstView.receive({ type: 'openWorkspaceTarget', requestId: 0, path: 'missing.ts' });
+    await harness.waitForWorkspaceTargetResultCount(1);
+    firstView.receive({ type: 'openWorkspaceTarget', requestId: 0, path: 'other.ts' });
+    harness.disposeView();
+    firstView.receive({ type: 'openWorkspaceTarget', requestId: 1, path: 'other.ts' });
+    await Promise.resolve();
+
+    expect(harness.workspaceTargetResults()).toEqual([
+      expect.objectContaining({ requestId: 0, path: 'missing.ts', outcome: 'missing' }),
+    ]);
+    await rm(root, { force: true, recursive: true });
+  });
+
+  it('does not open a target after the active workspace changes', async () => {
+    const root = await createTemporaryWorkspace();
+    const sourceFile = join(root, 'index.ts');
+    await writeFile(sourceFile, 'export {};');
+    let currentRoot = root;
+    const harness = createHarness({ getRootPath: () => currentRoot });
+    harness.resolve();
+    currentRoot = join(root, 'replacement');
+    harness.receive({ type: 'openWorkspaceTarget', requestId: 0, path: 'index.ts' });
+    await Promise.resolve();
+
+    expect(vscode.workspace.openTextDocument).not.toHaveBeenCalled();
+    expect(vscode.commands.executeCommand).not.toHaveBeenCalled();
+    await rm(root, { force: true, recursive: true });
   });
 
   it('delivers navigation while the webview is already resolved and ready', async () => {
@@ -322,6 +403,8 @@ function createHarness(
   options: {
     postResults?: boolean[];
     navigationPostResults?: Array<boolean | Promise<boolean>>;
+    rootPath?: string;
+    getRootPath?: () => string | undefined;
   } = {},
 ) {
   const service = {
@@ -343,7 +426,7 @@ function createHarness(
   const provider = new SidebarProvider(
     { toString: () => 'extension-uri' } as never,
     service,
-    () => 'C:/repo',
+    options.getRootPath ?? (() => options.rootPath ?? 'C:/repo'),
   );
 
   return {
@@ -411,6 +494,11 @@ function createHarness(
         .map((message) => ExtensionMessageSchema.parse(message))
         .filter((message) => message.type === 'analysisUnavailable');
     },
+    workspaceTargetResults() {
+      return messages
+        .map((message) => ExtensionMessageSchema.parse(message))
+        .filter((message) => message.type === 'workspaceTargetResult');
+    },
     async waitForNavigationCount(count: number) {
       if (count === 0) {
         await this.waitForUnavailableCount(1);
@@ -424,7 +512,14 @@ function createHarness(
     async waitForUnavailableCount(count: number) {
       await vi.waitFor(() => expect(this.unavailableMessages()).toHaveLength(count));
     },
+    async waitForWorkspaceTargetResultCount(count: number) {
+      await vi.waitFor(() => expect(this.workspaceTargetResults()).toHaveLength(count));
+    },
   };
+}
+
+async function createTemporaryWorkspace(): Promise<string> {
+  return mkdtemp(join(tmpdir(), 'project-dna-sidebar-'));
 }
 
 function createDeferred<T>() {

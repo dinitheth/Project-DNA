@@ -109,6 +109,7 @@ export function reduceAnalysisState(
     case 'knowledgeData':
     case 'themeChanged':
     case 'navigateTo':
+    case 'workspaceTargetResult':
       return state;
   }
 }
