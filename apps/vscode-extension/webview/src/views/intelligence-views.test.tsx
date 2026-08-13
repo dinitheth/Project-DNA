@@ -13,7 +13,9 @@ import { KnowledgeView } from './knowledge-view.js';
 
 describe('architecture and dependency views', () => {
   it('renders architecture layers and evidence as labelled nested trees', () => {
-    const markup = renderToStaticMarkup(<ArchitectureView data={architectureData()} />);
+    const markup = renderToStaticMarkup(
+      <ArchitectureView data={architectureData()} onOpenWorkspaceTarget={() => undefined} />,
+    );
 
     expect(markup).toContain('aria-label="Architecture layers"');
     expect(markup).toContain('aria-label="Architecture detection evidence"');
@@ -23,7 +25,9 @@ describe('architecture and dependency views', () => {
   });
 
   it('renders dependency hotspots as a labelled tree with relationship details', () => {
-    const markup = renderToStaticMarkup(<DependenciesView data={dependencyData()} />);
+    const markup = renderToStaticMarkup(
+      <DependenciesView data={dependencyData()} onOpenWorkspaceTarget={() => undefined} />,
+    );
 
     expect(markup).toContain('aria-label="Dependency connection hotspots"');
     expect(markup).toContain('Core service');
@@ -32,17 +36,25 @@ describe('architecture and dependency views', () => {
   });
 
   it('keeps explicit empty states when intelligence is unavailable', () => {
-    expect(renderToStaticMarkup(<ArchitectureView data={null} />)).toContain(
-      'Architecture intelligence is not available.',
-    );
-    expect(renderToStaticMarkup(<DependenciesView data={null} />)).toContain(
-      'Dependency intelligence is not available.',
-    );
+    expect(
+      renderToStaticMarkup(
+        <ArchitectureView data={null} onOpenWorkspaceTarget={() => undefined} />,
+      ),
+    ).toContain('Architecture intelligence is not available.');
+    expect(
+      renderToStaticMarkup(
+        <DependenciesView data={null} onOpenWorkspaceTarget={() => undefined} />,
+      ),
+    ).toContain('Dependency intelligence is not available.');
   });
 
   it('renders semantic knowledge nodes and their relationships', () => {
     const markup = renderToStaticMarkup(
-      <KnowledgeView data={knowledgeData()} semanticGraph={semanticGraphData()} />,
+      <KnowledgeView
+        data={knowledgeData()}
+        onOpenWorkspaceTarget={() => undefined}
+        semanticGraph={semanticGraphData()}
+      />,
     );
     expect(markup).toContain('aria-label="Semantic knowledge graph"');
     expect(markup).toContain('Order service');
@@ -58,6 +70,7 @@ describe('architecture and dependency views', () => {
         evolution={evolutionData()}
         error={null}
         onRefresh={() => undefined}
+        onOpenWorkspaceTarget={() => undefined}
       />,
     );
     expect(markup).toContain('aria-label="Critical components"');

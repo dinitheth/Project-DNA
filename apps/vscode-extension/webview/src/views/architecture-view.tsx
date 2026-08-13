@@ -1,8 +1,14 @@
-import type { ArchitectureData } from '@project-dna/shared';
+import type { ArchitectureData, WorkspaceRelativePath } from '@project-dna/shared';
 import { Badge, Panel, TreeView, type TreeItem } from '@project-dna/ui-components';
 import { EmptyCollection, MetricCard, ProgressBar } from '../components/ui';
 
-export function ArchitectureView({ data }: { data: ArchitectureData | null }) {
+export function ArchitectureView({
+  data,
+  onOpenWorkspaceTarget,
+}: {
+  data: ArchitectureData | null;
+  onOpenWorkspaceTarget: (path: WorkspaceRelativePath) => void;
+}) {
   if (!data) return <EmptyCollection>Architecture intelligence is not available.</EmptyCollection>;
 
   const layerItems: TreeItem[] = data.layers.map((layer, layerIndex) => ({
@@ -26,6 +32,21 @@ export function ArchitectureView({ data }: { data: ArchitectureData | null }) {
       description: 'Matched path',
     })),
   }));
+  const pathsByItemId = new Map<string, WorkspaceRelativePath>();
+  for (const layer of layerItems) {
+    for (const directory of layer.children ?? []) {
+      pathsByItemId.set(directory.id, directory.label);
+    }
+  }
+  for (const evidence of evidenceItems) {
+    for (const matchedPath of evidence.children ?? []) {
+      pathsByItemId.set(matchedPath.id, matchedPath.label);
+    }
+  }
+  const openPath = (item: TreeItem) => {
+    const path = pathsByItemId.get(item.id);
+    if (path) onOpenWorkspaceTarget(path);
+  };
 
   return (
     <div className="pb-4">
@@ -72,6 +93,7 @@ export function ArchitectureView({ data }: { data: ArchitectureData | null }) {
                 ariaLabel="Architecture layers"
                 defaultExpandedIds={layerItems.map(({ id }) => id)}
                 items={layerItems}
+                onSelect={openPath}
               />
             </>
           )}
@@ -85,6 +107,7 @@ export function ArchitectureView({ data }: { data: ArchitectureData | null }) {
               ariaLabel="Architecture detection evidence"
               defaultExpandedIds={evidenceItems.map(({ id }) => id)}
               items={evidenceItems}
+              onSelect={openPath}
             />
           )}
         </Panel>

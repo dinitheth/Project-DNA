@@ -1,8 +1,14 @@
-import type { DependencyData } from '@project-dna/shared';
+import type { DependencyData, WorkspaceRelativePath } from '@project-dna/shared';
 import { Badge, Panel, TreeView, type TreeItem } from '@project-dna/ui-components';
 import { EmptyCollection, MetricCard } from '../components/ui';
 
-export function DependenciesView({ data }: { data: DependencyData | null }) {
+export function DependenciesView({
+  data,
+  onOpenWorkspaceTarget,
+}: {
+  data: DependencyData | null;
+  onOpenWorkspaceTarget: (path: WorkspaceRelativePath) => void;
+}) {
   if (!data) return <EmptyCollection>Dependency intelligence is not available.</EmptyCollection>;
 
   const hotspotItems: TreeItem[] = data.hotspots.map((hotspot, index) => ({
@@ -27,6 +33,10 @@ export function DependenciesView({ data }: { data: DependencyData | null }) {
       },
     ],
   }));
+  const pathsByItemId = new Map<string, WorkspaceRelativePath>();
+  data.hotspots.forEach((hotspot, index) => {
+    if (hotspot.path) pathsByItemId.set(`hotspot:${index}:${hotspot.id}`, hotspot.path);
+  });
 
   return (
     <div className="pb-4">
@@ -61,6 +71,10 @@ export function DependenciesView({ data }: { data: DependencyData | null }) {
               ariaLabel="Dependency connection hotspots"
               defaultExpandedIds={hotspotItems.map(({ id }) => id)}
               items={hotspotItems}
+              onSelect={(item) => {
+                const path = pathsByItemId.get(item.id);
+                if (path) onOpenWorkspaceTarget(path);
+              }}
             />
           )}
         </Panel>

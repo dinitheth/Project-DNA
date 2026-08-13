@@ -1,4 +1,4 @@
-import type { EvolutionData, RepositoryData } from '@project-dna/shared';
+import type { EvolutionData, RepositoryData, WorkspaceRelativePath } from '@project-dna/shared';
 import { Badge, EmptyCollection, MetricCard, ProgressBar, Section } from '../components/ui';
 import { Panel, StatusIndicator, TreeView, type TreeItem } from '@project-dna/ui-components';
 
@@ -6,11 +6,13 @@ export function OverviewView({
   data,
   evolution,
   error,
+  onOpenWorkspaceTarget,
   onRefresh,
 }: {
   data: RepositoryData | null;
   evolution: EvolutionData | null;
   error: string | null;
+  onOpenWorkspaceTarget: (path: WorkspaceRelativePath) => void;
   onRefresh: () => void;
 }) {
   if (!data) return <EmptyCollection>Repository overview data is not available.</EmptyCollection>;
@@ -27,6 +29,12 @@ export function OverviewView({
       },
     ],
   }));
+  const criticalPathsByItemId = new Map(
+    data.criticalComponents.map((component, index) => [
+      `critical:${index}:${component.path}`,
+      component.path,
+    ]),
+  );
 
   const evolutionItems: TreeItem[] = (evolution?.history ?? []).map((snapshot) => ({
     id: `evolution:${snapshot.id}`,
@@ -169,6 +177,10 @@ export function OverviewView({
             ariaLabel="Critical components"
             defaultExpandedIds={criticalItems.map(({ id }) => id)}
             items={criticalItems}
+            onSelect={(item) => {
+              const path = criticalPathsByItemId.get(item.id);
+              if (path) onOpenWorkspaceTarget(path);
+            }}
           />
         )}
       </Panel>

@@ -1,12 +1,14 @@
-import type { KnowledgeData, SemanticGraphData } from '@project-dna/shared';
+import type { KnowledgeData, SemanticGraphData, WorkspaceRelativePath } from '@project-dna/shared';
 import { Badge, EmptyCollection, MetricCard, Section } from '../components/ui';
 import { Panel, TreeView, type TreeItem } from '@project-dna/ui-components';
 
 export function KnowledgeView({
   data,
+  onOpenWorkspaceTarget,
   semanticGraph,
 }: {
   data: KnowledgeData | null;
+  onOpenWorkspaceTarget: (path: WorkspaceRelativePath) => void;
   semanticGraph: SemanticGraphData | null;
 }) {
   if (!data) return <EmptyCollection>Knowledge intelligence is not available.</EmptyCollection>;
@@ -82,9 +84,14 @@ export function KnowledgeView({
         ) : (
           <div className="space-y-2">
             {data.nodes.map((node, index) => (
-              <div
+              <button
                 key={`${node.type}-${node.name}-${index}`}
-                className="rounded border border-panel-border p-3"
+                className="w-full rounded border border-panel-border p-3 text-left disabled:cursor-default"
+                disabled={!node.sourceRef}
+                onClick={() => {
+                  if (node.sourceRef) onOpenWorkspaceTarget(node.sourceRef);
+                }}
+                type="button"
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-sm font-medium">{node.name}</span>
@@ -93,7 +100,7 @@ export function KnowledgeView({
                 {node.sourceRef ? (
                   <div className="mt-1 truncate text-xs text-description">{node.sourceRef}</div>
                 ) : null}
-              </div>
+              </button>
             ))}
           </div>
         )}

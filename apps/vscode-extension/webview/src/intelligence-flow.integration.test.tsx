@@ -18,15 +18,23 @@ describe('intelligence snapshot webview integration', () => {
     listener({ data: snapshot() } as MessageEvent<unknown>);
 
     expect(state.status).toBe('ready');
-    expect(renderToStaticMarkup(<ArchitectureView data={state.architecture} />)).toContain(
-      'Domain Layer',
-    );
-    expect(renderToStaticMarkup(<DependenciesView data={state.dependencies} />)).toContain(
-      'Repository service',
-    );
     expect(
       renderToStaticMarkup(
-        <KnowledgeView data={state.knowledge} semanticGraph={state.semanticGraph} />,
+        <ArchitectureView data={state.architecture} onOpenWorkspaceTarget={() => undefined} />,
+      ),
+    ).toContain('Domain Layer');
+    expect(
+      renderToStaticMarkup(
+        <DependenciesView data={state.dependencies} onOpenWorkspaceTarget={() => undefined} />,
+      ),
+    ).toContain('Repository service');
+    expect(
+      renderToStaticMarkup(
+        <KnowledgeView
+          data={state.knowledge}
+          onOpenWorkspaceTarget={() => undefined}
+          semanticGraph={state.semanticGraph}
+        />,
       ),
     ).toContain('Serves → Orders');
     expect(
@@ -35,6 +43,7 @@ describe('intelligence snapshot webview integration', () => {
           data={state.repository}
           error={state.error}
           evolution={state.evolution}
+          onOpenWorkspaceTarget={() => undefined}
           onRefresh={() => undefined}
         />,
       ),

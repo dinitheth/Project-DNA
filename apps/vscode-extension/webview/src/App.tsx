@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import type { SidebarRoute } from '@project-dna/shared';
+import type { SidebarRoute, WorkspaceRelativePath } from '@project-dna/shared';
 import { useMessage } from './hooks/useMessage';
 import { useVSCodeApi } from './hooks/useVSCodeApi';
 import { initialAnalysisState, reduceAnalysisState } from './state/analysis-state';
@@ -13,6 +13,7 @@ import { SidebarNavigationController, type NavigationState } from './state/navig
 export default function App() {
   const vscode = useVSCodeApi();
   const navigationController = useRef<SidebarNavigationController | null>(null);
+  const workspaceTargetRequestId = useRef(0);
   navigationController.current ??= new SidebarNavigationController(vscode);
   const [navigation, setNavigation] = useState<NavigationState>(() =>
     navigationController.current!.getSnapshot(),
@@ -49,6 +50,15 @@ export default function App() {
 
   const analyze = () => vscode.postMessage({ type: 'requestAnalysis' });
   const refresh = () => vscode.postMessage({ type: 'requestRefresh' });
+  const openWorkspaceTarget = useCallback(
+    (path: WorkspaceRelativePath) => {
+      const requestId = workspaceTargetRequestId.current;
+      if (requestId === Number.MAX_SAFE_INTEGER) workspaceTargetRequestId.current = 0;
+      else workspaceTargetRequestId.current++;
+      vscode.postMessage({ type: 'openWorkspaceTarget', requestId, path });
+    },
+    [vscode],
+  );
 
   const renderView = () => {
     if (status === 'loading') {
@@ -92,14 +102,26 @@ export default function App() {
     switch (navigation.route) {
       case 'overview':
         return (
-          <OverviewView data={repository} evolution={evolution} error={error} onRefresh={refresh} />
+          <OverviewView
+            data={repository}
+            evolution={evolution}
+            error={error}
+            onOpenWorkspaceTarget={openWorkspaceTarget}
+            onRefresh={refresh}
+          />
         );
       case 'architecture':
-        return <ArchitectureView data={architecture} />;
+        return <ArchitectureView data={architecture} onOpenWorkspaceTarget={openWorkspaceTarget} />;
       case 'knowledge':
-        return <KnowledgeView data={knowledge} semanticGraph={semanticGraph} />;
+        return (
+          <KnowledgeView
+            data={knowledge}
+            onOpenWorkspaceTarget={openWorkspaceTarget}
+            semanticGraph={semanticGraph}
+          />
+        );
       case 'dependencies':
-        return <DependenciesView data={dependencies} />;
+        return <DependenciesView data={dependencies} onOpenWorkspaceTarget={openWorkspaceTarget} />;
       case 'settings':
         return <SettingsView data={repository} onAnalyze={analyze} onRefresh={refresh} />;
     }
