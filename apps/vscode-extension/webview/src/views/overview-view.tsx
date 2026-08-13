@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { EvolutionData, RepositoryData, WorkspaceRelativePath } from '@project-dna/shared';
 import { Badge, EmptyCollection, MetricCard, ProgressBar, Section } from '../components/ui';
 import { Panel, StatusIndicator, TreeView, type TreeItem } from '@project-dna/ui-components';
@@ -18,6 +19,11 @@ export function OverviewView({
   onRefresh: () => void;
 }) {
   if (!data) return <EmptyCollection>Repository overview data is not available.</EmptyCollection>;
+  const availableVersions = [...(evolution?.history ?? [])]
+    .map(({ version }) => version)
+    .sort((left, right) => left - right);
+  const [fromVersion, setFromVersion] = useState(availableVersions.at(-2) ?? availableVersions[0]);
+  const [toVersion, setToVersion] = useState(availableVersions.at(-1));
 
   const criticalItems: TreeItem[] = data.criticalComponents.map((component, index) => ({
     id: `critical:${index}:${component.path}`,
@@ -208,19 +214,51 @@ export function OverviewView({
               defaultExpandedIds={evolutionItems.map(({ id }) => id)}
               items={evolutionItems}
             />
-            {evolution.history.length >= 2 ? (
-              <button
-                className="mt-3 rounded bg-vscode-button px-3 py-1 text-vscode-buttonForeground"
-                onClick={() => {
-                  const ordered = [...evolution.history].sort(
-                    (left, right) => left.version - right.version,
-                  );
-                  onCompareEvolution(ordered.at(-2)!.version, ordered.at(-1)!.version);
-                }}
-                type="button"
-              >
-                Compare latest snapshots
-              </button>
+            {availableVersions.length >= 2 ? (
+              <div className="mt-3 flex flex-wrap items-end gap-2">
+                <label className="text-xs">
+                  From
+                  <select
+                    className="ml-1 bg-vscode-background"
+                    onChange={(event) => setFromVersion(Number(event.currentTarget.value))}
+                    value={fromVersion}
+                  >
+                    {availableVersions.map((version) => (
+                      <option key={version} value={version}>
+                        v{version}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs">
+                  To
+                  <select
+                    className="ml-1 bg-vscode-background"
+                    onChange={(event) => setToVersion(Number(event.currentTarget.value))}
+                    value={toVersion}
+                  >
+                    {availableVersions.map((version) => (
+                      <option key={version} value={version}>
+                        v{version}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  className="rounded bg-vscode-button px-3 py-1 text-vscode-buttonForeground disabled:opacity-50"
+                  disabled={
+                    fromVersion === undefined || toVersion === undefined || fromVersion >= toVersion
+                  }
+                  onClick={() => {
+                    if (fromVersion !== undefined && toVersion !== undefined) {
+                      onCompareEvolution(fromVersion, toVersion);
+                    }
+                  }}
+                  type="button"
+                >
+                  Compare snapshots
+                </button>
+              </div>
             ) : null}
           </>
         )}

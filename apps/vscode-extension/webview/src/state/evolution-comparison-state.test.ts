@@ -3,6 +3,7 @@ import { ExtensionMessageSchema } from '@project-dna/shared';
 import {
   initialEvolutionComparisonState,
   reduceEvolutionComparisonState,
+  restoreEvolutionComparisonState,
 } from './evolution-comparison-state.js';
 
 describe('evolution comparison state', () => {
@@ -31,6 +32,11 @@ describe('evolution comparison state', () => {
     );
     expect(failed.status).toBe('error');
     expect(failed.error).toBe('Invalid selection');
+  });
+
+  it('restores pending correlation for webview recreation', () => {
+    const selected = select(7, 4, 4, 2, 4);
+    expect(restoreEvolutionComparisonState({ evolutionComparison: selected })).toEqual(selected);
   });
 });
 

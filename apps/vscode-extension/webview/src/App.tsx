@@ -15,8 +15,8 @@ import {
   type EntityDetailState,
 } from './state/entity-detail-state';
 import {
-  initialEvolutionComparisonState,
   reduceEvolutionComparisonState,
+  restoreEvolutionComparisonState,
   type EvolutionComparisonState,
 } from './state/evolution-comparison-state';
 
@@ -39,11 +39,16 @@ export default function App() {
     reduceEntityDetailState,
     restoredEntityDetail.current,
   );
+  const restoredEvolutionComparison = useRef(restoreEvolutionComparisonState(vscode.getState()));
   const [evolutionComparison, dispatchEvolutionComparison] = useReducer(
     reduceEvolutionComparisonState,
-    initialEvolutionComparisonState,
+    restoredEvolutionComparison.current,
   );
-  const evolutionRequestId = useRef(0);
+  const evolutionRequestId = useRef(
+    restoredEvolutionComparison.current.requestId === Number.MAX_SAFE_INTEGER
+      ? 0
+      : restoredEvolutionComparison.current.requestId + 1,
+  );
   const {
     status,
     workspaceRoot,
@@ -84,12 +89,37 @@ export default function App() {
   }, [entityDetail, vscode]);
 
   useEffect(() => {
+    const current = vscode.getState();
+    vscode.setState({
+      ...(current && typeof current === 'object' ? current : {}),
+      evolutionComparison,
+    });
+  }, [evolutionComparison, vscode]);
+
+  useEffect(() => {
     if (entityDetail.status !== 'loading' || !entityDetail.entityId) return;
     vscode.postMessage({
       type: 'requestEntityDetail',
       requestId: entityDetail.requestId,
       analysisVersion: entityDetail.analysisVersion,
       entityId: entityDetail.entityId,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (
+      evolutionComparison.status !== 'loading' ||
+      evolutionComparison.fromVersion === null ||
+      evolutionComparison.toVersion === null
+    ) {
+      return;
+    }
+    vscode.postMessage({
+      type: 'requestEvolutionComparison',
+      requestId: evolutionComparison.requestId,
+      analysisVersion: evolutionComparison.analysisVersion,
+      fromVersion: evolutionComparison.fromVersion,
+      toVersion: evolutionComparison.toVersion,
     });
   }, []);
 
