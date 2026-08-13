@@ -1,4 +1,8 @@
-import type { EntityDetailData, ExtensionMessage } from '@project-dna/shared';
+import {
+  EntityDetailDataSchema,
+  type EntityDetailData,
+  type ExtensionMessage,
+} from '@project-dna/shared';
 
 export interface EntityDetailState {
   readonly status: 'idle' | 'loading' | 'ready' | 'error';
@@ -33,12 +37,17 @@ export function restoreEntityDetailState(candidate: unknown): EntityDetailState 
   ) {
     return initialEntityDetailState;
   }
+  const entity =
+    detail.entity === null || detail.entity === undefined
+      ? null
+      : EntityDetailDataSchema.safeParse(detail.entity);
+  if (entity !== null && !entity.success) return initialEntityDetailState;
   return {
     status: detail.status!,
     requestId: detail.requestId!,
     analysisVersion: detail.analysisVersion!,
     entityId: detail.entityId ?? null,
-    entity: detail.entity ?? null,
+    entity: entity === null ? null : entity.data,
     error: detail.error ?? null,
   };
 }

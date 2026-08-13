@@ -1,4 +1,8 @@
-import type { EvolutionComparisonData, ExtensionMessage } from '@project-dna/shared';
+import {
+  EvolutionComparisonDataSchema,
+  type EvolutionComparisonData,
+  type ExtensionMessage,
+} from '@project-dna/shared';
 
 export interface EvolutionComparisonState {
   readonly status: 'idle' | 'loading' | 'ready' | 'error';
@@ -24,27 +28,35 @@ export function restoreEvolutionComparisonState(candidate: unknown): EvolutionCo
   if (!candidate || typeof candidate !== 'object') return initialEvolutionComparisonState;
   const state = (candidate as { evolutionComparison?: unknown }).evolutionComparison;
   if (!state || typeof state !== 'object') return initialEvolutionComparisonState;
-  const comparison = state as Partial<EvolutionComparisonState>;
+  const restored = state as Partial<EvolutionComparisonState>;
   if (
-    !['idle', 'loading', 'ready', 'error'].includes(comparison.status ?? '') ||
-    !Number.isSafeInteger(comparison.requestId) ||
-    Number(comparison.requestId) < 0 ||
-    !Number.isSafeInteger(comparison.analysisVersion) ||
-    Number(comparison.analysisVersion) < 0 ||
-    (comparison.fromVersion !== null && !Number.isSafeInteger(comparison.fromVersion)) ||
-    (comparison.toVersion !== null && !Number.isSafeInteger(comparison.toVersion))
+    !['idle', 'loading', 'ready', 'error'].includes(restored.status ?? '') ||
+    !Number.isSafeInteger(restored.requestId) ||
+    Number(restored.requestId) < 0 ||
+    !Number.isSafeInteger(restored.analysisVersion) ||
+    Number(restored.analysisVersion) < 0 ||
+    (restored.fromVersion !== null && !Number.isSafeInteger(restored.fromVersion)) ||
+    (restored.toVersion !== null && !Number.isSafeInteger(restored.toVersion))
   ) {
     return initialEvolutionComparisonState;
   }
+  const comparisonData = stateValue(restored.comparison);
+  if (comparisonData === false) return initialEvolutionComparisonState;
   return {
-    status: comparison.status!,
-    requestId: comparison.requestId!,
-    analysisVersion: comparison.analysisVersion!,
-    fromVersion: comparison.fromVersion ?? null,
-    toVersion: comparison.toVersion ?? null,
-    comparison: comparison.comparison ?? null,
-    error: comparison.error ?? null,
+    status: restored.status!,
+    requestId: restored.requestId!,
+    analysisVersion: restored.analysisVersion!,
+    fromVersion: restored.fromVersion ?? null,
+    toVersion: restored.toVersion ?? null,
+    comparison: comparisonData,
+    error: restored.error ?? null,
   };
+}
+
+function stateValue(value: unknown): EvolutionComparisonData | null | false {
+  if (value === null || value === undefined) return null;
+  const parsed = EvolutionComparisonDataSchema.safeParse(value);
+  return parsed.success ? parsed.data : false;
 }
 
 export function reduceEvolutionComparisonState(

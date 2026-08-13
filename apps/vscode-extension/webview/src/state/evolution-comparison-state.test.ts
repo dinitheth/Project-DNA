@@ -38,6 +38,18 @@ describe('evolution comparison state', () => {
     const selected = select(7, 4, 4, 2, 4);
     expect(restoreEvolutionComparisonState({ evolutionComparison: selected })).toEqual(selected);
   });
+
+  it('rejects malformed persisted comparison data', () => {
+    expect(
+      restoreEvolutionComparisonState({
+        evolutionComparison: {
+          ...initialEvolutionComparisonState,
+          status: 'ready',
+          comparison: { fromVersion: 'invalid' },
+        },
+      }),
+    ).toEqual(initialEvolutionComparisonState);
+  });
 });
 
 function select(

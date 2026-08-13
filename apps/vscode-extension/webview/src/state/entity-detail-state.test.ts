@@ -56,6 +56,14 @@ describe('entity detail state', () => {
     expect(restored).toEqual(selected);
     expect(select(restored, 'entity-b', 3).requestId).toBe(selected.requestId + 1);
   });
+
+  it('rejects malformed persisted entity details', () => {
+    expect(
+      restoreEntityDetailState({
+        entityDetail: { ...initialEntityDetailState, status: 'ready', entity: { id: 1 } },
+      }),
+    ).toEqual(initialEntityDetailState);
+  });
 });
 
 function select(state: typeof initialEntityDetailState, entityId: string, analysisVersion: number) {
