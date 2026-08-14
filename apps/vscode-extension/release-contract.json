@@ -68,6 +68,7 @@
     "allowedApplicationFiles": [
       "package.json",
       "LICENSE.txt",
+      "THIRD_PARTY_NOTICES.txt",
       "dist/extension.js",
       "dist/ast-worker.js",
       "dist/webview/index.html",
@@ -75,7 +76,12 @@
       "dist/webview/assets/index.css",
       "resources/icon.svg"
     ],
-    "requiredApplicationFiles": ["package.json", "LICENSE.txt", "resources/icon.svg"],
+    "requiredApplicationFiles": [
+      "package.json",
+      "LICENSE.txt",
+      "THIRD_PARTY_NOTICES.txt",
+      "resources/icon.svg"
+    ],
     "allowedTreeSitterFiles": [
       "node_modules/web-tree-sitter/package.json",
       "node_modules/web-tree-sitter/LICENSE",

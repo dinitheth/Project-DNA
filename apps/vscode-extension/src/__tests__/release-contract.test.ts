@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -126,6 +127,7 @@ const nativeWorkflow = readFileSync(
   path.resolve(extensionRoot, '../../.github/workflows/native-build.yml'),
   'utf8',
 ).replaceAll('\r\n', '\n');
+const thirdPartyNotices = readFileSync(path.resolve(extensionRoot, 'THIRD_PARTY_NOTICES.txt'));
 
 describe('M5 release contract', () => {
   it('matches the frozen toolchain contract', () => {
@@ -249,7 +251,16 @@ describe('M5 release contract', () => {
     expect(contract.vsix.allowedApplicationFiles).not.toContain('CHANGELOG.md');
     expect(contract.vsix.allowedApplicationFiles).toContain('LICENSE.txt');
     expect(contract.vsix.requiredApplicationFiles).toContain('LICENSE.txt');
+    expect(contract.vsix.allowedApplicationFiles).toContain('THIRD_PARTY_NOTICES.txt');
+    expect(contract.vsix.requiredApplicationFiles).toContain('THIRD_PARTY_NOTICES.txt');
     expect(readText('../../LICENSE')).toContain('MIT License');
+    expect(thirdPartyNotices.toString('utf8')).toContain('PROJECT DNA THIRD-PARTY NOTICES');
+    expect(thirdPartyNotices.toString('utf8')).toContain('better-sqlite3 12.11.1');
+    expect(thirdPartyNotices.toString('utf8')).toContain('TypeScript 5.6.2');
+    expect(thirdPartyNotices.toString('utf8')).toContain('tree-sitter-rust 0.20.4');
+    expect(createHash('sha256').update(thirdPartyNotices).digest('hex')).toBe(
+      '834d1e263deeddf783411850534cd53e71e15f3a3bcb8f65c4770de389c05dc8',
+    );
     expect(contract.vsix.allowedApplicationFiles).not.toContain('SECURITY.md');
     expect(contract.vsix.allowedApplicationFiles).not.toContain('SUPPORT.md');
     expect(contract.vsix.allowedApplicationFiles).not.toContain('THIRD_PARTY_NOTICES.md');

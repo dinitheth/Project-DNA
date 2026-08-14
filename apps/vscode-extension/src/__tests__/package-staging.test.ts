@@ -131,6 +131,18 @@ describe('deterministic package staging contract', () => {
     }
   });
 
+  it('stages the exact third-party notice bytes from the extension root', async () => {
+    const stagingRoot = await mkdtemp(path.join(tmpdir(), 'project-dna-notices-'));
+    try {
+      copyApplicationFile(stagingRoot, 'THIRD_PARTY_NOTICES.txt');
+      expect(await readFile(path.join(stagingRoot, 'THIRD_PARTY_NOTICES.txt'))).toEqual(
+        await readFile(path.join(extensionRoot, 'THIRD_PARTY_NOTICES.txt')),
+      );
+    } finally {
+      await rm(stagingRoot, { recursive: true, force: true });
+    }
+  });
+
   it('normalizes identical staging inputs to identical integrity manifests', async () => {
     const first = await mkdtemp(path.join(tmpdir(), 'project-dna-stage-a-'));
     const second = await mkdtemp(path.join(tmpdir(), 'project-dna-stage-b-'));
@@ -177,6 +189,7 @@ describe('deterministic package staging contract', () => {
         const nativeBindings = releaseContract.vsix.nativeBindings[target] ?? [];
         await mkdir(stagingRoot, { recursive: true });
         await writeFile(path.join(stagingRoot, 'package.json'), createMinimalStagedManifest());
+        copyApplicationFile(stagingRoot, 'THIRD_PARTY_NOTICES.txt');
         for (const nativeBinding of nativeBindings) {
           const destination = path.join(stagingRoot, ...nativeBinding.split('/'));
           await mkdir(path.dirname(destination), { recursive: true });
@@ -190,7 +203,7 @@ describe('deterministic package staging contract', () => {
           contract: {
             vsix: {
               marketplaceTargets: releaseContract.vsix.marketplaceTargets,
-              allowedApplicationFiles: ['package.json'],
+              allowedApplicationFiles: ['package.json', 'THIRD_PARTY_NOTICES.txt'],
               allowedTreeSitterFiles: [],
               allowedSqliteFiles: [],
               nativeBindings: releaseContract.vsix.nativeBindings,
@@ -213,6 +226,7 @@ describe('deterministic package staging contract', () => {
         });
         expect(() => comparePackages(firstVsix, secondVsix)).not.toThrow();
         const entries = await readZipEntries(firstVsix);
+        expect(entries).toContain('extension/THIRD_PARTY_NOTICES.txt');
         for (const nativeBinding of nativeBindings) {
           expect(entries).toContain(`extension/${nativeBinding}`);
         }
@@ -249,7 +263,8 @@ describe('deterministic package staging contract', () => {
       for (const relativePath of expectedStagingFiles) {
         const destination = path.join(stagingRoot, ...relativePath.split('/'));
         await mkdir(path.dirname(destination), { recursive: true });
-        if (relativePath === 'LICENSE.txt') copyApplicationFile(stagingRoot, relativePath);
+        if (['LICENSE.txt', 'THIRD_PARTY_NOTICES.txt'].includes(relativePath))
+          copyApplicationFile(stagingRoot, relativePath);
         else
           await writeFile(
             destination,
@@ -292,6 +307,16 @@ describe('deterministic package staging contract', () => {
         size: licenseBytes.byteLength,
         sha256: createHash('sha256').update(licenseBytes).digest('hex'),
       });
+      const noticeBytes = await readFile(path.join(stagingRoot, 'THIRD_PARTY_NOTICES.txt'));
+      expect(
+        integrity.files.find(
+          ({ path: relativePath }) => relativePath === 'THIRD_PARTY_NOTICES.txt',
+        ),
+      ).toEqual({
+        path: 'THIRD_PARTY_NOTICES.txt',
+        size: noticeBytes.byteLength,
+        sha256: createHash('sha256').update(noticeBytes).digest('hex'),
+      });
       const entries = await readZipEntries(firstVsix);
       expect(entries).toEqual(
         [
@@ -301,6 +326,7 @@ describe('deterministic package staging contract', () => {
         ].sort((a, b) => a.localeCompare(b)),
       );
       expect(entries).toContain('extension/LICENSE.txt');
+      expect(entries).toContain('extension/THIRD_PARTY_NOTICES.txt');
       expect(entries.filter((entry) => entry.startsWith('extension/node_modules/'))).toEqual(
         [...releaseContract.vsix.allowedTreeSitterFiles, ...releaseContract.vsix.allowedSqliteFiles]
           .map((relativePath) => `extension/${relativePath}`)
@@ -328,6 +354,16 @@ describe('deterministic package staging contract', () => {
           runtime: 'electron',
         }),
       ).toThrow(/missing=LICENSE\.txt/u);
+      await extractZip(firstVsix, extractedRoot);
+      await rm(path.join(extractedExtension, 'THIRD_PARTY_NOTICES.txt'));
+      expect(() =>
+        validateStaging({
+          stagingRoot: extractedExtension,
+          contract: releaseContract,
+          target,
+          runtime: 'electron',
+        }),
+      ).toThrow(/missing=THIRD_PARTY_NOTICES\.txt/u);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
