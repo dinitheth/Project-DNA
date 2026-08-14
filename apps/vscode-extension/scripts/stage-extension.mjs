@@ -44,12 +44,25 @@ export function copyAllowlistedFile(sourceRoot, stagingRoot, relativePath) {
   cpSync(path.join(sourceRoot, ...normalized.split('/')), destination);
 }
 
+export function copyApplicationFile(stagingRoot, relativePath) {
+  if (relativePath === 'package.json') {
+    writeStagedManifest(stagingRoot);
+    return;
+  }
+  if (relativePath === 'LICENSE.txt') {
+    const destination = path.join(stagingRoot, relativePath);
+    mkdirSync(path.dirname(destination), { recursive: true });
+    cpSync(path.join(repositoryRoot, 'LICENSE'), destination);
+    return;
+  }
+  copyAllowlistedFile(extensionRoot, stagingRoot, relativePath);
+}
+
 export function stageExtension({ stagingRoot, target, nativeFiles, contract }) {
   rmSync(stagingRoot, { recursive: true, force: true });
   mkdirSync(stagingRoot, { recursive: true });
   for (const relativePath of contract.vsix.allowedApplicationFiles) {
-    if (relativePath === 'package.json') writeStagedManifest(stagingRoot);
-    else copyAllowlistedFile(extensionRoot, stagingRoot, relativePath);
+    copyApplicationFile(stagingRoot, relativePath);
   }
   for (const relativePath of contract.vsix.allowedTreeSitterFiles) {
     copyAllowlistedFile(extensionRoot, stagingRoot, relativePath);

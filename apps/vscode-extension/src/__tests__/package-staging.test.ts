@@ -1,8 +1,10 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import type { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 
 const requireScript = createRequire(path.resolve(__dirname, 'package-staging.test.cjs'));
@@ -14,13 +16,13 @@ const yauzl = vsceRequire('yauzl') as {
     callback: (error: Error | null, zipFile?: ZipFile) => void,
   ) => void;
 };
-const { SQLITE_FILES, normalizeRelative, normalizeStagingTree } = requireScript(
-  '../../scripts/stage-extension.mjs',
-) as {
-  readonly SQLITE_FILES: readonly string[];
-  readonly normalizeRelative: (value: string) => string;
-  readonly normalizeStagingTree: (root: string, epochSeconds?: number) => void;
-};
+const { SQLITE_FILES, copyApplicationFile, normalizeRelative, normalizeStagingTree } =
+  requireScript('../../scripts/stage-extension.mjs') as {
+    readonly SQLITE_FILES: readonly string[];
+    readonly copyApplicationFile: (stagingRoot: string, relativePath: string) => void;
+    readonly normalizeRelative: (value: string) => string;
+    readonly normalizeStagingTree: (root: string, epochSeconds?: number) => void;
+  };
 const { createIntegrityManifest } = requireScript(
   '../../scripts/create-integrity-manifest.mjs',
 ) as {
@@ -28,7 +30,15 @@ const { createIntegrityManifest } = requireScript(
     readonly stagingRoot: string;
     readonly outputPath: string;
     readonly metadata: Record<string, string>;
-  }) => unknown;
+    readonly packagePath?: string;
+  }) => {
+    readonly files: readonly {
+      readonly path: string;
+      readonly size: number;
+      readonly sha256: string;
+    }[];
+    readonly packageSha256?: string;
+  };
 };
 const { comparePackages, createVsixFromStaging, validateStaging } = requireScript(
   '../../scripts/validate-package.mjs',
@@ -55,6 +65,7 @@ interface ZipEntry {
 interface ZipFile {
   readEntry(): void;
   close(): void;
+  openReadStream(entry: ZipEntry, listener: (error: Error | null, stream?: Readable) => void): void;
   on(event: 'entry', listener: (entry: ZipEntry) => void): void;
   on(event: 'end', listener: () => void): void;
   on(event: 'error', listener: (error: Error) => void): void;
@@ -106,6 +117,18 @@ describe('deterministic package staging contract', () => {
     expect(JSON.stringify(SQLITE_FILES)).not.toContain('file-uri-to-path');
   });
 
+  it('stages the repository MIT license without duplicating its source', async () => {
+    const stagingRoot = await mkdtemp(path.join(tmpdir(), 'project-dna-license-'));
+    try {
+      copyApplicationFile(stagingRoot, 'LICENSE.txt');
+      expect(await readFile(path.join(stagingRoot, 'LICENSE.txt'))).toEqual(
+        await readFile(path.resolve(extensionRoot, '../../LICENSE')),
+      );
+    } finally {
+      await rm(stagingRoot, { recursive: true, force: true });
+    }
+  });
+
   it('normalizes identical staging inputs to identical integrity manifests', async () => {
     const first = await mkdtemp(path.join(tmpdir(), 'project-dna-stage-a-'));
     const second = await mkdtemp(path.join(tmpdir(), 'project-dna-stage-b-'));
@@ -145,6 +168,8 @@ describe('deterministic package staging contract', () => {
     const stagingRoot = path.join(root, 'staging');
     const firstVsix = path.join(root, 'first.vsix');
     const secondVsix = path.join(root, 'second.vsix');
+    const integrityPath = path.join(root, 'integrity.json');
+    const extractedRoot = path.join(root, 'extracted');
     const target = 'linux-x64';
     const expectedStagingFiles = [
       ...releaseContract.vsix.allowedApplicationFiles,
@@ -156,10 +181,12 @@ describe('deterministic package staging contract', () => {
       for (const relativePath of expectedStagingFiles) {
         const destination = path.join(stagingRoot, ...relativePath.split('/'));
         await mkdir(path.dirname(destination), { recursive: true });
-        await writeFile(
-          destination,
-          relativePath === 'package.json' ? createStagedManifest() : `fixture:${relativePath}\n`,
-        );
+        if (relativePath === 'LICENSE.txt') copyApplicationFile(stagingRoot, relativePath);
+        else
+          await writeFile(
+            destination,
+            relativePath === 'package.json' ? createStagedManifest() : `fixture:${relativePath}\n`,
+          );
       }
       normalizeStagingTree(stagingRoot, 0);
       const validated = validateStaging({
@@ -181,6 +208,20 @@ describe('deterministic package staging contract', () => {
         sourceDateEpoch: '315532800',
       });
       expect(() => comparePackages(firstVsix, secondVsix)).not.toThrow();
+      const integrity = createIntegrityManifest({
+        stagingRoot,
+        outputPath: integrityPath,
+        packagePath: firstVsix,
+        metadata: { target, abi: '146' },
+      });
+      const licenseBytes = await readFile(path.join(stagingRoot, 'LICENSE.txt'));
+      expect(
+        integrity.files.find(({ path: relativePath }) => relativePath === 'LICENSE.txt'),
+      ).toEqual({
+        path: 'LICENSE.txt',
+        size: licenseBytes.byteLength,
+        sha256: createHash('sha256').update(licenseBytes).digest('hex'),
+      });
       const entries = await readZipEntries(firstVsix);
       expect(entries).toEqual(
         [
@@ -189,6 +230,7 @@ describe('deterministic package staging contract', () => {
           ...expectedStagingFiles.map((relativePath) => `extension/${relativePath}`),
         ].sort((a, b) => a.localeCompare(b)),
       );
+      expect(entries).toContain('extension/LICENSE.txt');
       expect(entries.filter((entry) => entry.startsWith('extension/node_modules/'))).toEqual(
         [...releaseContract.vsix.allowedTreeSitterFiles, ...releaseContract.vsix.allowedSqliteFiles]
           .map((relativePath) => `extension/${relativePath}`)
@@ -197,6 +239,25 @@ describe('deterministic package staging contract', () => {
       for (const nativeBinding of releaseContract.vsix.nativeBindings[target] ?? []) {
         expect(entries).toContain(`extension/${nativeBinding}`);
       }
+      await extractZip(firstVsix, extractedRoot);
+      const extractedExtension = path.join(extractedRoot, 'extension');
+      expect(() =>
+        validateStaging({
+          stagingRoot: extractedExtension,
+          contract: releaseContract,
+          target,
+          runtime: 'electron',
+        }),
+      ).not.toThrow();
+      await rm(path.join(extractedExtension, 'LICENSE.txt'));
+      expect(() =>
+        validateStaging({
+          stagingRoot: extractedExtension,
+          contract: releaseContract,
+          target,
+          runtime: 'electron',
+        }),
+      ).toThrow(/missing=LICENSE\.txt/u);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -277,6 +338,49 @@ function readZipEntries(filePath: string): Promise<readonly string[]> {
       zipFile.on('end', () => {
         resolve(entries.sort((a, b) => a.localeCompare(b)));
       });
+      zipFile.readEntry();
+    });
+  });
+}
+
+function extractZip(filePath: string, destinationRoot: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    yauzl.open(filePath, { lazyEntries: true }, (error, zipFile) => {
+      if (error || !zipFile) {
+        reject(error ?? new Error(`Could not open ${filePath}`));
+        return;
+      }
+      const fail = (cause: unknown) => {
+        zipFile.close();
+        reject(cause);
+      };
+      zipFile.on('entry', (entry) => {
+        const destination = path.resolve(destinationRoot, entry.fileName);
+        const relativePath = path.relative(destinationRoot, destination);
+        if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+          fail(new Error(`Unsafe VSIX entry: ${entry.fileName}`));
+          return;
+        }
+        if (entry.fileName.endsWith('/')) {
+          void mkdir(destination, { recursive: true }).then(() => zipFile.readEntry(), fail);
+          return;
+        }
+        zipFile.openReadStream(entry, (streamError, stream) => {
+          if (streamError || !stream) {
+            fail(streamError ?? new Error(`Could not read ${entry.fileName}`));
+            return;
+          }
+          void (async () => {
+            await mkdir(path.dirname(destination), { recursive: true });
+            const chunks: Buffer[] = [];
+            for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+            await writeFile(destination, Buffer.concat(chunks));
+            zipFile.readEntry();
+          })().catch(fail);
+        });
+      });
+      zipFile.on('error', reject);
+      zipFile.on('end', resolve);
       zipFile.readEntry();
     });
   });

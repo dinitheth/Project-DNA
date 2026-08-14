@@ -93,6 +93,7 @@ interface PackageManifest {
 }
 
 const extensionRoot = path.resolve(__dirname, '../../');
+const repositoryRoot = path.resolve(extensionRoot, '../..');
 const rootPackage = readJson<{
   readonly packageManager: string;
   readonly engines: { readonly node: string };
@@ -226,7 +227,9 @@ describe('M5 release contract', () => {
       expect(contract.vsix.allowedApplicationFiles).toContain(relativePath);
     }
     for (const relativePath of contract.vsix.requiredApplicationFiles) {
-      expect(readFileIfPresent(relativePath), relativePath).toBe(true);
+      const sourceRoot = relativePath === 'LICENSE.txt' ? repositoryRoot : extensionRoot;
+      const sourcePath = relativePath === 'LICENSE.txt' ? 'LICENSE' : relativePath;
+      expect(readFileIfPresent(sourceRoot, sourcePath), relativePath).toBe(true);
     }
     expect(contract.vsix.allowedApplicationFiles).not.toContain('resources/marketplace-icon.png');
     expect(contract.vsix.allowedApplicationFiles).not.toContain('media/overview.png');
@@ -234,7 +237,9 @@ describe('M5 release contract', () => {
     expect(contract.vsix.allowedApplicationFiles).not.toContain('media/risks.png');
     expect(contract.vsix.allowedApplicationFiles).not.toContain('README.md');
     expect(contract.vsix.allowedApplicationFiles).not.toContain('CHANGELOG.md');
-    expect(contract.vsix.allowedApplicationFiles).not.toContain('LICENSE');
+    expect(contract.vsix.allowedApplicationFiles).toContain('LICENSE.txt');
+    expect(contract.vsix.requiredApplicationFiles).toContain('LICENSE.txt');
+    expect(readText('../../LICENSE')).toContain('MIT License');
     expect(contract.vsix.allowedApplicationFiles).not.toContain('SECURITY.md');
     expect(contract.vsix.allowedApplicationFiles).not.toContain('SUPPORT.md');
     expect(contract.vsix.allowedApplicationFiles).not.toContain('THIRD_PARTY_NOTICES.md');
@@ -540,9 +545,9 @@ function readText(relativePath: string): string {
   return readFileSync(path.resolve(extensionRoot, relativePath), 'utf8').replaceAll('\r\n', '\n');
 }
 
-function readFileIfPresent(relativePath: string): boolean {
+function readFileIfPresent(sourceRoot: string, relativePath: string): boolean {
   try {
-    readFileSync(path.resolve(extensionRoot, relativePath));
+    readFileSync(path.resolve(sourceRoot, relativePath));
     return true;
   } catch {
     return false;
