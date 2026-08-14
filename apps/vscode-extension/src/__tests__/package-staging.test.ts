@@ -48,6 +48,7 @@ const { comparePackages, createVsixFromStaging, validateStaging } = requireScrip
     readonly stagingRoot: string;
     readonly stagedFiles: readonly string[];
     readonly outputPath: string;
+    readonly target: string;
     readonly sourceDateEpoch: string;
   }) => Promise<readonly string[]>;
   readonly validateStaging: (options: {
@@ -163,6 +164,33 @@ describe('deterministic package staging contract', () => {
     }
   });
 
+  it('emits the exact Marketplace target in each platform VSIX manifest', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'project-dna-target-platform-'));
+    const stagingRoot = path.join(root, 'staging');
+    try {
+      await mkdir(stagingRoot, { recursive: true });
+      await writeFile(path.join(stagingRoot, 'package.json'), createMinimalStagedManifest());
+      normalizeStagingTree(stagingRoot, 0);
+      for (const target of Object.keys(releaseContract.vsix.nativeBindings)) {
+        const vsixPath = path.join(root, `${target}.vsix`);
+        const extractedRoot = path.join(root, `extracted-${target}`);
+        await createVsixFromStaging({
+          stagingRoot,
+          stagedFiles: ['package.json'],
+          outputPath: vsixPath,
+          target,
+          sourceDateEpoch: '315532800',
+        });
+        await extractZip(vsixPath, extractedRoot);
+        const manifest = await readFile(path.join(extractedRoot, 'extension.vsixmanifest'), 'utf8');
+        expect(manifest).toContain(`TargetPlatform="${target}"`);
+        expect(manifest.match(/TargetPlatform=/gu)).toHaveLength(1);
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it('packages the exact validated runtime allowlist into deterministic VSIX archives', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'project-dna-vsix-'));
     const stagingRoot = path.join(root, 'staging');
@@ -199,12 +227,14 @@ describe('deterministic package staging contract', () => {
         stagingRoot,
         stagedFiles: validated.files,
         outputPath: firstVsix,
+        target,
         sourceDateEpoch: '315532800',
       });
       await createVsixFromStaging({
         stagingRoot,
         stagedFiles: validated.files,
         outputPath: secondVsix,
+        target,
         sourceDateEpoch: '315532800',
       });
       expect(() => comparePackages(firstVsix, secondVsix)).not.toThrow();
@@ -320,6 +350,21 @@ function createStagedManifest(): string {
   );
   delete manifest.devDependencies;
   return `${JSON.stringify(manifest, null, 2)}\n`;
+}
+
+function createMinimalStagedManifest(): string {
+  return `${JSON.stringify(
+    {
+      name: 'project-dna-target-test',
+      displayName: 'Project DNA Target Test',
+      description: 'Targeted VSIX packaging fixture',
+      version: '1.0.0',
+      publisher: 'project-dna',
+      engines: { vscode: '1.132.x' },
+    },
+    null,
+    2,
+  )}\n`;
 }
 
 function readZipEntries(filePath: string): Promise<readonly string[]> {

@@ -42,6 +42,7 @@ export async function createVsixFromStaging({
   stagingRoot,
   stagedFiles,
   outputPath,
+  target,
   sourceDateEpoch,
 }) {
   const manifest = vsce.validateManifestForPackaging(
@@ -51,12 +52,16 @@ export async function createVsixFromStaging({
     cwd: stagingRoot,
     dependencies: false,
     packagePath: outputPath,
+    target,
   };
   const inputFiles = stagedFiles.map((relativePath) => ({
     path: `extension/${relativePath}`,
     localPath: path.join(stagingRoot, ...relativePath.split('/')),
   }));
-  const files = await vsce.processFiles(vsce.createDefaultProcessors(manifest, options), inputFiles);
+  const files = await vsce.processFiles(
+    vsce.createDefaultProcessors(manifest, options),
+    inputFiles,
+  );
   await vsce.printAndValidatePackagedFiles(files, stagingRoot, manifest, options);
   await writeDeterministicVsix(files, outputPath, sourceDateEpoch);
   return files.map((file) => file.path).sort((a, b) => a.localeCompare(b));
@@ -83,12 +88,14 @@ export async function packageDeterministically({
     stagingRoot: stagingA,
     stagedFiles: validatedA.files,
     outputPath: vsixA,
+    target,
     sourceDateEpoch,
   });
   await createVsixFromStaging({
     stagingRoot: stagingB,
     stagedFiles: validatedB.files,
     outputPath: vsixB,
+    target,
     sourceDateEpoch,
   });
   comparePackages(vsixA, vsixB);
