@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { IProjectDNAService } from '@project-dna/dna-core';
@@ -37,6 +37,8 @@ describe('SidebarProvider navigation', () => {
     const sourceFile = join(sourceDirectory, 'index.ts');
     await mkdir(sourceDirectory);
     await writeFile(sourceFile, 'export {};');
+    const canonicalSourceDirectory = await realpath(sourceDirectory);
+    const canonicalSourceFile = await realpath(sourceFile);
     vi.mocked(vscode.workspace.openTextDocument).mockImplementation(async (uri) => uri as never);
 
     const harness = createHarness({ rootPath: root });
@@ -47,14 +49,14 @@ describe('SidebarProvider navigation', () => {
     await harness.waitForWorkspaceTargetResultCount(2);
 
     expect(vscode.workspace.openTextDocument).toHaveBeenCalledWith(
-      expect.objectContaining({ fsPath: sourceFile }),
+      expect.objectContaining({ fsPath: canonicalSourceFile }),
     );
     expect(vscode.window.showTextDocument).toHaveBeenCalledWith(expect.anything(), {
       preview: true,
     });
     expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
       'revealInExplorer',
-      expect.objectContaining({ fsPath: sourceDirectory }),
+      expect.objectContaining({ fsPath: canonicalSourceDirectory }),
     );
     expect(harness.workspaceTargetResults().map(({ outcome }) => outcome)).toEqual([
       'opened',
