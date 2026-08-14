@@ -74,6 +74,7 @@ interface ZipFile {
 
 interface ReleaseContract {
   readonly vsix: {
+    readonly marketplaceTargets: readonly string[];
     readonly allowedApplicationFiles: readonly string[];
     readonly allowedTreeSitterFiles: readonly string[];
     readonly allowedSqliteFiles: readonly string[];
@@ -164,24 +165,63 @@ describe('deterministic package staging contract', () => {
     }
   });
 
-  it('emits the exact Marketplace target in each platform VSIX manifest', async () => {
+  it('packages each Marketplace target with only its native bindings', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'project-dna-target-platform-'));
-    const stagingRoot = path.join(root, 'staging');
+    const allNativeBindings = Object.values(releaseContract.vsix.nativeBindings).flat();
     try {
-      await mkdir(stagingRoot, { recursive: true });
-      await writeFile(path.join(stagingRoot, 'package.json'), createMinimalStagedManifest());
-      normalizeStagingTree(stagingRoot, 0);
-      for (const target of Object.keys(releaseContract.vsix.nativeBindings)) {
-        const vsixPath = path.join(root, `${target}.vsix`);
+      for (const target of releaseContract.vsix.marketplaceTargets) {
+        const stagingRoot = path.join(root, `staging-${target}`);
+        const firstVsix = path.join(root, `${target}-a.vsix`);
+        const secondVsix = path.join(root, `${target}-b.vsix`);
         const extractedRoot = path.join(root, `extracted-${target}`);
+        const nativeBindings = releaseContract.vsix.nativeBindings[target] ?? [];
+        await mkdir(stagingRoot, { recursive: true });
+        await writeFile(path.join(stagingRoot, 'package.json'), createMinimalStagedManifest());
+        for (const nativeBinding of nativeBindings) {
+          const destination = path.join(stagingRoot, ...nativeBinding.split('/'));
+          await mkdir(path.dirname(destination), { recursive: true });
+          await writeFile(destination, `fixture:${nativeBinding}\n`);
+        }
+        normalizeStagingTree(stagingRoot, 0);
+        const validated = validateStaging({
+          stagingRoot,
+          target,
+          runtime: 'electron',
+          contract: {
+            vsix: {
+              marketplaceTargets: releaseContract.vsix.marketplaceTargets,
+              allowedApplicationFiles: ['package.json'],
+              allowedTreeSitterFiles: [],
+              allowedSqliteFiles: [],
+              nativeBindings: releaseContract.vsix.nativeBindings,
+            },
+          },
+        });
         await createVsixFromStaging({
           stagingRoot,
-          stagedFiles: ['package.json'],
-          outputPath: vsixPath,
+          stagedFiles: validated.files,
+          outputPath: firstVsix,
           target,
           sourceDateEpoch: '315532800',
         });
-        await extractZip(vsixPath, extractedRoot);
+        await createVsixFromStaging({
+          stagingRoot,
+          stagedFiles: validated.files,
+          outputPath: secondVsix,
+          target,
+          sourceDateEpoch: '315532800',
+        });
+        expect(() => comparePackages(firstVsix, secondVsix)).not.toThrow();
+        const entries = await readZipEntries(firstVsix);
+        for (const nativeBinding of nativeBindings) {
+          expect(entries).toContain(`extension/${nativeBinding}`);
+        }
+        for (const wrongTargetBinding of allNativeBindings.filter(
+          (nativeBinding) => !nativeBindings.includes(nativeBinding),
+        )) {
+          expect(entries).not.toContain(`extension/${wrongTargetBinding}`);
+        }
+        await extractZip(firstVsix, extractedRoot);
         const manifest = await readFile(path.join(extractedRoot, 'extension.vsixmanifest'), 'utf8');
         expect(manifest).toContain(`TargetPlatform="${target}"`);
         expect(manifest.match(/TargetPlatform=/gu)).toHaveLength(1);
@@ -304,6 +344,7 @@ describe('deterministic package staging contract', () => {
           runtime: 'node',
           contract: {
             vsix: {
+              marketplaceTargets: ['linux-x64'],
               allowedApplicationFiles: ['package.json'],
               allowedTreeSitterFiles: [],
               allowedSqliteFiles: [],
@@ -320,6 +361,7 @@ describe('deterministic package staging contract', () => {
           runtime: 'node',
           contract: {
             vsix: {
+              marketplaceTargets: ['linux-x64'],
               allowedApplicationFiles: ['package.json'],
               allowedTreeSitterFiles: [],
               allowedSqliteFiles: [],

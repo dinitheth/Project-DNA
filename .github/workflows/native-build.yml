@@ -171,9 +171,13 @@ jobs:
           retention-days: 7
 
   package:
-    name: package-linux-x64
+    name: package-${{ matrix.target }}
     needs: native
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [win32-x64, linux-x64, darwin-x64, darwin-arm64]
 
     steps:
       - name: Configure deterministic line endings
@@ -197,31 +201,37 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Download all native artifacts
+      - name: Download target native artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: native-*
+          pattern: native-${{ matrix.target }}-*
           path: native
           merge-multiple: true
 
-      - name: Validate complete native matrix
+      - name: Validate target native inputs
         shell: bash
+        env:
+          NATIVE_TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
-          for artifact in \
-            native/win32-x64/electron-abi146/better_sqlite3.node \
-            native/linux-x64/electron-abi146/better_sqlite3.node \
-            native/linux-x64/node-abi137/better_sqlite3.node \
-            native/darwin-x64/electron-abi146/better_sqlite3.node \
-            native/darwin-arm64/electron-abi146/better_sqlite3.node; do
+          mapfile -t artifacts < <(
+            node -e "
+              const fs = require('node:fs');
+              const contract = JSON.parse(
+                fs.readFileSync('apps/vscode-extension/release-contract.json', 'utf8')
+              );
+              process.stdout.write(contract.vsix.nativeBindings[process.env.NATIVE_TARGET].join('\n'));
+            "
+          )
+          for artifact in "${artifacts[@]}"; do
             test -s "$artifact"
           done
-          test "$(find native -type f -name better_sqlite3.node | wc -l)" = 5
+          test "$(find native -type f -name better_sqlite3.node | wc -l | tr -d '[:space:]')" = "${#artifacts[@]}"
 
       - name: Build extension and package twice
         working-directory: apps/vscode-extension
         env:
-          NATIVE_TARGET: linux-x64
+          NATIVE_TARGET: ${{ matrix.target }}
           NATIVE_RUNTIME: electron
           SOURCE_DATE_EPOCH: '315532800'
           BUILD_COMMIT: ${{ github.sha }}
@@ -231,7 +241,7 @@ jobs:
         working-directory: apps/vscode-extension
         shell: bash
         env:
-          NATIVE_TARGET: linux-x64
+          NATIVE_TARGET: ${{ matrix.target }}
           NATIVE_RUNTIME: electron
         run: |
           set -euo pipefail
@@ -245,7 +255,7 @@ jobs:
       - name: Upload VSIX and integrity manifest
         uses: actions/upload-artifact@v4
         with:
-          name: project-dna-vsix
+          name: project-dna-vsix-${{ matrix.target }}
           path: |
             apps/vscode-extension/release/project-dna-a.vsix
             apps/vscode-extension/release/project-dna-b.vsix
@@ -284,7 +294,7 @@ jobs:
       - name: Download canonical VSIX artifact
         uses: actions/download-artifact@v4
         with:
-          name: project-dna-vsix
+          name: project-dna-vsix-linux-x64
           path: apps/vscode-extension/release
 
       - name: Install pinned Playwright Chromium

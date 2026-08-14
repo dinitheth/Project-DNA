@@ -51,6 +51,7 @@ interface ReleaseContract {
   };
   readonly vsix: {
     readonly dependencies: boolean;
+    readonly marketplaceTargets: readonly string[];
     readonly allowedApplicationFiles: readonly string[];
     readonly requiredApplicationFiles: readonly string[];
     readonly allowedTreeSitterFiles: readonly string[];
@@ -209,6 +210,15 @@ describe('M5 release contract', () => {
       'darwin-x64': ['native/darwin-x64/electron-abi146/better_sqlite3.node'],
       'darwin-arm64': ['native/darwin-arm64/electron-abi146/better_sqlite3.node'],
     });
+    expect(contract.vsix.marketplaceTargets).toEqual([
+      'win32-x64',
+      'linux-x64',
+      'darwin-x64',
+      'darwin-arm64',
+    ]);
+    expect(new Set(contract.vsix.marketplaceTargets)).toEqual(
+      new Set(Object.keys(contract.vsix.nativeBindings)),
+    );
   });
 
   it('contains the frozen remote validation and VSIX delivery contract', () => {
@@ -396,6 +406,11 @@ describe('M5 release contract', () => {
     expect(nativeWorkflow).not.toContain('actual="$(sha256sum');
     expect(nativeWorkflow).toContain('test "$(find native -type f -name better_sqlite3.node');
     expect(nativeWorkflow).toContain('unzip -t release/project-dna-a.vsix');
+    expect(nativeWorkflow).toContain('name: package-${{ matrix.target }}');
+    expect(nativeWorkflow).toContain('target: [win32-x64, linux-x64, darwin-x64, darwin-arm64]');
+    expect(nativeWorkflow).toContain('pattern: native-${{ matrix.target }}-*');
+    expect(nativeWorkflow).toContain('name: project-dna-vsix-${{ matrix.target }}');
+    expect(nativeWorkflow).not.toMatch(/^\s+name: project-dna-vsix\s*$/mu);
     expect(nativeWorkflow).toContain('git config --global core.autocrlf false');
     expect(nativeWorkflow).toContain(
       'runtime_root="$RUNNER_TEMP/project-dna-electron-${NATIVE_TARGET}"',
@@ -430,7 +445,7 @@ describe('M5 release contract', () => {
       'needs: package',
       'runs-on: ubuntu-22.04',
       'timeout-minutes: 25',
-      'name: project-dna-vsix',
+      'name: project-dna-vsix-linux-x64',
       'path: apps/vscode-extension/release',
       'PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/project-dna-playwright-1.62.1',
       'pnpm validate:installed-server',
