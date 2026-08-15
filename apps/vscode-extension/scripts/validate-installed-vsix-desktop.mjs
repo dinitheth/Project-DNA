@@ -2,7 +2,6 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   appendFileSync,
-  createWriteStream,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -14,11 +13,28 @@ import {
 } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
+import {
+  downloadFile,
+  findClientExecutables,
+  runStage,
+  runWithCleanup,
+} from './installed-desktop-validation-helpers.mjs';
 
 const HARD_TIMEOUT_MS = 12 * 60 * 1000;
+const STAGE_TIMEOUT_MS = {
+  integrity: 2 * 60 * 1000,
+  download: 8 * 60 * 1000,
+  checksum: 2 * 60 * 1000,
+  extraction: 2 * 60 * 1000,
+  discovery: 15 * 1000,
+  version: 30 * 1000,
+  driverPackage: 60 * 1000,
+  extensionInstall: 90 * 1000,
+  extensionList: 60 * 1000,
+  clientLaunch: 15 * 1000,
+  runtimeValidation: HARD_TIMEOUT_MS,
+};
 const PROJECT_EXTENSION_ID = 'project-dna.vscode-extension';
 const DRIVER_EXTENSION_ID = 'project-dna-tests.project-dna-installed-vsix-driver';
 const SQLITE_HEADER_HEX = '53514c69746520666f726d6174203300';
@@ -60,6 +76,7 @@ async function main() {
     mkdirSync(directory, { recursive: true });
   }
   createFixtureWorkspace(paths.workspace);
+  const logger = createStageLogger(paths.stageLog);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => {
@@ -69,7 +86,20 @@ async function main() {
   const resources = { client: undefined, clientOutput: undefined };
   let failure;
   try {
-    await runValidation({ paths, resources, repositoryWorkspace, signal: controller.signal });
+    await runWithCleanup(
+      () =>
+        runValidation({
+          paths,
+          resources,
+          repositoryWorkspace,
+          signal: controller.signal,
+          logger,
+        }),
+      async () => {
+        controller.abort(new Error('desktop VSIX validation cleanup'));
+        await cleanup(resources);
+      },
+    );
   } catch (error) {
     failure = error;
     if (resources.clientOutput) {
@@ -78,13 +108,13 @@ async function main() {
     throw error;
   } finally {
     clearTimeout(timeout);
-    controller.abort(new Error('desktop VSIX validation cleanup'));
-    await cleanup(resources);
     if (failure) collectFailureLogs(paths);
   }
 }
 
-async function runValidation({ paths, resources, repositoryWorkspace, signal }) {
+async function runValidation({ paths, resources, repositoryWorkspace, signal, logger }) {
+  const stage = (name, timeoutMs, operation) =>
+    runStage(name, { signal, timeoutMs, logger }, operation);
   const vsixPath = path.resolve(
     extensionRoot,
     process.env.VSIX_PATH ?? path.join('release', 'project-dna-a.vsix'),
@@ -99,53 +129,97 @@ async function runValidation({ paths, resources, repositoryWorkspace, signal }) 
   );
   assert(existsSync(vsixPath), `canonical VSIX is missing: ${vsixPath}`);
   assert(existsSync(integrityPath), `integrity manifest is missing: ${integrityPath}`);
-  const integrity = await verifyVsixIntegrity({
-    vsixPath,
-    integrityPath,
-    extractionRoot: paths.integrityExtraction,
-    signal,
-  });
+  const integrity = await stage(
+    'VSIX integrity validation',
+    STAGE_TIMEOUT_MS.integrity,
+    (stageSignal) =>
+      verifyVsixIntegrity({
+        vsixPath,
+        integrityPath,
+        extractionRoot: paths.integrityExtraction,
+        signal: stageSignal,
+      }),
+  );
   const binding = integrity.files.find((file) => file.path === nativeBinding);
   assert(binding !== undefined, `integrity manifest is missing ${nativeBinding}`);
 
-  await downloadFile(archiveUrl, paths.clientArchive, signal);
-  assertEqual(await sha256(paths.clientArchive), archiveSha256, 'official VS Code archive SHA-256');
-  await extractArchive(paths.clientArchive, paths.clientRoot, signal);
-  const executables = findClientExecutables(paths.clientRoot);
-  const clientVersion = await runCommand(executables.cli, ['--version'], { signal });
-  assertEqual(
-    clientVersion.stdout.split(/\r?\n/u).filter(Boolean)[0],
-    version,
-    'official VS Code version',
+  await stage('official archive download', STAGE_TIMEOUT_MS.download, (stageSignal) =>
+    downloadFile(archiveUrl, paths.clientArchive, { signal: stageSignal, logger }),
   );
+  await stage('official archive checksum', STAGE_TIMEOUT_MS.checksum, async () =>
+    assertEqual(
+      await sha256(paths.clientArchive),
+      archiveSha256,
+      'official VS Code archive SHA-256',
+    ),
+  );
+  await stage('official archive extraction', STAGE_TIMEOUT_MS.extraction, (stageSignal) =>
+    extractArchive(paths.clientArchive, paths.clientRoot, stageSignal),
+  );
+  const executables = await stage(
+    'official executable discovery',
+    STAGE_TIMEOUT_MS.discovery,
+    async () => findClientExecutables({ clientRoot: paths.clientRoot, expectedPlatform }),
+  );
+  await stage('official version verification', STAGE_TIMEOUT_MS.version, async (stageSignal) => {
+    const clientVersion = await runCommand(executables.cli, ['--version'], {
+      signal: stageSignal,
+    });
+    assertEqual(
+      clientVersion.stdout.split(/\r?\n/u).filter(Boolean)[0],
+      version,
+      'official VS Code version',
+    );
+  });
 
-  await createDriverVsix(paths.driverVsix, signal);
+  await stage('test driver packaging', STAGE_TIMEOUT_MS.driverPackage, (stageSignal) =>
+    createDriverVsix(paths.driverVsix, stageSignal),
+  );
   for (const extension of [vsixPath, paths.driverVsix]) {
-    await runCommand(
-      executables.cli,
-      [...clientArguments(paths), '--install-extension', extension, '--force'],
-      { signal },
+    await stage(
+      `extension installation (${path.basename(extension)})`,
+      STAGE_TIMEOUT_MS.extensionInstall,
+      (stageSignal) =>
+        runCommand(
+          executables.cli,
+          [...clientArguments(paths), '--install-extension', extension, '--force'],
+          { signal: stageSignal },
+        ),
     );
   }
-  await verifyInstalledExtensions(executables.cli, paths, signal);
+  await stage('extension listing', STAGE_TIMEOUT_MS.extensionList, (stageSignal) =>
+    verifyInstalledExtensions(executables.cli, paths, stageSignal),
+  );
 
-  const client = startClient(executables.runtime, paths, {
-    PROJECT_DNA_EXPECTED_VSCODE_VERSION: version,
-    PROJECT_DNA_EXPECTED_PLATFORM: expectedPlatform,
-    PROJECT_DNA_EXPECTED_ARCHITECTURE: expectedArchitecture,
-    PROJECT_DNA_EXPECTED_MODULES: '146',
-    PROJECT_DNA_EXPECTED_ELECTRON_VERSION: electronVersion,
-    PROJECT_DNA_EXPECTED_REMOTE: 'false',
-    PROJECT_DNA_EXPECTED_NATIVE_BINDING: nativeBinding,
-    PROJECT_DNA_EXPECTED_EXTENSIONS_DIR: paths.extensions,
-    PROJECT_DNA_GITHUB_WORKSPACE: repositoryWorkspace,
-    PROJECT_DNA_FIXTURE_WORKSPACE: paths.workspace,
-    PROJECT_DNA_BINDING_SHA256: binding.sha256,
-  });
-  resources.client = client;
-  resources.clientOutput = captureOutput(client, paths.clientLog);
+  const client = await stage(
+    'client launch',
+    STAGE_TIMEOUT_MS.clientLaunch,
+    async (stageSignal) => {
+      const launchedClient = startClient(executables.runtime, paths, {
+        PROJECT_DNA_EXPECTED_VSCODE_VERSION: version,
+        PROJECT_DNA_EXPECTED_PLATFORM: expectedPlatform,
+        PROJECT_DNA_EXPECTED_ARCHITECTURE: expectedArchitecture,
+        PROJECT_DNA_EXPECTED_MODULES: '146',
+        PROJECT_DNA_EXPECTED_ELECTRON_VERSION: electronVersion,
+        PROJECT_DNA_EXPECTED_REMOTE: 'false',
+        PROJECT_DNA_EXPECTED_NATIVE_BINDING: nativeBinding,
+        PROJECT_DNA_EXPECTED_EXTENSIONS_DIR: paths.extensions,
+        PROJECT_DNA_GITHUB_WORKSPACE: repositoryWorkspace,
+        PROJECT_DNA_FIXTURE_WORKSPACE: paths.workspace,
+        PROJECT_DNA_BINDING_SHA256: binding.sha256,
+      });
+      resources.client = launchedClient;
+      resources.clientOutput = captureOutput(launchedClient, paths.clientLog);
+      await waitForSpawn(launchedClient, stageSignal);
+      return launchedClient;
+    },
+  );
 
-  const result = await waitForResult(paths.result, signal, client);
+  const result = await stage(
+    'installed Extension Host runtime validation',
+    STAGE_TIMEOUT_MS.runtimeValidation,
+    (stageSignal) => waitForResult(paths.result, stageSignal, client),
+  );
   validateResult(result, {
     bindingSha256: binding.sha256,
     extensionsDirectory: paths.extensions,
@@ -178,6 +252,7 @@ function createPaths(validationRoot) {
     ),
     extensionListLog: path.join(logs, 'installed-extensions.txt'),
     clientLog: path.join(logs, 'client.log'),
+    stageLog: path.join(logs, 'stages.log'),
     logs,
     directories: {
       downloads,
@@ -219,6 +294,26 @@ function startClient(executable, paths, environment) {
     detached: process.platform !== 'win32',
     env: { ...process.env, ...environment },
     stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+async function waitForSpawn(child, signal) {
+  throwIfAborted(signal);
+  if (child.pid !== undefined) return;
+  await new Promise((resolve, reject) => {
+    const finish = (error) => {
+      signal.removeEventListener('abort', onAbort);
+      child.off('spawn', onSpawn);
+      child.off('error', onError);
+      if (error) reject(error);
+      else resolve();
+    };
+    const onAbort = () => finish(abortError(signal));
+    const onSpawn = () => finish();
+    const onError = (error) => finish(error);
+    signal.addEventListener('abort', onAbort, { once: true });
+    child.once('spawn', onSpawn);
+    child.once('error', onError);
   });
 }
 
@@ -289,26 +384,6 @@ async function verifyInstalledExtensions(executable, paths, signal) {
   }
 }
 
-async function downloadFile(url, destination, signal) {
-  let lastError;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    throwIfAborted(signal);
-    rmSync(destination, { force: true });
-    try {
-      const response = await fetch(url, { redirect: 'follow', signal });
-      assert(response.ok, `download failed with HTTP ${response.status}: ${url}`);
-      assert(response.body !== null, `download response had no body: ${url}`);
-      await pipeline(Readable.fromWeb(response.body), createWriteStream(destination), { signal });
-      return;
-    } catch (error) {
-      lastError = error;
-      rmSync(destination, { force: true });
-      if (signal.aborted || attempt === 3) break;
-    }
-  }
-  throw lastError ?? new Error(`download failed: ${url}`);
-}
-
 async function extractArchive(archive, destination, signal) {
   mkdirSync(destination, { recursive: true });
   if (expectedPlatform === 'linux') {
@@ -328,44 +403,6 @@ async function extractZip(archive, destination, signal) {
     return;
   }
   await runCommand('unzip', ['-q', archive, '-d', destination], { signal });
-}
-
-function findClientExecutables(clientRoot) {
-  if (expectedPlatform === 'darwin') {
-    const application = findPath(clientRoot, (candidate) => candidate.endsWith('.app'));
-    assert(application !== undefined, 'official VS Code application bundle is missing');
-    const cli = path.join(application, 'Contents', 'Resources', 'app', 'bin', 'code');
-    const runtime = path.join(application, 'Contents', 'MacOS', 'Electron');
-    assert(existsSync(cli), `official VS Code CLI is missing: ${cli}`);
-    assert(existsSync(runtime), `official VS Code runtime is missing: ${runtime}`);
-    return { cli, runtime };
-  }
-  if (expectedPlatform === 'linux') {
-    const cli = findPath(
-      clientRoot,
-      (candidate) =>
-        path.basename(candidate) === 'code' && path.basename(path.dirname(candidate)) === 'bin',
-    );
-    assert(cli !== undefined, 'official VS Code CLI is missing');
-    const runtime = path.join(path.dirname(path.dirname(cli)), 'code');
-    assert(existsSync(runtime), `official VS Code runtime is missing: ${runtime}`);
-    return { cli, runtime };
-  }
-  const executable = findPath(clientRoot, (candidate) => path.basename(candidate) === 'Code.exe');
-  assert(executable !== undefined, 'official VS Code executable Code.exe is missing');
-  return { cli: executable, runtime: executable };
-}
-
-function findPath(root, predicate) {
-  for (const entry of readdirSync(root, { withFileTypes: true })) {
-    const candidate = path.join(root, entry.name);
-    if (predicate(candidate)) return candidate;
-    if (entry.isDirectory()) {
-      const nested = findPath(candidate, predicate);
-      if (nested) return nested;
-    }
-  }
-  return undefined;
 }
 
 function captureOutput(child, logPath) {
@@ -545,10 +582,19 @@ async function terminateClient(client) {
 }
 
 function collectFailureLogs(paths) {
-  const files = [paths.clientLog, paths.extensionListLog].filter(existsSync);
+  const files = [paths.stageLog, paths.clientLog, paths.extensionListLog].filter(existsSync);
   for (const file of files) {
     console.error(`Compatibility diagnostic ${file}:\n${readFileSync(file, 'utf8')}`);
   }
+}
+
+function createStageLogger(logPath) {
+  writeFileSync(logPath, '', 'utf8');
+  return (message) => {
+    const line = `${new Date().toISOString()} ${message}`;
+    appendFileSync(logPath, `${line}\n`, 'utf8');
+    console.error(line);
+  };
 }
 
 function requiredEnvironment(name) {

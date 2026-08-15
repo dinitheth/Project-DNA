@@ -126,6 +126,9 @@ const integrityScript = readText('./scripts/create-integrity-manifest.mjs');
 const packageValidationScript = readText('./scripts/validate-package.mjs');
 const installedServerValidationScript = readText('./scripts/validate-installed-vsix-server.mjs');
 const installedDesktopValidationScript = readText('./scripts/validate-installed-vsix-desktop.mjs');
+const installedDesktopValidationHelpers = readText(
+  './scripts/installed-desktop-validation-helpers.mjs',
+);
 const installedDriverPackage = readJson<{
   readonly engines: { readonly vscode: string };
   readonly extensionKind: readonly string[];
@@ -587,8 +590,20 @@ describe('M5 release contract', () => {
       "'--list-extensions'",
       "'--show-versions'",
       "'Contents', 'Resources', 'app', 'bin', 'code'",
-      "'Contents', 'MacOS', 'Electron'",
+      "'Contents', 'MacOS', 'Code'",
       "path.basename(path.dirname(candidate)) === 'bin'",
+      'headers.Range = `bytes=${existingSize}-`',
+      "response.headers.get('content-range')",
+      'download failed after ${maxAttempts} attempts',
+      'desktop validation failed during ${name}',
+      'stage=${name} status=start',
+      'runWithCleanup(',
+      "'official archive download'",
+      "'official archive extraction'",
+      "'official executable discovery'",
+      'extension installation (',
+      "'extension listing'",
+      "'client launch'",
       'PROJECT_DNA_EXPECTED_ELECTRON_VERSION',
       "PROJECT_DNA_EXPECTED_MODULES: '146'",
       'PROJECT_DNA_EXPECTED_NATIVE_BINDING',
@@ -600,9 +615,9 @@ describe('M5 release contract', () => {
       "spawn('taskkill', ['/pid', String(client.pid), '/t', '/f']",
       'Promise.allSettled(cleanupTasks)',
     ]) {
-      expect(`${installedDesktopValidationScript}\n${installedDriverSource}`).toContain(
-        requiredScriptValue,
-      );
+      expect(
+        `${installedDesktopValidationScript}\n${installedDesktopValidationHelpers}\n${installedDriverSource}`,
+      ).toContain(requiredScriptValue);
     }
     expect(installedDesktopValidationScript).not.toContain('--extensionDevelopmentPath');
     expect(installedDesktopValidationScript).not.toContain('@vscode/test-electron');
