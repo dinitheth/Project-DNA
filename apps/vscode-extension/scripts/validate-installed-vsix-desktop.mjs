@@ -15,8 +15,10 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  createClientCommand,
   downloadFile,
   findClientExecutables,
+  runCommand,
   runStage,
   runWithCleanup,
 } from './installed-desktop-validation-helpers.mjs';
@@ -161,9 +163,14 @@ async function runValidation({ paths, resources, repositoryWorkspace, signal, lo
     STAGE_TIMEOUT_MS.discovery,
     async () => findClientExecutables({ clientRoot: paths.clientRoot, expectedPlatform }),
   );
+  logger(
+    `client discovery platform=${expectedPlatform} runtime=${JSON.stringify(executables.runtime)} cliSource=${JSON.stringify(executables.cli.source)} cliExecutable=${JSON.stringify(executables.cli.executable)} cliPrefixArguments=${JSON.stringify(executables.cli.prefixArguments)} cliWorkingDirectory=${JSON.stringify(executables.cli.workingDirectory ?? process.cwd())} cliEnvironment=${JSON.stringify(executables.cli.environment)}`,
+  );
   await stage('official version verification', STAGE_TIMEOUT_MS.version, async (stageSignal) => {
-    const clientVersion = await runCommand(executables.cli, ['--version'], {
+    const clientVersion = await runClientCommand(executables, ['--version'], {
       signal: stageSignal,
+      logger,
+      label: 'official-version',
     });
     assertEqual(
       clientVersion.stdout.split(/\r?\n/u).filter(Boolean)[0],
@@ -180,34 +187,43 @@ async function runValidation({ paths, resources, repositoryWorkspace, signal, lo
       `extension installation (${path.basename(extension)})`,
       STAGE_TIMEOUT_MS.extensionInstall,
       (stageSignal) =>
-        runCommand(
-          executables.cli,
+        runClientCommand(
+          executables,
           [...clientArguments(paths), '--install-extension', extension, '--force'],
-          { signal: stageSignal },
+          {
+            signal: stageSignal,
+            logger,
+            label: `extension-install-${path.basename(extension)}`,
+          },
         ),
     );
   }
   await stage('extension listing', STAGE_TIMEOUT_MS.extensionList, (stageSignal) =>
-    verifyInstalledExtensions(executables.cli, paths, stageSignal),
+    verifyInstalledExtensions(executables, paths, stageSignal, logger),
   );
 
   const client = await stage(
     'client launch',
     STAGE_TIMEOUT_MS.clientLaunch,
     async (stageSignal) => {
-      const launchedClient = startClient(executables.runtime, paths, {
-        PROJECT_DNA_EXPECTED_VSCODE_VERSION: version,
-        PROJECT_DNA_EXPECTED_PLATFORM: expectedPlatform,
-        PROJECT_DNA_EXPECTED_ARCHITECTURE: expectedArchitecture,
-        PROJECT_DNA_EXPECTED_MODULES: '146',
-        PROJECT_DNA_EXPECTED_ELECTRON_VERSION: electronVersion,
-        PROJECT_DNA_EXPECTED_REMOTE: 'false',
-        PROJECT_DNA_EXPECTED_NATIVE_BINDING: nativeBinding,
-        PROJECT_DNA_EXPECTED_EXTENSIONS_DIR: paths.extensions,
-        PROJECT_DNA_GITHUB_WORKSPACE: repositoryWorkspace,
-        PROJECT_DNA_FIXTURE_WORKSPACE: paths.workspace,
-        PROJECT_DNA_BINDING_SHA256: binding.sha256,
-      });
+      const launchedClient = startClient(
+        executables.runtime,
+        paths,
+        {
+          PROJECT_DNA_EXPECTED_VSCODE_VERSION: version,
+          PROJECT_DNA_EXPECTED_PLATFORM: expectedPlatform,
+          PROJECT_DNA_EXPECTED_ARCHITECTURE: expectedArchitecture,
+          PROJECT_DNA_EXPECTED_MODULES: '146',
+          PROJECT_DNA_EXPECTED_ELECTRON_VERSION: electronVersion,
+          PROJECT_DNA_EXPECTED_REMOTE: 'false',
+          PROJECT_DNA_EXPECTED_NATIVE_BINDING: nativeBinding,
+          PROJECT_DNA_EXPECTED_EXTENSIONS_DIR: paths.extensions,
+          PROJECT_DNA_GITHUB_WORKSPACE: repositoryWorkspace,
+          PROJECT_DNA_FIXTURE_WORKSPACE: paths.workspace,
+          PROJECT_DNA_BINDING_SHA256: binding.sha256,
+        },
+        logger,
+      );
       resources.client = launchedClient;
       resources.clientOutput = captureOutput(launchedClient, paths.clientLog);
       await waitForSpawn(launchedClient, stageSignal);
@@ -278,7 +294,7 @@ function clientArguments(paths) {
   ];
 }
 
-function startClient(executable, paths, environment) {
+function startClient(executable, paths, environment, logger) {
   const args = [
     ...clientArguments(paths),
     '--disable-gpu',
@@ -289,12 +305,17 @@ function startClient(executable, paths, environment) {
   const command = process.platform === 'linux' ? 'xvfb-run' : executable;
   const commandArgs =
     process.platform === 'linux' ? ['--auto-servernum', executable, ...args] : args;
-  return spawn(command, commandArgs, {
+  logger(
+    `client launch status=creating executable=${JSON.stringify(command)} runtime=${JSON.stringify(executable)} cwd=${JSON.stringify(paths.downloads)} arguments=${JSON.stringify(commandArgs)} environment=${JSON.stringify(environment)}`,
+  );
+  const child = spawn(command, commandArgs, {
     cwd: paths.downloads,
     detached: process.platform !== 'win32',
     env: { ...process.env, ...environment },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  logger(`client launch status=created pid=${child.pid ?? 'unavailable'}`);
+  return child;
 }
 
 async function waitForSpawn(child, signal) {
@@ -360,12 +381,14 @@ async function createDriverVsix(outputPath, signal) {
   assert(existsSync(outputPath), `compatibility driver VSIX is missing: ${outputPath}`);
 }
 
-async function verifyInstalledExtensions(executable, paths, signal) {
-  const result = await runCommand(
-    executable,
+async function verifyInstalledExtensions(executables, paths, signal, logger) {
+  const result = await runClientCommand(
+    executables,
     [...clientArguments(paths), '--list-extensions', '--show-versions'],
     {
       signal,
+      logger,
+      label: 'extension-list',
     },
   );
   writeFileSync(
@@ -501,45 +524,12 @@ function collectFiles(root, prefix = '') {
   return files.sort((left, right) => left.localeCompare(right));
 }
 
-async function runCommand(command, args, { cwd, signal }) {
-  throwIfAborted(signal);
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd,
-      env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let stdout = '';
-    let stderr = '';
-    let settled = false;
-    const finish = (error, value) => {
-      if (settled) return;
-      settled = true;
-      signal.removeEventListener('abort', onAbort);
-      if (error) reject(error);
-      else resolve(value);
-    };
-    const onAbort = () => {
-      child.kill('SIGKILL');
-      finish(abortError(signal));
-    };
-    child.stdout?.on('data', (chunk) => {
-      stdout += chunk.toString();
-    });
-    child.stderr?.on('data', (chunk) => {
-      stderr += chunk.toString();
-    });
-    child.once('error', (error) => finish(error));
-    child.once('exit', (code, exitSignal) => {
-      if (code === 0) finish(undefined, { stdout, stderr });
-      else
-        finish(
-          new Error(
-            `${command} ${args.join(' ')} failed: code=${code} signal=${exitSignal}\n${stdout}\n${stderr}`,
-          ),
-        );
-    });
-    signal.addEventListener('abort', onAbort, { once: true });
+function runClientCommand(executables, args, options) {
+  const invocation = createClientCommand(executables.cli, args);
+  return runCommand(invocation.command, invocation.args, {
+    ...options,
+    cwd: invocation.cwd,
+    environment: invocation.environment,
   });
 }
 

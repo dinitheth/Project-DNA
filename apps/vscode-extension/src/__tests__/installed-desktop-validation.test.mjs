@@ -4,8 +4,10 @@ import path from 'node:path';
 import { setTimeout } from 'node:timers';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  createClientCommand,
   downloadFile,
   findClientExecutables,
+  runCommand,
   runStage,
   runWithCleanup,
 } from '../../scripts/installed-desktop-validation-helpers.mjs';
@@ -42,11 +44,97 @@ describe('installed desktop validation helpers', () => {
       );
 
       expect(findClientExecutables({ clientRoot: root, expectedPlatform: 'darwin' })).toEqual({
-        cli,
+        cli: {
+          executable: cli,
+          prefixArguments: [],
+          workingDirectory: undefined,
+          environment: {},
+          source: cli,
+        },
         runtime,
       });
     },
   );
+
+  it('uses the official Windows CLI bootstrap while preserving Code.exe for GUI launch', () => {
+    const root = temporaryDirectory();
+    const application = path.join(root, 'VSCode-win32-x64');
+    const wrapper = path.join(application, 'bin', 'code.cmd');
+    const runtime = path.join(application, 'Code.exe');
+    const cliScript = path.join(application, 'a5b5009513', 'resources', 'app', 'out', 'cli.js');
+    writeFixture(wrapper);
+    writeFixture(runtime);
+    writeFixture(cliScript);
+    writeFixture(path.join(application, 'resources', 'app', 'node_modules', 'helper', 'Code.exe'));
+
+    const executables = findClientExecutables({ clientRoot: root, expectedPlatform: 'win32' });
+
+    expect(executables.runtime).toBe(runtime);
+    expect(executables.cli).toEqual({
+      executable: runtime,
+      prefixArguments: [cliScript],
+      workingDirectory: application,
+      environment: { ELECTRON_RUN_AS_NODE: '1', VSCODE_DEV: '' },
+      source: wrapper,
+    });
+    expect(createClientCommand(executables.cli, ['--version'])).toEqual({
+      command: runtime,
+      args: [cliScript, '--version'],
+      cwd: application,
+      environment: { ELECTRON_RUN_AS_NODE: '1', VSCODE_DEV: '' },
+    });
+  });
+
+  it('records process creation, environment, output, and exit diagnostics', async () => {
+    const markers = [];
+    const workingDirectory = temporaryDirectory();
+    const result = await runCommand(
+      globalThis.process.execPath,
+      [
+        '-e',
+        "process.stdout.write(process.env.PROJECT_DNA_DIAGNOSTIC); process.stderr.write('stderr');",
+      ],
+      {
+        cwd: workingDirectory,
+        signal: new AbortController().signal,
+        environment: { PROJECT_DNA_DIAGNOSTIC: 'stdout' },
+        logger: (line) => markers.push(line),
+        label: 'official-version',
+      },
+    );
+
+    expect(result).toEqual({ stdout: 'stdout', stderr: 'stderr' });
+    expect(markers.join('\n')).toContain('process=official-version status=creating');
+    expect(markers.join('\n')).toContain(`cwd=${JSON.stringify(workingDirectory)}`);
+    expect(markers.join('\n')).toContain('environment={"PROJECT_DNA_DIAGNOSTIC":"stdout"}');
+    expect(markers.join('\n')).toContain('process=official-version status=created pid=');
+    expect(markers.join('\n')).toContain(
+      'process=official-version status=output stdout="stdout" stderr="stderr"',
+    );
+    expect(markers.join('\n')).toContain('process=official-version status=exit code=0 signal=none');
+  });
+
+  it('records timeout and process cleanup diagnostics', async () => {
+    const markers = [];
+    const controller = new AbortController();
+    const command = runCommand(
+      globalThis.process.execPath,
+      ['-e', 'setInterval(() => {}, 1_000);'],
+      {
+        signal: controller.signal,
+        logger: (line) => markers.push(line),
+        label: 'official-version',
+      },
+    );
+    setTimeout(() => controller.abort(new Error('official version verification timed out')), 20);
+
+    await expect(command).rejects.toThrow('official version verification timed out');
+    expect(markers.join('\n')).toContain(
+      'process=official-version status=abort reason="official version verification timed out"',
+    );
+    expect(markers.join('\n')).toContain('process=official-version cleanup=start pid=');
+    expect(markers.join('\n')).toContain('process=official-version cleanup=complete');
+  });
 
   it('resumes a partial official archive download from the verified byte offset', async () => {
     const destination = path.join(temporaryDirectory(), 'archive.zip');
