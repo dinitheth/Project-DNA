@@ -10,6 +10,7 @@ const {
 const { createRequire } = require('node:module');
 const path = require('node:path');
 const vscode = require('vscode');
+const { sameFilesystemPath } = require('./path-utils.cjs');
 
 const PROJECT_EXTENSION_ID = 'project-dna.vscode-extension';
 const NATIVE_BINDING =
@@ -72,7 +73,11 @@ async function validateInstalledExtension(context) {
   const expectedBindingSha256 = requiredEnvironment('PROJECT_DNA_BINDING_SHA256');
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   assert(workspaceFolder !== undefined, 'fixture workspace was not opened');
-  assertEqual(realpathSync(workspaceFolder), fixtureWorkspace, 'fixture workspace path');
+  const actualWorkspace = realpathSync(workspaceFolder);
+  assert(
+    sameFilesystemPath(actualWorkspace, fixtureWorkspace),
+    `fixture workspace path: expected ${fixtureWorkspace}, received ${actualWorkspace}`,
+  );
 
   const projectExtension = vscode.extensions.getExtension(PROJECT_EXTENSION_ID);
   assert(

@@ -568,9 +568,14 @@ describe('M5 release contract', () => {
       'rowsAfter > rowsBefore',
       'nativeBinding: bindingPath',
       "path.join(context.globalStorageUri.fsPath, 'installed-extension-host.json')",
+      "require('./path-utils.cjs')",
+      'sameFilesystemPath(actualWorkspace, fixtureWorkspace)',
     ]) {
       expect(installedDriverSource).toContain(requiredDriverValue);
     }
+    expect(installedDriverSource).not.toContain(
+      "assertEqual(realpathSync(workspaceFolder), fixtureWorkspace, 'fixture workspace path')",
+    );
     expect(installedDriverSource).not.toContain(
       "requiredEnvironment('PROJECT_DNA_INSTALLED_TEST_RESULT')",
     );

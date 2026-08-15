@@ -7,6 +7,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { setTimeout } from 'node:timers';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -22,6 +23,10 @@ import {
 } from '../../scripts/installed-desktop-validation-helpers.mjs';
 
 const { AbortController, ReadableStream, Response, TextEncoder } = globalThis;
+const require = createRequire(import.meta.url);
+const { normalizeFilesystemPath, sameFilesystemPath } = require(
+  '../../test/installed-vsix-driver/path-utils.cjs',
+);
 const temporaryDirectories = [];
 
 afterEach(() => {
@@ -31,6 +36,23 @@ afterEach(() => {
 });
 
 describe('installed desktop validation helpers', () => {
+  it('treats only Windows drive-letter casing as equivalent', () => {
+    const uppercase = 'D:\\a\\_temp\\project-dna\\workspace';
+    const lowercase = 'd:\\a\\_temp\\project-dna\\workspace';
+
+    expect(sameFilesystemPath(uppercase, lowercase, 'win32')).toBe(true);
+    expect(normalizeFilesystemPath(uppercase, 'win32')).toBe(lowercase);
+    expect(sameFilesystemPath(uppercase, 'd:\\a\\_temp\\other\\workspace', 'win32')).toBe(
+      false,
+    );
+    expect(sameFilesystemPath('D:\\Workspace', 'd:\\workspace', 'win32')).toBe(false);
+  });
+
+  it('preserves case-sensitive path comparisons outside Windows', () => {
+    expect(sameFilesystemPath('/Workspace/project', '/workspace/project', 'linux')).toBe(false);
+    expect(normalizeFilesystemPath('/Workspace/project', 'darwin')).toBe('/Workspace/project');
+  });
+
   it('captures failed driver JSON byte-for-byte and surfaces its error and stack', () => {
     const root = temporaryDirectory();
     const resultPath = path.join(root, 'user-data', 'installed-extension-host.json');
