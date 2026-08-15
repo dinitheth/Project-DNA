@@ -99,6 +99,7 @@ interface PackageManifest {
     readonly integrity: string;
     readonly 'validate:package': string;
     readonly 'validate:installed-server': string;
+    readonly 'validate:installed-desktop': string;
   };
 }
 
@@ -124,6 +125,7 @@ const stagingScript = readText('./scripts/stage-extension.mjs');
 const integrityScript = readText('./scripts/create-integrity-manifest.mjs');
 const packageValidationScript = readText('./scripts/validate-package.mjs');
 const installedServerValidationScript = readText('./scripts/validate-installed-vsix-server.mjs');
+const installedDesktopValidationScript = readText('./scripts/validate-installed-vsix-desktop.mjs');
 const installedDriverPackage = readJson<{
   readonly engines: { readonly vscode: string };
   readonly extensionKind: readonly string[];
@@ -569,6 +571,74 @@ describe('M5 release contract', () => {
     expect(installedDriverSource).not.toContain(
       "requiredEnvironment('PROJECT_DNA_INSTALLED_TEST_RESULT')",
     );
+  });
+
+  it('encodes the unreleased installed-VSIX compatibility matrix', () => {
+    expect(extensionPackage.scripts['validate:installed-desktop']).toBe(
+      'node scripts/validate-installed-vsix-desktop.mjs',
+    );
+    for (const requiredScriptValue of [
+      'const HARD_TIMEOUT_MS = 12 * 60 * 1000',
+      "requiredEnvironment('RUNNER_TEMP')",
+      "requiredEnvironment('GITHUB_WORKSPACE')",
+      "process.env.VSIX_PATH ?? path.join('release', 'project-dna-a.vsix')",
+      "process.env.INTEGRITY_PATH ?? path.join('release', 'integrity.json')",
+      "'--install-extension'",
+      "'--list-extensions'",
+      "'--show-versions'",
+      "'Contents', 'Resources', 'app', 'bin', 'code'",
+      "'Contents', 'MacOS', 'Electron'",
+      "path.basename(path.dirname(candidate)) === 'bin'",
+      'PROJECT_DNA_EXPECTED_ELECTRON_VERSION',
+      "PROJECT_DNA_EXPECTED_MODULES: '146'",
+      'PROJECT_DNA_EXPECTED_NATIVE_BINDING',
+      'PROJECT_DNA_EXPECTED_REMOTE',
+      "vscode.commands.executeCommand('project-dna.analyzeRepository')",
+      'integrity.files.find((file) => file.path === nativeBinding)',
+      "process.kill(-client.pid, 'SIGTERM')",
+      "process.kill(-client.pid, 'SIGKILL')",
+      "spawn('taskkill', ['/pid', String(client.pid), '/t', '/f']",
+      'Promise.allSettled(cleanupTasks)',
+    ]) {
+      expect(`${installedDesktopValidationScript}\n${installedDriverSource}`).toContain(
+        requiredScriptValue,
+      );
+    }
+    expect(installedDesktopValidationScript).not.toContain('--extensionDevelopmentPath');
+    expect(installedDesktopValidationScript).not.toContain('@vscode/test-electron');
+    expect(installedDesktopValidationScript).not.toContain('@vscode/test-cli');
+
+    for (const requiredWorkflowValue of [
+      'compatibility-desktop:',
+      'compatibility-remote-linux-x64:',
+      'needs: package',
+      'timeout-minutes: 25',
+      'PROJECT_DNA_EXPECTED_TARGET',
+      'PROJECT_DNA_EXPECTED_VSCODE_VERSION',
+      'PROJECT_DNA_VSCODE_ARCHIVE_SHA256',
+      'PROJECT_DNA_EXPECTED_ELECTRON_VERSION',
+      'pnpm validate:installed-desktop',
+      'pnpm validate:installed-server',
+      '98bd4a4721a5bd8534dbad8eaf9801f001ee36703a278c5d52d6036df8c7e503',
+      '405f9e096b2cd9489a35c4c458c38badcf10374b64c529a6a9cab3c0e5463172',
+      '2073ae64f09564ab76c583c5553e2c76de96e4d78efc27e4e9aaec8430bf5229',
+      'acdaf0fa557bda1720956ff65ca0de0965e92d68f97e2db22341984400937aed',
+      '78a84fdf4cf756b3110623c8d1dce96c582613fe71d15a6a3f1343619092c04e',
+      '2bf1a90d2f008af009eb3c4a7bd0849b9247a0588cd39a404a0b1e691be68161',
+      '1fb68a8a6357190942a36623ca784937b1226b0b5508a6281aa6fe5328c58db6',
+      '95ebef891aefe998d9879a559c399a55dfadcb0aeebb48de75d1dda5de79f379',
+      '8fa12ce73e5c3ea5fe3927227047ac483a0ced4f9048cdc8bae7332761c3e415',
+      '8f5874dc1fee62f24153a1a9a5f4c3f10bbcc28ff9e8a04fc9f4cdcb6d9d0f6e',
+      '57ba6dfc904df79a42b0ce4247a32e8d7400f760b4bd6e608685943c01f4d93d',
+      '2b13ff21f640af3b1be9cf2c267fd5f0175f67004ec6e1263535600f382bf42d',
+      '80f56351be85cbd696f141f50086dce289fb07b8fd3ed67f092a1cb56c7032a8',
+      'afdfd9868c417e9df7df4bc50ea87663fcd22bdbfab4e930357be8b49b5a5c20',
+    ]) {
+      expect(nativeWorkflow).toContain(requiredWorkflowValue);
+    }
+    expect(nativeWorkflow.match(/vscode_version: 1\.132\.0/gu)).toHaveLength(4);
+    expect(nativeWorkflow.match(/vscode_version: 1\.132\.1/gu)).toHaveLength(5);
+    expect(nativeWorkflow.match(/vscode_version: 1\.133\.0/gu)).toHaveLength(5);
   });
 
   it('keeps unspecified Marketplace metadata deferred', () => {

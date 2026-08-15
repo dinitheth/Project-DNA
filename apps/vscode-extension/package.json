@@ -121,6 +121,7 @@
     "integrity": "node scripts/create-integrity-manifest.mjs",
     "validate:package": "node scripts/validate-package.mjs",
     "validate:installed-server": "node scripts/validate-installed-vsix-server.mjs",
+    "validate:installed-desktop": "node scripts/validate-installed-vsix-desktop.mjs",
     "package:vsix": "pnpm build:extension && pnpm build:webview && node scripts/validate-package.mjs --package",
     "clean": "rimraf dist"
   }

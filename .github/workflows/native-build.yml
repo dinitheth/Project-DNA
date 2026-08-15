@@ -317,3 +317,205 @@ jobs:
           path: ${{ runner.temp }}/project-dna-installed-server/logs
           if-no-files-found: ignore
           retention-days: 7
+
+  compatibility-desktop:
+    name: compatibility-${{ matrix.target }}-vscode-${{ matrix.vscode_version }}
+    needs: package
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            target: win32-x64
+            vscode_version: 1.132.0
+            archive_channel: win32-x64-archive
+            archive_sha256: 98bd4a4721a5bd8534dbad8eaf9801f001ee36703a278c5d52d6036df8c7e503
+            electron_version: 42.7.1
+          - runner: windows-2025
+            target: win32-x64
+            vscode_version: 1.132.1
+            archive_channel: win32-x64-archive
+            archive_sha256: 405f9e096b2cd9489a35c4c458c38badcf10374b64c529a6a9cab3c0e5463172
+            electron_version: 42.7.1
+          - runner: windows-2025
+            target: win32-x64
+            vscode_version: 1.133.0
+            archive_channel: win32-x64-archive
+            archive_sha256: 2073ae64f09564ab76c583c5553e2c76de96e4d78efc27e4e9aaec8430bf5229
+            electron_version: 42.8.0
+          - runner: ubuntu-22.04
+            target: linux-x64
+            vscode_version: 1.132.0
+            archive_channel: linux-x64
+            archive_sha256: acdaf0fa557bda1720956ff65ca0de0965e92d68f97e2db22341984400937aed
+            electron_version: 42.7.1
+          - runner: ubuntu-22.04
+            target: linux-x64
+            vscode_version: 1.132.1
+            archive_channel: linux-x64
+            archive_sha256: 78a84fdf4cf756b3110623c8d1dce96c582613fe71d15a6a3f1343619092c04e
+            electron_version: 42.7.1
+          - runner: ubuntu-22.04
+            target: linux-x64
+            vscode_version: 1.133.0
+            archive_channel: linux-x64
+            archive_sha256: 2bf1a90d2f008af009eb3c4a7bd0849b9247a0588cd39a404a0b1e691be68161
+            electron_version: 42.8.0
+          - runner: macos-15-intel
+            target: darwin-x64
+            vscode_version: 1.132.0
+            archive_channel: darwin
+            archive_sha256: 1fb68a8a6357190942a36623ca784937b1226b0b5508a6281aa6fe5328c58db6
+            electron_version: 42.7.1
+          - runner: macos-15-intel
+            target: darwin-x64
+            vscode_version: 1.132.1
+            archive_channel: darwin
+            archive_sha256: 95ebef891aefe998d9879a559c399a55dfadcb0aeebb48de75d1dda5de79f379
+            electron_version: 42.7.1
+          - runner: macos-15-intel
+            target: darwin-x64
+            vscode_version: 1.133.0
+            archive_channel: darwin
+            archive_sha256: 8fa12ce73e5c3ea5fe3927227047ac483a0ced4f9048cdc8bae7332761c3e415
+            electron_version: 42.8.0
+          - runner: macos-15
+            target: darwin-arm64
+            vscode_version: 1.132.0
+            archive_channel: darwin-arm64
+            archive_sha256: 8f5874dc1fee62f24153a1a9a5f4c3f10bbcc28ff9e8a04fc9f4cdcb6d9d0f6e
+            electron_version: 42.7.1
+          - runner: macos-15
+            target: darwin-arm64
+            vscode_version: 1.132.1
+            archive_channel: darwin-arm64
+            archive_sha256: 57ba6dfc904df79a42b0ce4247a32e8d7400f760b4bd6e608685943c01f4d93d
+            electron_version: 42.7.1
+          - runner: macos-15
+            target: darwin-arm64
+            vscode_version: 1.133.0
+            archive_channel: darwin-arm64
+            archive_sha256: 2b13ff21f640af3b1be9cf2c267fd5f0175f67004ec6e1263535600f382bf42d
+            electron_version: 42.8.0
+
+    steps:
+      - name: Configure deterministic line endings
+        shell: bash
+        run: git config --global core.autocrlf false
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up frozen pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Set up frozen Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.2
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download canonical compatibility-candidate VSIX
+        uses: actions/download-artifact@v4
+        with:
+          name: project-dna-vsix-${{ matrix.target }}
+          path: apps/vscode-extension/release
+
+      - name: Assert Linux desktop display wrapper
+        if: matrix.target == 'linux-x64'
+        shell: bash
+        run: command -v xvfb-run
+
+      - name: Validate installed compatibility-candidate VSIX in official VS Code Desktop
+        working-directory: apps/vscode-extension
+        env:
+          PROJECT_DNA_EXPECTED_TARGET: ${{ matrix.target }}
+          PROJECT_DNA_EXPECTED_VSCODE_VERSION: ${{ matrix.vscode_version }}
+          PROJECT_DNA_VSCODE_ARCHIVE_CHANNEL: ${{ matrix.archive_channel }}
+          PROJECT_DNA_VSCODE_ARCHIVE_SHA256: ${{ matrix.archive_sha256 }}
+          PROJECT_DNA_EXPECTED_ELECTRON_VERSION: ${{ matrix.electron_version }}
+        run: pnpm validate:installed-desktop
+
+      - name: Upload desktop compatibility logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compatibility-${{ matrix.target }}-vscode-${{ matrix.vscode_version }}-logs
+          path: ${{ runner.temp }}/project-dna-compat-desktop-${{ matrix.vscode_version }}-${{ matrix.target }}/logs
+          if-no-files-found: ignore
+          retention-days: 7
+
+  compatibility-remote-linux-x64:
+    name: compatibility-linux-x64-remote-vscode-${{ matrix.vscode_version }}
+    needs: package
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - vscode_version: 1.132.1
+            vscode_commit: c2d1b13fdc4a77628e5f3bb70173351c8f2fbad1
+            archive_sha256: 80f56351be85cbd696f141f50086dce289fb07b8fd3ed67f092a1cb56c7032a8
+          - vscode_version: 1.133.0
+            vscode_commit: a5b500951314efd502d07465bd138dfbd714a960
+            archive_sha256: afdfd9868c417e9df7df4bc50ea87663fcd22bdbfab4e930357be8b49b5a5c20
+
+    steps:
+      - name: Configure deterministic line endings
+        shell: bash
+        run: git config --global core.autocrlf false
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up frozen pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Set up frozen Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.2
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download canonical compatibility-candidate VSIX
+        uses: actions/download-artifact@v4
+        with:
+          name: project-dna-vsix-linux-x64
+          path: apps/vscode-extension/release
+
+      - name: Install pinned Playwright Chromium
+        working-directory: apps/vscode-extension
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/project-dna-playwright-1.62.1
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Validate installed compatibility-candidate VSIX in official VS Code Server
+        working-directory: apps/vscode-extension
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/project-dna-playwright-1.62.1
+          PROJECT_DNA_EXPECTED_VSCODE_VERSION: ${{ matrix.vscode_version }}
+          PROJECT_DNA_EXPECTED_VSCODE_SERVER_COMMIT: ${{ matrix.vscode_commit }}
+          PROJECT_DNA_EXPECTED_VSCODE_SERVER_SHA256: ${{ matrix.archive_sha256 }}
+        run: pnpm validate:installed-server
+
+      - name: Upload remote compatibility logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compatibility-linux-x64-remote-vscode-${{ matrix.vscode_version }}-logs
+          path: ${{ runner.temp }}/project-dna-installed-server/logs
+          if-no-files-found: ignore
+          retention-days: 7
