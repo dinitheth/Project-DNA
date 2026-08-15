@@ -1,11 +1,20 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout } from 'node:timers';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  captureDriverResult,
   createClientCommand,
   downloadFile,
+  formatDriverFailure,
   findClientExecutables,
   runCommand,
   runStage,
@@ -22,6 +31,68 @@ afterEach(() => {
 });
 
 describe('installed desktop validation helpers', () => {
+  it('captures failed driver JSON byte-for-byte and surfaces its error and stack', () => {
+    const root = temporaryDirectory();
+    const resultPath = path.join(root, 'user-data', 'installed-extension-host.json');
+    const failureLogDirectory = path.join(root, 'logs');
+    mkdirSync(path.dirname(resultPath), { recursive: true });
+    mkdirSync(failureLogDirectory, { recursive: true });
+    const rawResult =
+      '{\n  "success": false,\n  "error": "workspace failed",\n  "stack": "Error: workspace failed\\n at driver"\n}\n';
+    writeFileSync(resultPath, rawResult, 'utf8');
+    const result = JSON.parse(rawResult);
+
+    const captured = captureDriverResult({ resultPath, failureLogDirectory, result });
+
+    expect(readFileSync(captured.destination, 'utf8')).toBe(rawResult);
+    expect(formatDriverFailure(captured.result)).toContain('Driver error: workspace failed');
+    expect(formatDriverFailure(captured.result)).toContain(
+      'Driver stack:\nError: workspace failed',
+    );
+  });
+
+  it('leaves successful driver results unchanged and skips missing results', () => {
+    const root = temporaryDirectory();
+    const failureLogDirectory = path.join(root, 'logs');
+    const resultPath = path.join(root, 'installed-extension-host.json');
+    const result = { success: true, vscodeVersion: '1.133.0' };
+    mkdirSync(failureLogDirectory, { recursive: true });
+    writeFileSync(resultPath, JSON.stringify(result), 'utf8');
+
+    const captured = captureDriverResult({ resultPath, failureLogDirectory, result });
+
+    expect(captured.result).toEqual(result);
+    expect(formatDriverFailure(result)).toBeUndefined();
+    expect(readFileSync(captured.destination, 'utf8')).toBe(JSON.stringify(result));
+    expect(
+      captureDriverResult({
+        resultPath: path.join(root, 'missing.json'),
+        failureLogDirectory,
+        result,
+      }),
+    ).toBeUndefined();
+  });
+
+  it('keeps failure capture bounded to its logs directory', () => {
+    const root = temporaryDirectory();
+    const resultPath = path.join(root, 'result.json');
+    const failureLogDirectory = path.join(root, 'logs');
+    const unrelatedPath = path.join(root, 'unrelated.txt');
+    mkdirSync(failureLogDirectory, { recursive: true });
+    writeFileSync(resultPath, '{"success":false}', 'utf8');
+    writeFileSync(unrelatedPath, 'untouched', 'utf8');
+
+    const captured = captureDriverResult({
+      resultPath,
+      failureLogDirectory,
+      result: { success: false },
+    });
+
+    expect(path.dirname(captured.destination)).toBe(failureLogDirectory);
+    expect(readFileSync(unrelatedPath, 'utf8')).toBe('untouched');
+    expect(readdirSync(failureLogDirectory)).toEqual(['installed-extension-host.json']);
+  });
+
   it.each(['darwin-x64', 'darwin-arm64'])(
     'discovers the official macOS Code executable for %s',
     () => {

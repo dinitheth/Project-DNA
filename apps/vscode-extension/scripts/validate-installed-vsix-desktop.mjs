@@ -15,8 +15,10 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  captureDriverResult,
   createClientCommand,
   downloadFile,
+  formatDriverFailure,
   findClientExecutables,
   runCommand,
   runStage,
@@ -236,13 +238,24 @@ async function runValidation({ paths, resources, repositoryWorkspace, signal, lo
     STAGE_TIMEOUT_MS.runtimeValidation,
     (stageSignal) => waitForResult(paths.result, stageSignal, client),
   );
-  validateResult(result, {
-    bindingSha256: binding.sha256,
-    extensionsDirectory: paths.extensions,
-    fixtureWorkspace: paths.workspace,
-    repositoryWorkspace,
-    userDataDirectory: paths.userData,
-  });
+  try {
+    validateResult(result, {
+      bindingSha256: binding.sha256,
+      extensionsDirectory: paths.extensions,
+      fixtureWorkspace: paths.workspace,
+      repositoryWorkspace,
+      userDataDirectory: paths.userData,
+    });
+  } catch (error) {
+    const captured = captureDriverResult({
+      resultPath: paths.result,
+      failureLogDirectory: paths.logs,
+      result,
+    });
+    const diagnostic = formatDriverFailure(captured?.result);
+    if (diagnostic !== undefined) throw new Error(diagnostic, { cause: error });
+    throw error;
+  }
   console.log(JSON.stringify(result, null, 2));
 }
 
@@ -267,6 +280,7 @@ function createPaths(validationRoot) {
       'installed-extension-host.json',
     ),
     extensionListLog: path.join(logs, 'installed-extensions.txt'),
+    driverResultLog: path.join(logs, 'installed-extension-host.json'),
     clientLog: path.join(logs, 'client.log'),
     stageLog: path.join(logs, 'stages.log'),
     logs,
@@ -572,7 +586,12 @@ async function terminateClient(client) {
 }
 
 function collectFailureLogs(paths) {
-  const files = [paths.stageLog, paths.clientLog, paths.extensionListLog].filter(existsSync);
+  const files = [
+    paths.stageLog,
+    paths.clientLog,
+    paths.extensionListLog,
+    paths.driverResultLog,
+  ].filter(existsSync);
   for (const file of files) {
     console.error(`Compatibility diagnostic ${file}:\n${readFileSync(file, 'utf8')}`);
   }

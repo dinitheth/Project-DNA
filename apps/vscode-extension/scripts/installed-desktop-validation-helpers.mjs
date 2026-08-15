@@ -1,5 +1,13 @@
 import { spawn } from 'node:child_process';
-import { closeSync, existsSync, openSync, readdirSync, statSync, writeSync } from 'node:fs';
+import {
+  closeSync,
+  copyFileSync,
+  existsSync,
+  openSync,
+  readdirSync,
+  statSync,
+  writeSync,
+} from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 
@@ -68,6 +76,25 @@ export function createClientCommand(cli, args) {
     cwd: cli.workingDirectory,
     environment: { ...cli.environment },
   };
+}
+
+export function captureDriverResult({ resultPath, failureLogDirectory, result }) {
+  const destination = path.join(failureLogDirectory, 'installed-extension-host.json');
+  const relative = path.relative(failureLogDirectory, destination);
+  assert(
+    relative.length > 0 && !relative.startsWith('..') && !path.isAbsolute(relative),
+    `driver result destination must be inside ${failureLogDirectory}`,
+  );
+  if (!existsSync(resultPath) || !statSync(resultPath).isFile()) return undefined;
+  copyFileSync(resultPath, destination);
+  return { destination, result };
+}
+
+export function formatDriverFailure(result) {
+  if (result?.success !== false) return undefined;
+  const error = typeof result.error === 'string' ? result.error : 'unavailable';
+  const stack = typeof result.stack === 'string' ? result.stack : 'unavailable';
+  return `driver result: expected true, received false\nDriver error: ${error}\nDriver stack:\n${stack}`;
 }
 
 export async function runCommand(
