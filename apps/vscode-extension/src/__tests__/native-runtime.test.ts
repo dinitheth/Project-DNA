@@ -8,6 +8,18 @@ import {
 } from '../runtime/native-runtime.js';
 
 describe('native runtime resolution', () => {
+  it.each(['42.7.1', '42.8.0'] as const)(
+    'selects the Electron ABI 146 binding for Electron %s',
+    (electron) => {
+      expect(resolveNativeRuntime({ ...tuple(), electron })).toEqual({
+        target: 'linux-x64',
+        runtime: 'electron',
+        abi: '146',
+        relativeBindingPath: 'native/linux-x64/electron-abi146/better_sqlite3.node',
+      });
+    },
+  );
+
   it.each([
     ['win32', 'x64', 'win32-x64'],
     ['linux', 'x64', 'linux-x64'],
@@ -36,6 +48,7 @@ describe('native runtime resolution', () => {
     tuple({ platform: 'win32', modules: '137' }),
     tuple({ platform: 'linux', arch: 'arm64', modules: '137' }),
     tuple({ electron: '41.0.0', modules: '146' }),
+    tuple({ electron: '42.8.0', modules: '148' }),
   ])('rejects unsupported tuples without fallback or substitution', (runtimeTuple) => {
     expect(() => resolveNativeRuntime(runtimeTuple)).toThrow(UnsupportedNativeRuntimeError);
   });

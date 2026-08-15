@@ -30,9 +30,9 @@ export class UnsupportedNativeRuntimeError extends Error {
   }
 }
 
-const ELECTRON_VERSION = '42.7.1';
 const ELECTRON_ABI = '146';
 const NODE_ABI = '137';
+const SUPPORTED_ELECTRON_VERSIONS = new Set(['42.7.1', '42.8.0']);
 
 const ELECTRON_TARGETS = new Map<string, NativeRuntimeSelection['target']>([
   ['win32-x64', 'win32-x64'],
@@ -55,7 +55,11 @@ export function resolveNativeRuntime(tuple: NativeRuntimeTuple): NativeRuntimeSe
   const platformTarget = `${tuple.platform}-${tuple.arch}`;
   if (tuple.electron !== undefined) {
     const target = ELECTRON_TARGETS.get(platformTarget);
-    if (tuple.electron === ELECTRON_VERSION && tuple.modules === ELECTRON_ABI && target) {
+    if (
+      SUPPORTED_ELECTRON_VERSIONS.has(tuple.electron) &&
+      tuple.modules === ELECTRON_ABI &&
+      target
+    ) {
       return {
         target,
         runtime: 'electron',
@@ -104,7 +108,7 @@ export function formatCompatibilityError(
   error: UnsupportedNativeRuntimeError,
   extensionVersion: string,
 ): string {
-  return `Project DNA cannot start on ${error.tuple.platform}-${error.tuple.arch}: ${formatRuntime(error.tuple)} is not supported by Project DNA ${extensionVersion}. Supported runtimes are Electron ${ELECTRON_VERSION} ABI ${ELECTRON_ABI} on win32-x64, linux-x64, darwin-x64, or darwin-arm64, and Linux x64 Node ABI ${NODE_ABI}. Your existing Project DNA database was not modified. ${error.message}`;
+  return `Project DNA cannot start on ${error.tuple.platform}-${error.tuple.arch}: ${formatRuntime(error.tuple)} is not supported by Project DNA ${extensionVersion}. Supported runtimes are Electron 42.7.1 or 42.8.0 ABI ${ELECTRON_ABI} on win32-x64, linux-x64, darwin-x64, or darwin-arm64, and Linux x64 Node ABI ${NODE_ABI}. Your existing Project DNA database was not modified. ${error.message}`;
 }
 
 function assertReadableFile(filePath: string): void {
