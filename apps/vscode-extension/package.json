@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "publisher": "project-dna",
   "engines": {
-    "vscode": "1.132.x"
+    "vscode": ">=1.132.0"
   },
   "extensionKind": [
     "workspace"

@@ -5,7 +5,7 @@
     "id": "project-dna.vscode-extension",
     "version": "1.0.0",
     "activationEvents": ["onStartupFinished"],
-    "vscodeEngine": "1.132.x",
+    "vscodeEngine": ">=1.132.0",
     "apiFloor": "1.100.0",
     "typesPackage": "1.100.0",
     "extensionKind": ["workspace"],
@@ -17,6 +17,10 @@
     "toolchainNodeRange": ">=22.23.2 <23",
     "packageManager": "pnpm@9.15.4",
     "electron": { "version": "42.7.1", "abi": "146" },
+    "electronCompatibility": {
+      "versions": ["42.7.1", "42.8.0"],
+      "abi": "146"
+    },
     "remoteNode": { "version": "24.19.0", "abi": "137" },
     "nativeBuild": {
       "betterSqlite3": "12.11.1",
@@ -58,9 +62,19 @@
     "baseOs": "ubuntu-22.04",
     "architecture": "linux-x64",
     "minimumGlibc": "2.35",
-    "vscodeVersion": "1.132.x",
+    "vscodeVersion": ">=1.132.0",
     "installedVsixRequired": true,
     "nodeOnlySmokeTestIsSufficient": false
+  },
+  "compatibilityValidation": {
+    "manifestEngine": ">=1.132.0",
+    "validatedRange": ">=1.132.0 <1.133.1",
+    "desktopVersions": ["1.132.0", "1.132.1", "1.133.0"],
+    "remoteServerVersions": ["1.132.0", "1.132.1", "1.133.0"],
+    "electronRuntimes": [
+      { "version": "42.7.1", "abi": "146" },
+      { "version": "42.8.0", "abi": "146" }
+    ]
   },
   "vsix": {
     "dependencies": false,

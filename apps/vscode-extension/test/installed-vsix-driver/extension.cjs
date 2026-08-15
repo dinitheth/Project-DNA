@@ -12,9 +12,17 @@ const path = require('node:path');
 const vscode = require('vscode');
 
 const PROJECT_EXTENSION_ID = 'project-dna.vscode-extension';
-const NATIVE_BINDING = 'native/linux-x64/node-abi137/better_sqlite3.node';
+const NATIVE_BINDING =
+  process.env.PROJECT_DNA_EXPECTED_NATIVE_BINDING ??
+  'native/linux-x64/node-abi137/better_sqlite3.node';
 const SQLITE_HEADER_HEX = '53514c69746520666f726d6174203300';
 const COMMAND_TIMEOUT_MS = 30_000;
+const EXPECTED_VSCODE_VERSION = process.env.PROJECT_DNA_EXPECTED_VSCODE_VERSION ?? '1.132.0';
+const EXPECTED_PLATFORM = process.env.PROJECT_DNA_EXPECTED_PLATFORM ?? 'linux';
+const EXPECTED_ARCHITECTURE = process.env.PROJECT_DNA_EXPECTED_ARCHITECTURE ?? 'x64';
+const EXPECTED_MODULES = process.env.PROJECT_DNA_EXPECTED_MODULES ?? '137';
+const EXPECTED_ELECTRON = process.env.PROJECT_DNA_EXPECTED_ELECTRON_VERSION;
+const EXPECTED_REMOTE = process.env.PROJECT_DNA_EXPECTED_REMOTE !== 'false';
 
 async function activate(context) {
   const resultPath = path.join(context.globalStorageUri.fsPath, 'installed-extension-host.json');
@@ -32,15 +40,29 @@ async function activate(context) {
 }
 
 async function validateInstalledExtension(context) {
-  assertEqual(vscode.version, '1.132.0', 'VS Code version');
-  assertEqual(process.platform, 'linux', 'Extension Host platform');
-  assertEqual(process.arch, 'x64', 'Extension Host architecture');
-  assertEqual(process.versions.modules, '137', 'Extension Host Node ABI');
-  assert(process.versions.electron === undefined, 'remote Extension Host must not expose Electron');
-  assert(
-    typeof vscode.env.remoteName === 'string' && vscode.env.remoteName.length > 0,
-    'vscode.env.remoteName must identify a remote Extension Host',
-  );
+  assertEqual(vscode.version, EXPECTED_VSCODE_VERSION, 'VS Code version');
+  assertEqual(process.platform, EXPECTED_PLATFORM, 'Extension Host platform');
+  assertEqual(process.arch, EXPECTED_ARCHITECTURE, 'Extension Host architecture');
+  assertEqual(process.versions.modules, EXPECTED_MODULES, 'Extension Host Node ABI');
+  if (EXPECTED_ELECTRON === undefined) {
+    assert(
+      process.versions.electron === undefined,
+      'remote Extension Host must not expose Electron',
+    );
+  } else {
+    assertEqual(process.versions.electron, EXPECTED_ELECTRON, 'Electron version');
+  }
+  if (EXPECTED_REMOTE) {
+    assert(
+      typeof vscode.env.remoteName === 'string' && vscode.env.remoteName.length > 0,
+      'vscode.env.remoteName must identify a remote Extension Host',
+    );
+  } else {
+    assert(
+      vscode.env.remoteName === undefined || vscode.env.remoteName.length === 0,
+      'desktop Extension Host must not identify a remote host',
+    );
+  }
 
   const expectedExtensionsDirectory = realpathSync(
     requiredEnvironment('PROJECT_DNA_EXPECTED_EXTENSIONS_DIR'),
@@ -102,7 +124,7 @@ async function validateInstalledExtension(context) {
     architecture: process.arch,
     modules: process.versions.modules,
     electron: process.versions.electron ?? null,
-    remoteName: vscode.env.remoteName,
+    remoteName: vscode.env.remoteName ?? null,
     projectExtensionId: projectExtension.id,
     installedExtensionPath,
     expectedExtensionsDirectory,

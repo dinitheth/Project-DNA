@@ -22,6 +22,7 @@ interface ReleaseContract {
     readonly toolchainNodeRange: string;
     readonly packageManager: string;
     readonly electron: { readonly version: string; readonly abi: string };
+    readonly electronCompatibility: { readonly versions: readonly string[]; readonly abi: string };
     readonly remoteNode: { readonly version: string; readonly abi: string };
     readonly nativeBuild: {
       readonly betterSqlite3: string;
@@ -49,6 +50,13 @@ interface ReleaseContract {
     readonly vscodeVersion: string;
     readonly installedVsixRequired: boolean;
     readonly nodeOnlySmokeTestIsSufficient: boolean;
+  };
+  readonly compatibilityValidation: {
+    readonly manifestEngine: string;
+    readonly validatedRange: string;
+    readonly desktopVersions: readonly string[];
+    readonly remoteServerVersions: readonly string[];
+    readonly electronRuntimes: ReadonlyArray<{ readonly version: string; readonly abi: string }>;
   };
   readonly vsix: {
     readonly dependencies: boolean;
@@ -157,6 +165,17 @@ describe('M5 release contract', () => {
 
   it('matches the frozen VS Code runtime and API contract', () => {
     expect(extensionPackage.engines.vscode).toBe(contract.extension.vscodeEngine);
+    expect(contract.extension.vscodeEngine).toBe('>=1.132.0');
+    expect(contract.compatibilityValidation).toEqual({
+      manifestEngine: '>=1.132.0',
+      validatedRange: '>=1.132.0 <1.133.1',
+      desktopVersions: ['1.132.0', '1.132.1', '1.133.0'],
+      remoteServerVersions: ['1.132.0', '1.132.1', '1.133.0'],
+      electronRuntimes: [
+        { version: '42.7.1', abi: '146' },
+        { version: '42.8.0', abi: '146' },
+      ],
+    });
     expect(extensionPackage.devDependencies['@types/vscode']).toBe(contract.extension.typesPackage);
     expect(contract.extension.apiFloor).toBe('1.100.0');
     expect(lockfile).toContain('specifier: 1.100.0\n        version: 1.100.0');
@@ -188,6 +207,10 @@ describe('M5 release contract', () => {
     ]);
     expect(contract.platforms.linuxMinimumGlibc).toBe('2.35');
     expect(contract.runtime.electron).toEqual({ version: '42.7.1', abi: '146' });
+    expect(contract.runtime.electronCompatibility).toEqual({
+      versions: ['42.7.1', '42.8.0'],
+      abi: '146',
+    });
     expect(contract.runtime.remoteNode).toEqual({ version: '24.19.0', abi: '137' });
     expect(contract.runtime.nativeBuild).toEqual({
       betterSqlite3: '12.11.1',
@@ -230,7 +253,7 @@ describe('M5 release contract', () => {
       baseOs: 'ubuntu-22.04',
       architecture: 'linux-x64',
       minimumGlibc: '2.35',
-      vscodeVersion: '1.132.x',
+      vscodeVersion: '>=1.132.0',
       installedVsixRequired: true,
       nodeOnlySmokeTestIsSufficient: false,
     });
@@ -314,7 +337,7 @@ describe('M5 release contract', () => {
     });
     expect(nativeRuntimeSource).toContain('process.versions.modules');
     expect(nativeRuntimeSource).toContain('process.versions.electron');
-    expect(nativeRuntimeSource).toContain("const ELECTRON_VERSION = '42.7.1'");
+    expect(nativeRuntimeSource).toContain("new Set(['42.7.1', '42.8.0'])");
     expect(nativeRuntimeSource).toContain("const ELECTRON_ABI = '146'");
     expect(nativeRuntimeSource).toContain("const NODE_ABI = '137'");
     expect(extensionSource.indexOf('resolveNativeBinding(')).toBeLessThan(
@@ -440,11 +463,11 @@ describe('M5 release contract', () => {
       name: 'project-dna-installed-vsix-driver',
       displayName: 'Project DNA Installed VSIX Driver',
       description:
-        'CI-only driver for validating Project DNA in an installed VS Code Server Extension Host.',
+        'CI-only driver for validating Project DNA in an installed VS Code Extension Host.',
       version: '1.0.0',
       publisher: 'project-dna-tests',
       private: true,
-      engines: { vscode: '1.132.x' },
+      engines: { vscode: '>=1.132.0' },
       capabilities: { untrustedWorkspaces: { supported: true } },
       extensionKind: ['workspace'],
       activationEvents: ['onStartupFinished'],
@@ -467,9 +490,10 @@ describe('M5 release contract', () => {
     }
 
     for (const requiredScriptValue of [
-      "const VSCODE_VERSION = '1.132.0'",
+      "process.env.PROJECT_DNA_EXPECTED_VSCODE_VERSION ?? '1.132.0'",
       '/server-linux-x64-web/stable',
-      "const VSCODE_SERVER_SHA256 = 'a49c72b8d9e47faceef53e366c65af1be159bf4818dcb77579241af28de0a7d6'",
+      'process.env.PROJECT_DNA_EXPECTED_VSCODE_SERVER_SHA256 ??',
+      "'a49c72b8d9e47faceef53e366c65af1be159bf4818dcb77579241af28de0a7d6'",
       'const HARD_TIMEOUT_MS = 12 * 60 * 1000',
       "path.join('release', 'project-dna-a.vsix')",
       "requiredEnvironment('RUNNER_TEMP')",
@@ -517,13 +541,17 @@ describe('M5 release contract', () => {
     expect(installedServerValidationScript).not.toContain('@vscode/test-cli');
 
     for (const requiredDriverValue of [
-      "assertEqual(vscode.version, '1.132.0'",
-      "assertEqual(process.platform, 'linux'",
-      "assertEqual(process.arch, 'x64'",
-      "assertEqual(process.versions.modules, '137'",
+      "process.env.PROJECT_DNA_EXPECTED_VSCODE_VERSION ?? '1.132.0'",
+      "process.env.PROJECT_DNA_EXPECTED_PLATFORM ?? 'linux'",
+      "process.env.PROJECT_DNA_EXPECTED_ARCHITECTURE ?? 'x64'",
+      "process.env.PROJECT_DNA_EXPECTED_MODULES ?? '137'",
+      'assertEqual(vscode.version, EXPECTED_VSCODE_VERSION',
+      'assertEqual(process.platform, EXPECTED_PLATFORM',
+      'assertEqual(process.arch, EXPECTED_ARCHITECTURE',
+      'assertEqual(process.versions.modules, EXPECTED_MODULES',
       'process.versions.electron === undefined',
       'vscode.env.remoteName',
-      "const NATIVE_BINDING = 'native/linux-x64/node-abi137/better_sqlite3.node'",
+      "'native/linux-x64/node-abi137/better_sqlite3.node'",
       'assertPathOutside(installedExtensionPath, repositoryWorkspace',
       "JSON.stringify(['workspace'])",
       'await projectExtension.activate()',

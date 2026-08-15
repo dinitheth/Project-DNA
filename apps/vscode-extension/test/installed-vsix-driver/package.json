@@ -1,12 +1,12 @@
 {
   "name": "project-dna-installed-vsix-driver",
   "displayName": "Project DNA Installed VSIX Driver",
-  "description": "CI-only driver for validating Project DNA in an installed VS Code Server Extension Host.",
+  "description": "CI-only driver for validating Project DNA in an installed VS Code Extension Host.",
   "version": "1.0.0",
   "publisher": "project-dna-tests",
   "private": true,
   "engines": {
-    "vscode": "1.132.x"
+    "vscode": ">=1.132.0"
   },
   "capabilities": {
     "untrustedWorkspaces": {

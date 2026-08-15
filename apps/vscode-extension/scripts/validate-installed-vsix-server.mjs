@@ -20,10 +20,14 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const VSCODE_VERSION = '1.132.0';
-const VSCODE_SERVER_COMMIT = 'df53daabb18cd157bdb08c7f01c34df936cf12f4';
+const VSCODE_VERSION = process.env.PROJECT_DNA_EXPECTED_VSCODE_VERSION ?? '1.132.0';
+const VSCODE_SERVER_COMMIT =
+  process.env.PROJECT_DNA_EXPECTED_VSCODE_SERVER_COMMIT ??
+  'df53daabb18cd157bdb08c7f01c34df936cf12f4';
 const VSCODE_SERVER_URL = `https://update.code.visualstudio.com/${VSCODE_VERSION}/server-linux-x64-web/stable`;
-const VSCODE_SERVER_SHA256 = 'a49c72b8d9e47faceef53e366c65af1be159bf4818dcb77579241af28de0a7d6';
+const VSCODE_SERVER_SHA256 =
+  process.env.PROJECT_DNA_EXPECTED_VSCODE_SERVER_SHA256 ??
+  'a49c72b8d9e47faceef53e366c65af1be159bf4818dcb77579241af28de0a7d6';
 const HARD_TIMEOUT_MS = 12 * 60 * 1000;
 const PROJECT_EXTENSION_ID = 'project-dna.vscode-extension';
 const DRIVER_EXTENSION_ID = 'project-dna-tests.project-dna-installed-vsix-driver';
