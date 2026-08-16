@@ -3,6 +3,10 @@ import type { EvolutionData, RepositoryData, WorkspaceRelativePath } from '@proj
 import { Badge, EmptyCollection, MetricCard, ProgressBar, Section } from '../components/ui';
 import { Panel, StatusIndicator, TreeView, type TreeItem } from '@project-dna/ui-components';
 
+type RiskSeverity = 'info' | 'low' | 'medium' | 'high' | 'critical';
+
+const severityLevels: Array<Exclude<RiskSeverity, 'info'>> = ['low', 'medium', 'high', 'critical'];
+
 export function OverviewView({
   data,
   evolution,
@@ -57,6 +61,9 @@ export function OverviewView({
       component.path,
     ]),
   );
+  const healthAvailable = data.coverage.parsed > 0;
+  const parsedCoverage =
+    data.coverage.scanned > 0 ? (data.coverage.parsed / data.coverage.scanned) * 100 : 0;
 
   const evolutionItems: TreeItem[] = (evolution?.history ?? []).map((snapshot) => ({
     id: `evolution:${snapshot.id}`,
@@ -73,77 +80,177 @@ export function OverviewView({
 
   return (
     <div className="pb-4">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="truncate text-xl font-bold">{data.name}</h2>
-          <p className="mt-1 text-sm leading-relaxed text-description">{data.description}</p>
+      <section className="mb-4 rounded border border-dna-border bg-dna-surface p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-wide text-dna-muted">
+              Repository health
+            </p>
+            <h2 className="mt-1 text-2xl font-semibold leading-none">
+              {healthAvailable ? `${Math.round(data.health.overallScore)}/100` : 'Unavailable'}
+            </h2>
+            <p className="mt-2 truncate text-xs text-dna-muted" title={data.story.healthSummary}>
+              {healthAvailable
+                ? `${formatLabel(data.health.trend)} trend · ${data.story.healthSummary}`
+                : 'No parsed files available for health analysis.'}
+            </p>
+          </div>
+          <button
+            aria-label="Refresh repository intelligence"
+            className="shrink-0 rounded border border-dna-border px-2.5 py-1.5 text-xs font-medium text-dna-foreground hover:bg-dna-surface-hover"
+            onClick={onRefresh}
+            type="button"
+          >
+            Refresh
+          </button>
         </div>
-        <button
-          className="shrink-0 rounded bg-vscode-button px-3 py-1 text-vscode-buttonForeground hover:bg-vscode-buttonHover"
-          onClick={onRefresh}
-        >
-          Refresh
-        </button>
+        {healthAvailable ? (
+          <ProgressBar
+            className="mt-4 mb-0"
+            fillClassName="bg-dna-active"
+            label="Overall health"
+            trackClassName="bg-dna-surface-hover"
+            value={data.health.overallScore}
+          />
+        ) : null}
+      </section>
+
+      <div className="mb-5 min-w-0">
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-semibold">{data.name}</h3>
+          <p className="mt-1 text-xs leading-relaxed text-dna-muted">{data.description}</p>
+        </div>
       </div>
 
       {error ? (
-        <div className="mb-4 rounded border border-error p-3 text-sm text-error">{error}</div>
+        <div
+          aria-live="polite"
+          className="mb-4 rounded border border-error p-3 text-sm text-error"
+          role="status"
+        >
+          {error}
+        </div>
       ) : null}
 
       <div className="mb-5 grid grid-cols-2 gap-2">
         <MetricCard
+          className="border-dna-border bg-dna-surface"
           label="Heuristic health"
-          value={
-            data.coverage.parsed > 0 ? `${Math.round(data.health.overallScore)}/100` : 'Unavailable'
-          }
+          value={healthAvailable ? `${Math.round(data.health.overallScore)}/100` : 'Unavailable'}
         />
         <MetricCard
+          className="border-dna-border bg-dna-surface"
           label="Risk exposure"
           value={`${Math.round(data.risks.overallRiskScore)}/100`}
         />
-        <MetricCard label="Entities" value={data.counts.entities.toLocaleString()} />
-        <MetricCard label="Modules" value={data.counts.modules.toLocaleString()} />
+        <MetricCard
+          className="border-dna-border bg-dna-surface"
+          label="Entities"
+          value={data.counts.entities.toLocaleString()}
+        />
+        <MetricCard
+          className="border-dna-border bg-dna-surface"
+          label="Modules"
+          value={data.counts.modules.toLocaleString()}
+        />
       </div>
 
-      <Section title="Repository intelligence">
+      <Section
+        className="rounded border border-dna-border bg-dna-surface p-3"
+        title="Repository intelligence"
+      >
         <p className="text-sm leading-relaxed">{data.story.summary}</p>
         <div className="mt-3 flex flex-wrap gap-2">
           <Badge>{data.projectType}</Badge>
           <Badge>{data.repositorySize}</Badge>
-          <Badge>DNA v{data.version}</Badge>
+          {data.packageManager ? <Badge>{data.packageManager}</Badge> : null}
           <Badge>{data.health.trend}</Badge>
         </div>
       </Section>
 
-      {data.coverage.parsed > 0 ? (
-        <Section title="Heuristic health signals">
+      {healthAvailable ? (
+        <Section
+          className="rounded border border-dna-border bg-dna-surface p-3"
+          title="Heuristic health signals"
+        >
           <ProgressBar
+            fillClassName="bg-dna-active"
             label="Architecture evidence"
+            trackClassName="bg-dna-surface-hover"
             value={data.health.dimensions.architectureHealth}
           />
           <ProgressBar
+            fillClassName="bg-dna-active"
             label="Dependency structure"
+            trackClassName="bg-dna-surface-hover"
             value={data.health.dimensions.dependencyHealth}
           />
-          <ProgressBar label="Complexity" value={data.health.dimensions.complexityHealth} />
-          <ProgressBar label="Knowledge coverage" value={data.health.dimensions.knowledgeHealth} />
-          <ProgressBar label="Risk resilience" value={data.health.dimensions.riskHealth} />
+          <ProgressBar
+            fillClassName="bg-dna-active"
+            label="Complexity"
+            trackClassName="bg-dna-surface-hover"
+            value={data.health.dimensions.complexityHealth}
+          />
+          <ProgressBar
+            fillClassName="bg-dna-active"
+            label="Knowledge coverage"
+            trackClassName="bg-dna-surface-hover"
+            value={data.health.dimensions.knowledgeHealth}
+          />
+          <ProgressBar
+            className="mb-0"
+            fillClassName="bg-dna-active"
+            label="Risk resilience"
+            trackClassName="bg-dna-surface-hover"
+            value={data.health.dimensions.riskHealth}
+          />
         </Section>
       ) : (
-        <Section title="Heuristic health signals">
+        <Section
+          className="rounded border border-dna-border bg-dna-surface p-3"
+          title="Heuristic health signals"
+        >
           <EmptyCollection>No parsed files are available for health analysis.</EmptyCollection>
         </Section>
       )}
 
-      <Section title="Analysis coverage">
+      <Section
+        className="rounded border border-dna-border bg-dna-surface p-3"
+        title="Analysis coverage"
+      >
         <div className="grid grid-cols-2 gap-2">
-          <MetricCard label="Scanned" value={data.coverage.scanned.toLocaleString()} />
-          <MetricCard label="Parsed" value={data.coverage.parsed.toLocaleString()} />
-          <MetricCard label="Skipped" value={data.coverage.skipped.toLocaleString()} />
-          <MetricCard label="Failed" value={data.coverage.failed.toLocaleString()} />
+          <MetricCard
+            className="border-dna-border bg-dna-background"
+            label="Scanned"
+            value={data.coverage.scanned.toLocaleString()}
+          />
+          <MetricCard
+            className="border-dna-border bg-dna-background"
+            label="Parsed"
+            value={data.coverage.parsed.toLocaleString()}
+          />
+          <MetricCard
+            className="border-dna-border bg-dna-background"
+            label="Skipped"
+            value={data.coverage.skipped.toLocaleString()}
+          />
+          <MetricCard
+            className="border-dna-border bg-dna-background"
+            label="Failed"
+            value={data.coverage.failed.toLocaleString()}
+          />
         </div>
+        {data.coverage.scanned > 0 ? (
+          <ProgressBar
+            className="mt-4 mb-0"
+            fillClassName="bg-dna-active"
+            label="Parsed coverage"
+            trackClassName="bg-dna-surface-hover"
+            value={parsedCoverage}
+          />
+        ) : null}
         {data.coverage.skipped > 0 || data.coverage.failed > 0 ? (
-          <p className="mt-2 text-xs leading-relaxed text-description">
+          <p className="mt-3 text-xs leading-relaxed text-dna-muted">
             Health and graph results cover successfully parsed files only.
           </p>
         ) : null}
@@ -173,18 +280,25 @@ export function OverviewView({
         )}
       </Section>
 
-      <Section title="Top risks">
+      <Section className="rounded border border-dna-border bg-dna-surface p-3" title="Top risks">
         {data.risks.topRisks.length === 0 ? (
           <EmptyCollection>No high-priority risks were detected.</EmptyCollection>
         ) : (
-          <div className="space-y-2">
+          <div aria-label="Top risks list" className="space-y-2">
             {data.risks.topRisks.map((risk, index) => (
-              <div key={`${risk.type}-${index}`} className="rounded border border-panel-border p-3">
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium">{formatLabel(risk.type)}</span>
-                  <Badge>{risk.severity}</Badge>
+              <div
+                key={`${risk.type}-${index}`}
+                className="rounded border border-dna-border bg-dna-background p-3"
+              >
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <span className="min-w-0 text-sm font-medium">{formatLabel(risk.type)}</span>
+                  <RiskSeverityIndicator severity={risk.severity} />
                 </div>
-                <p className="text-xs leading-relaxed text-description">{risk.description}</p>
+                <p className="text-xs leading-relaxed text-dna-muted">{risk.description}</p>
+                <p className="mt-2 text-xs text-dna-muted">
+                  Affects {risk.affectedEntityCount.toLocaleString()}{' '}
+                  {risk.affectedEntityCount === 1 ? 'entity' : 'entities'}
+                </p>
               </div>
             ))}
           </div>
@@ -283,6 +397,45 @@ export function OverviewView({
       </div>
     </div>
   );
+}
+
+function RiskSeverityIndicator({ severity }: { severity: string }) {
+  const normalizedSeverity = isRiskSeverity(severity) ? severity : 'info';
+  const activeLevel =
+    normalizedSeverity === 'info' ? 0 : severityLevels.indexOf(normalizedSeverity) + 1;
+  const label = formatLabel(severity);
+  const severityClasses = {
+    low: 'bg-[var(--vscode-testing-iconPassed)]',
+    medium: 'bg-[var(--vscode-editorWarning-foreground)]',
+    high: 'bg-[var(--vscode-charts-orange,#f59e0b)]',
+    critical: 'bg-[var(--vscode-editorError-foreground)]',
+    info: 'bg-dna-muted',
+  } as const;
+
+  return (
+    <div
+      aria-label={`Severity: ${label}`}
+      className="flex shrink-0 items-center gap-1.5"
+      role="img"
+    >
+      <span aria-hidden="true" className="grid grid-cols-4 gap-0.5">
+        {severityLevels.map((level, index) => (
+          <span
+            aria-hidden="true"
+            className={`h-1.5 w-3 rounded-sm ${
+              index < activeLevel ? severityClasses[normalizedSeverity] : 'bg-dna-surface-hover'
+            }`}
+            key={level}
+          />
+        ))}
+      </span>
+      <span className="text-xs font-medium text-dna-foreground">{label}</span>
+    </div>
+  );
+}
+
+function isRiskSeverity(value: string): value is RiskSeverity {
+  return ['info', 'low', 'medium', 'high', 'critical'].includes(value);
 }
 
 function formatLabel(value: string): string {
