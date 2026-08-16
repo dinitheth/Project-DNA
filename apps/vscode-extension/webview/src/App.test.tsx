@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import { SidebarNavigation, StatusPanel } from './App.js';
+import { SidebarNavigation, StatusPanel, WorkspaceHeader } from './App.js';
 
 describe('webview accessibility semantics', () => {
   it('marks exactly the active sidebar route as the current page', () => {
@@ -10,18 +10,52 @@ describe('webview accessibility semantics', () => {
 
     expect(markup.match(/aria-current="page"/gu)).toHaveLength(1);
     expect(markup).toMatch(/aria-current="page"[^>]*>architecture<\/button>/u);
+    expect(markup).not.toMatch(/aria-current="page"[^>]*>overview<\/button>/u);
   });
 
-  it('keeps route controls as native buttons with deterministic activation', () => {
+  it('keeps every route keyboard-accessible through native buttons', () => {
+    const markup = renderToStaticMarkup(
+      <SidebarNavigation activeRoute="overview" onNavigate={() => undefined} />,
+    );
+
+    expect(markup.match(/<button/gu)).toHaveLength(5);
+    expect(markup.match(/type="button"/gu)).toHaveLength(5);
+    expect(markup).not.toContain('tabindex="-1"');
+  });
+
+  it('keeps deterministic route activation wired to the navigation callback', () => {
     const onNavigate = vi.fn();
     const navigation = SidebarNavigation({ activeRoute: 'overview', onNavigate });
-    const routeControl = navigation.props.children[0].props.children[1];
+    const routeControl = navigation.props.children.props.children[1];
     const architectureButton = routeControl.type(routeControl.props);
 
     architectureButton.props.onClick();
 
     expect(architectureButton.props.type).toBe('button');
     expect(onNavigate).toHaveBeenCalledWith('architecture');
+  });
+
+  it('adapts its grid without shrinking labels at narrow sidebar widths', () => {
+    const markup = renderToStaticMarkup(
+      <SidebarNavigation activeRoute="overview" onNavigate={() => undefined} />,
+    );
+
+    expect(markup).toContain('grid-cols-1');
+    expect(markup).toContain('min-[190px]:grid-cols-2');
+    expect(markup).toContain('min-[280px]:grid-cols-3');
+    expect(markup).toContain('min-[480px]:grid-cols-5');
+    expect(markup).toContain('min-h-8');
+    expect(markup).toContain('min-w-0');
+  });
+
+  it('renders repository context from existing workspace state', () => {
+    const markup = renderToStaticMarkup(
+      <WorkspaceHeader repositoryName="Project DNA" workspaceRoot={'C:\\work\\project-dna'} />,
+    );
+
+    expect(markup).toContain('Project DNA');
+    expect(markup).toContain('C:\\work\\project-dna');
+    expect(markup).not.toContain('version');
   });
 
   it('announces analysis status and exposes bounded determinate progress', () => {

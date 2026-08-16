@@ -249,15 +249,47 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-vscode-background p-4 text-vscode-foreground">
-      <SidebarNavigation activeRoute={navigation.route} onNavigate={navigate} />
-      <main className="flex-1 overflow-auto">
+    <div className="flex h-screen min-w-0 flex-col overflow-hidden bg-dna-background text-dna-foreground">
+      <header className="z-10 shrink-0 border-b border-dna-border bg-dna-background px-3 pb-2 pt-3">
+        <WorkspaceHeader repositoryName={repository?.name} workspaceRoot={workspaceRoot} />
+        <SidebarNavigation activeRoute={navigation.route} onNavigate={navigate} />
+      </header>
+      <main className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
         {renderView()}
         <EntityDetailPanel detail={entityDetail} onOpenWorkspaceTarget={openWorkspaceTarget} />
         <EvolutionComparisonPanel comparison={evolutionComparison} />
       </main>
     </div>
   );
+}
+
+export function WorkspaceHeader({
+  repositoryName,
+  workspaceRoot,
+}: {
+  repositoryName?: string;
+  workspaceRoot: string | null;
+}) {
+  const workspaceName = repositoryName ?? workspaceLabel(workspaceRoot) ?? 'No workspace open';
+
+  return (
+    <div aria-label="Workspace context" className="mb-3 min-w-0">
+      <p className="text-xs font-semibold uppercase tracking-normal text-dna-muted">Project DNA</p>
+      <h1 className="mt-0.5 truncate text-sm font-semibold leading-5" title={workspaceName}>
+        {workspaceName}
+      </h1>
+      <p
+        className="truncate text-xs leading-4 text-dna-muted"
+        title={workspaceRoot ?? 'No repository context'}
+      >
+        {workspaceRoot ?? 'No repository context'}
+      </p>
+    </div>
+  );
+}
+
+function workspaceLabel(workspaceRoot: string | null): string | undefined {
+  return workspaceRoot?.split(/[\\/]/u).filter(Boolean).at(-1);
 }
 
 function EvolutionComparisonPanel({ comparison }: { comparison: EvolutionComparisonState }) {
@@ -356,46 +388,42 @@ export function SidebarNavigation({
   onNavigate: (route: SidebarRoute) => void;
 }) {
   return (
-    <nav className="mb-4 border-b border-panel-border pb-2" aria-label="Project DNA views">
-      <div className="grid grid-cols-2 gap-2">
-        {(['overview', 'architecture', 'knowledge', 'dependencies'] as SidebarRoute[]).map(
-          (route) => (
-            <RouteButton
-              active={activeRoute === route}
-              key={route}
-              onClick={() => onNavigate(route)}
-              route={route}
-            />
-          ),
-        )}
-      </div>
-      <div className="mt-2">
-        <RouteButton
-          active={activeRoute === 'settings'}
-          fullWidth
-          onClick={() => onNavigate('settings')}
-          route="settings"
-        />
+    <nav aria-label="Project DNA views">
+      <div className="grid grid-cols-1 gap-1 rounded border border-dna-border bg-dna-surface p-1 min-[190px]:grid-cols-2 min-[280px]:grid-cols-3 min-[480px]:grid-cols-5">
+        {sidebarRoutes.map((route) => (
+          <RouteButton
+            active={activeRoute === route}
+            key={route}
+            onClick={() => onNavigate(route)}
+            route={route}
+          />
+        ))}
       </div>
     </nav>
   );
 }
 
+const sidebarRoutes = [
+  'overview',
+  'architecture',
+  'knowledge',
+  'dependencies',
+  'settings',
+] as const satisfies readonly SidebarRoute[];
+
 function RouteButton({
   active,
-  fullWidth = false,
   onClick,
   route,
 }: {
   active: boolean;
-  fullWidth?: boolean;
   onClick: () => void;
   route: SidebarRoute;
 }) {
   return (
     <button
       aria-current={active ? 'page' : undefined}
-      className={`${fullWidth ? 'w-full text-left' : 'justify-self-start'} rounded px-3 py-1 capitalize ${active ? 'bg-vscode-button text-vscode-buttonForeground' : 'hover:bg-list-hover'}`}
+      className={`min-h-8 min-w-0 rounded px-1.5 py-1 text-center text-xs font-medium capitalize leading-4 transition-colors focus-visible:z-10 ${active ? 'bg-dna-active text-dna-foreground' : 'text-dna-muted hover:bg-dna-surface-hover hover:text-dna-foreground'}`}
       onClick={onClick}
       type="button"
     >
