@@ -2,11 +2,110 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: dark;
+  --dna-background: #000000;
+  --dna-surface: #0c0c0e;
+  --dna-surface-hover: #141417;
+  --dna-border: rgba(255, 255, 255, 0.08);
+  --dna-foreground: #f5f5f7;
+  --dna-muted: #8e8e93;
+  --dna-active: #222226;
+}
+
+body.vscode-light {
+  color-scheme: light;
+  --dna-background: var(--vscode-editor-background, #ffffff);
+  --dna-surface: var(--vscode-sideBarSectionHeader-background, #f3f3f3);
+  --dna-surface-hover: var(--vscode-list-hoverBackground, #e8e8eb);
+  --dna-border: var(--vscode-panel-border, rgba(0, 0, 0, 0.14));
+  --dna-foreground: var(--vscode-editor-foreground, #1f1f1f);
+  --dna-muted: var(--vscode-descriptionForeground, #5f5f65);
+  --dna-active: var(--vscode-list-activeSelectionBackground, #d8d8dd);
+}
+
+body.vscode-high-contrast,
+body.vscode-high-contrast-light {
+  --dna-background: var(--vscode-editor-background, Canvas);
+  --dna-surface: var(--vscode-editor-background, Canvas);
+  --dna-surface-hover: var(--vscode-list-hoverBackground, Highlight);
+  --dna-border: var(--vscode-contrastBorder, CanvasText);
+  --dna-foreground: var(--vscode-editor-foreground, CanvasText);
+  --dna-muted: var(--vscode-descriptionForeground, CanvasText);
+  --dna-active: var(--vscode-list-activeSelectionBackground, Highlight);
+}
+
+body.vscode-high-contrast-light {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
 body {
   margin: 0;
   padding: 0;
-  color: var(--vscode-editor-foreground);
-  background-color: var(--vscode-editor-background);
-  font-family: var(--vscode-font-family);
-  font-size: var(--vscode-font-size);
+  color: var(--dna-foreground);
+  background-color: var(--dna-background);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-size: var(--vscode-font-size, 13px);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, #ffffff);
+  outline-offset: 2px;
+}
+
+* {
+  scrollbar-color: var(--vscode-scrollbarSlider-background, rgba(255, 255, 255, 0.18)) transparent;
+  scrollbar-width: thin;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-background, rgba(255, 255, 255, 0.18));
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-scrollbarSlider-hoverBackground, rgba(255, 255, 255, 0.3));
+}
+
+body.vscode-reduce-motion *,
+body.vscode-reduce-motion *::before,
+body.vscode-reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }

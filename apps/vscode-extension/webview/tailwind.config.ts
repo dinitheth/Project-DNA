@@ -8,6 +8,15 @@ export default {
   theme: {
     extend: {
       colors: {
+        dna: {
+          active: 'var(--dna-active)',
+          background: 'var(--dna-background)',
+          border: 'var(--dna-border)',
+          foreground: 'var(--dna-foreground)',
+          muted: 'var(--dna-muted)',
+          surface: 'var(--dna-surface)',
+          'surface-hover': 'var(--dna-surface-hover)',
+        },
         vscode: {
           background: 'var(--vscode-editor-background)',
           foreground: 'var(--vscode-editor-foreground)',
