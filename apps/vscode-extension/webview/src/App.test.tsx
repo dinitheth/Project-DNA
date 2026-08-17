@@ -22,6 +22,8 @@ describe('webview accessibility semantics', () => {
 
     expect(markup.match(/<button/gu)).toHaveLength(5);
     expect(markup.match(/type="button"/gu)).toHaveLength(5);
+    expect(markup).toContain('aria-label="Overview"');
+    expect(markup).toContain('>Home</button>');
     expect(markup).toContain('aria-label="Dependencies"');
     expect(markup).toContain('>Deps</button>');
     expect(markup).toContain('title="Architecture"');

@@ -405,7 +405,7 @@ export function SidebarNavigation({
 }
 
 const sidebarRoutes = [
-  { ariaLabel: 'Overview', label: 'Overview', route: 'overview' },
+  { ariaLabel: 'Overview', label: 'Home', route: 'overview' },
   { ariaLabel: 'Architecture', label: 'Arch', route: 'architecture' },
   { ariaLabel: 'Knowledge', label: 'Know', route: 'knowledge' },
   { ariaLabel: 'Dependencies', label: 'Deps', route: 'dependencies' },
