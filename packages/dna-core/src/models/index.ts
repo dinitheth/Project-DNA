@@ -121,3 +121,38 @@ export type { DNADiff, EntityDiff } from './dna-diff.js';
 
 export { RepositoryStorySchema } from './repository-story.js';
 export type { RepositoryStory } from './repository-story.js';
+
+export {
+  ImpactTargetSchema,
+  ImpactOptionsSchema,
+  ImpactRelationshipTypeSchema,
+  ImpactRelationshipSchema,
+  ImpactNodeSchema,
+  ImpactPathSchema,
+  ImpactEvidenceReasonSchema,
+  ImpactEvidenceSchema,
+  ImpactScoreComponentKindSchema,
+  ImpactScoreComponentSchema,
+  ImpactScoreSchema,
+  ImpactTruncationKindSchema,
+  ImpactTruncationSchema,
+  ImpactBoundsSchema,
+  ImpactSemanticEffectsSchema,
+  ImpactResultSchema,
+  DEFAULT_IMPACT_BOUNDS,
+  HARD_IMPACT_BOUNDS,
+} from './impact.js';
+export type {
+  ImpactTarget,
+  ImpactOptions,
+  ImpactRelationship,
+  ImpactNode,
+  ImpactPath,
+  ImpactEvidence,
+  ImpactScoreComponent,
+  ImpactScore,
+  ImpactTruncation,
+  ImpactBounds,
+  ImpactSemanticEffects,
+  ImpactResult,
+} from './impact.js';
