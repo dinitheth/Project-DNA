@@ -4,6 +4,16 @@ export * from './models/index.js';
 // ─── Engine Interfaces ─────────────────────────────────────────────
 export * from './interfaces/index.js';
 
+// ─── Shared Graph Primitives ───────────────────────────────────────
+export { compareOrdinalStrings, traverseDependencyGraph } from './graph/dependency-traversal.js';
+export type {
+  DependencyTraversalDirection,
+  DependencyTraversalNode,
+  DependencyTraversalOptions,
+  DependencyTraversalRequest,
+  DependencyTraversalResult,
+} from './graph/dependency-traversal.js';
+
 // ─── Orchestrator ──────────────────────────────────────────────────
 export { DNAOrchestrator } from './orchestrator/dna-orchestrator.js';
 export type {

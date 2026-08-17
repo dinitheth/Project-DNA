@@ -13,6 +13,7 @@ import {
   type Logger,
   type Result,
 } from '@project-dna/shared';
+import { traverseDependencyGraph } from '../graph/dependency-traversal.js';
 import type { IArchitectureEngine } from '../interfaces/architecture-engine.interface.js';
 import type { FileInput, IAstEngine } from '../interfaces/ast-engine.interface.js';
 import type { IDependencyEngine } from '../interfaces/dependency-engine.interface.js';
@@ -501,25 +502,22 @@ function calculateDirtyPaths(
   }
 
   const dirty = new Set(changedPaths.map((filePath) => relativePathKey(rootPath, filePath)));
-  const queue = [...dirty].sort();
-  for (let index = 0; index < queue.length; index++) {
-    const current = queue[index];
-    if (!current) continue;
-    const related = [
-      ...previous.graph.getDependents(current),
-      ...previous.graph.getDependencies(current),
-      ...currentGraph.getDependents(current),
-      ...currentGraph.getDependencies(current),
-    ]
-      .filter((item) => !item.startsWith('external:'))
-      .sort();
-    for (const path of related) {
-      const normalized = normalizeRelativePath(path);
-      if (dirty.has(normalized)) continue;
-      dirty.add(normalized);
-      queue.push(normalized);
-    }
-  }
+  const traversalFileIds = new Set([
+    ...previous.graph.getNodesByKind('file'),
+    ...currentGraph.getNodesByKind('file'),
+  ]);
+  const traversal = traverseDependencyGraph({
+    graphs: [previous.graph, currentGraph],
+    startIds: [...dirty],
+    options: {
+      direction: 'connected',
+      maxDepth: traversalFileIds.size,
+      maxEntities: Math.max(1, traversalFileIds.size),
+      missingStartNode: 'ignore',
+    },
+  });
+  if (!traversal.ok) throw traversal.error;
+  for (const node of traversal.value.nodes) dirty.add(normalizeRelativePath(node.id));
   return [...dirty].filter((filePath) => currentFilePaths.has(filePath)).sort();
 }
 
