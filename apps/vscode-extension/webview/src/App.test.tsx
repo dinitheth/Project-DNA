@@ -40,15 +40,15 @@ describe('webview accessibility semantics', () => {
     expect(onNavigate).toHaveBeenCalledWith('architecture');
   });
 
-  it('adapts its grid without shrinking labels at narrow sidebar widths', () => {
+  it('keeps every route in one compact navigation row', () => {
     const markup = renderToStaticMarkup(
       <SidebarNavigation activeRoute="overview" onNavigate={() => undefined} />,
     );
 
-    expect(markup).toContain('grid-cols-1');
-    expect(markup).toContain('min-[190px]:grid-cols-2');
-    expect(markup).toContain('min-[280px]:grid-cols-3');
-    expect(markup).toContain('min-[480px]:grid-cols-5');
+    expect(markup).toContain('grid-cols-5');
+    expect(markup).not.toContain('min-[190px]:grid-cols-2');
+    expect(markup).toContain('whitespace-nowrap');
+    expect(markup).toContain('text-ellipsis');
     expect(markup).toContain('min-h-8');
     expect(markup).toContain('min-w-0');
   });

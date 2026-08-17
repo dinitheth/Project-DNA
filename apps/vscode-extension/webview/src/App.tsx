@@ -389,7 +389,7 @@ export function SidebarNavigation({
 }) {
   return (
     <nav aria-label="Project DNA views">
-      <div className="grid grid-cols-1 gap-1 rounded border border-dna-border bg-dna-surface p-1 min-[190px]:grid-cols-2 min-[280px]:grid-cols-3 min-[480px]:grid-cols-5">
+      <div className="grid grid-cols-5 gap-1 rounded border border-dna-border bg-dna-surface p-1">
         {sidebarRoutes.map(({ ariaLabel, label, route }) => (
           <RouteButton
             active={activeRoute === route}
@@ -427,7 +427,7 @@ function RouteButton({
     <button
       aria-label={ariaLabel}
       aria-current={active ? 'page' : undefined}
-      className={`min-h-8 min-w-0 rounded px-1.5 py-1 text-center text-xs font-medium capitalize leading-4 transition-colors focus-visible:z-10 ${active ? 'bg-dna-active text-dna-foreground' : 'text-dna-muted hover:bg-dna-surface-hover hover:text-dna-foreground'}`}
+      className={`min-h-8 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap rounded px-1 py-1 text-center text-xs font-medium capitalize leading-4 transition-colors focus-visible:z-10 ${active ? 'bg-dna-active text-dna-foreground' : 'text-dna-muted hover:bg-dna-surface-hover hover:text-dna-foreground'}`}
       onClick={onClick}
       type="button"
       title={ariaLabel}
