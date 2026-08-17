@@ -277,12 +277,6 @@ export function WorkspaceHeader({
       <h1 className="truncate text-sm font-semibold leading-5" title={workspaceName}>
         {workspaceName}
       </h1>
-      <p
-        className="truncate text-xs leading-4 text-dna-muted"
-        title={workspaceRoot ?? 'No repository context'}
-      >
-        {workspaceRoot ?? 'No repository context'}
-      </p>
     </div>
   );
 }
