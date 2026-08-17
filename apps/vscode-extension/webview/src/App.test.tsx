@@ -8,9 +8,11 @@ describe('webview accessibility semantics', () => {
       <SidebarNavigation activeRoute="architecture" onNavigate={() => undefined} />,
     );
 
-    expect(markup.match(/aria-current="page"/gu)).toHaveLength(1);
-    expect(markup).toMatch(/aria-current="page"[^>]*>architecture<\/button>/u);
-    expect(markup).not.toMatch(/aria-current="page"[^>]*>overview<\/button>/u);
+    const currentButtons = markup.match(/<button[^>]*aria-current="page"[^>]*>.*?<\/button>/gu);
+    expect(currentButtons).toHaveLength(1);
+    expect(currentButtons?.[0]).toContain('aria-label="Architecture"');
+    expect(currentButtons?.[0]).toContain('>Arch</button>');
+    expect(currentButtons?.[0]).not.toContain('aria-label="Overview"');
   });
 
   it('keeps every route keyboard-accessible through native buttons', () => {
@@ -20,6 +22,9 @@ describe('webview accessibility semantics', () => {
 
     expect(markup.match(/<button/gu)).toHaveLength(5);
     expect(markup.match(/type="button"/gu)).toHaveLength(5);
+    expect(markup).toContain('aria-label="Dependencies"');
+    expect(markup).toContain('>Deps</button>');
+    expect(markup).toContain('title="Architecture"');
     expect(markup).not.toContain('tabindex="-1"');
   });
 
