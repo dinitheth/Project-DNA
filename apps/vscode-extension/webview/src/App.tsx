@@ -274,8 +274,7 @@ export function WorkspaceHeader({
 
   return (
     <div aria-label="Workspace context" className="mb-3 min-w-0">
-      <p className="text-xs font-semibold uppercase tracking-normal text-dna-muted">Project DNA</p>
-      <h1 className="mt-0.5 truncate text-sm font-semibold leading-5" title={workspaceName}>
+      <h1 className="truncate text-sm font-semibold leading-5" title={workspaceName}>
         {workspaceName}
       </h1>
       <p

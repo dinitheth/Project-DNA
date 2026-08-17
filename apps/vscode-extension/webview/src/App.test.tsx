@@ -60,7 +60,8 @@ describe('webview accessibility semantics', () => {
       <WorkspaceHeader repositoryName="Project DNA" workspaceRoot={'C:\\work\\project-dna'} />,
     );
 
-    expect(markup).toContain('Project DNA');
+    expect(markup).toMatch(/<h1[^>]*>Project DNA<\/h1>/u);
+    expect(markup).not.toMatch(/<p[^>]*>Project DNA<\/p>/u);
     expect(markup).toContain('C:\\work\\project-dna');
     expect(markup).not.toContain('version');
   });
