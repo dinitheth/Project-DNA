@@ -154,6 +154,7 @@ export function createVersionManifest(input: {
   readonly versionKey: string;
   readonly previousVersion: number | null;
   readonly normalizedRootPath: string;
+  readonly requiredNamespaces?: readonly string[];
 }): VersionManifest {
   return VersionManifestSchema.parse({
     formatVersion: PERSISTED_VERSION_FORMAT,
@@ -162,7 +163,7 @@ export function createVersionManifest(input: {
     version: input.dna.version,
     versionKey: input.versionKey,
     previousVersion: input.previousVersion,
-    requiredNamespaces: [...VERSION_RECORD_NAMESPACES],
+    requiredNamespaces: [...(input.requiredNamespaces ?? VERSION_RECORD_NAMESPACES)],
     aggregateId: input.dna.id,
     snapshotId: input.snapshot.id,
     analyzedAt: input.dna.analyzedAt,

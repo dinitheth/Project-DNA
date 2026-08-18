@@ -272,6 +272,10 @@ export class PersistedAnalysisRecoveryManager {
         versionKey: selected.versionKey,
         previousVersion,
         normalizedRootPath,
+        requiredNamespaces:
+          selected.collections.risks === null
+            ? LEGACY_VERSION_RECORD_NAMESPACES
+            : VERSION_RECORD_NAMESPACES,
       }),
     };
   }
