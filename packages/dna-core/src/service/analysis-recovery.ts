@@ -19,6 +19,8 @@ import {
   parseVersionKey,
   parseVersionManifest,
   validatePersistedAnalysis,
+  isSupportedNamespaceList,
+  LEGACY_VERSION_RECORD_NAMESPACES,
   type LatestAnalysisRecord,
   type ValidatedPersistedAnalysis,
   type VersionManifest,
@@ -134,7 +136,10 @@ export class PersistedAnalysisRecoveryManager {
         }
 
         const metadataEvidence = await this.readVersionMetadata(versionKey);
-        const requiredRecordsExist = await this.requiredVersionRecordsExist(versionKey);
+        const requiredRecordsExist = await this.requiredVersionRecordsExist(
+          versionKey,
+          metadataEvidence,
+        );
         const metadataEvaluation = this.evaluateMetadata({
           repositoryId: input.repositoryId,
           normalizedRootPath: input.normalizedRootPath,
@@ -306,8 +311,22 @@ export class PersistedAnalysisRecoveryManager {
     ]);
   }
 
-  private async requiredVersionRecordsExist(versionKey: string): Promise<boolean> {
-    for (const namespace of VERSION_RECORD_NAMESPACES) {
+  private async requiredVersionRecordsExist(
+    versionKey: string,
+    metadataEvidence: readonly StoredEvidence[],
+  ): Promise<boolean> {
+    const manifestRecord = metadataEvidence.find(
+      (record) => record.namespace === STORAGE_NAMESPACES.versionManifest,
+    );
+    let requiredNamespaces: readonly string[] = LEGACY_VERSION_RECORD_NAMESPACES;
+    if (manifestRecord?.status === 'loaded') {
+      try {
+        requiredNamespaces = parseVersionManifest(manifestRecord.value).requiredNamespaces;
+      } catch {
+        requiredNamespaces = VERSION_RECORD_NAMESPACES;
+      }
+    }
+    for (const namespace of requiredNamespaces) {
       const exists = await this.storage.exists(namespace, versionKey);
       if (isErr(exists)) throw exists.error;
       if (!exists.value) return false;
@@ -446,11 +465,28 @@ export class PersistedAnalysisRecoveryManager {
     if (input.evidence.some((record) => record.status === 'unreadable')) {
       return { kind: 'quarantine', reason: 'Unreadable record' };
     }
+    const manifestValue = input.evidence.find(
+      (record) => record.namespace === STORAGE_NAMESPACES.versionManifest,
+    );
+    let requiredNamespaces: readonly string[] = LEGACY_VERSION_RECORD_NAMESPACES;
+    if (manifestValue?.status === 'loaded') {
+      try {
+        requiredNamespaces = parseVersionManifest(manifestValue.value).requiredNamespaces;
+      } catch (error) {
+        return { kind: 'quarantine', reason: errorMessage(error) };
+      }
+    }
+    const requiredNamespaceSet = new Set<string>(requiredNamespaces);
     if (
-      input.evidence.some(
-        (record) =>
-          record.namespace !== STORAGE_NAMESPACES.versionManifest && record.status === 'missing',
-      )
+      input.evidence.some((record) => {
+        if (
+          record.status !== 'missing' ||
+          record.namespace === STORAGE_NAMESPACES.versionManifest
+        ) {
+          return false;
+        }
+        return requiredNamespaceSet.has(record.namespace);
+      })
     ) {
       return { kind: 'cleanup' };
     }
@@ -490,6 +526,7 @@ export class PersistedAnalysisRecoveryManager {
         domains: requiredValue(values, STORAGE_NAMESPACES.domains),
         capabilities: requiredValue(values, STORAGE_NAMESPACES.capabilities),
         knowledge: requiredValue(values, STORAGE_NAMESPACES.knowledge),
+        risks: values.get(STORAGE_NAMESPACES.risks) ?? null,
         dependencyGraph: requiredValue(values, STORAGE_NAMESPACES.dependencyGraph),
         dnaGraph: requiredValue(values, STORAGE_NAMESPACES.dnaGraph),
         snapshot: requiredValue(values, STORAGE_NAMESPACES.snapshots),
@@ -824,10 +861,7 @@ function requiredValue(values: ReadonlyMap<string, unknown>, namespace: string):
 }
 
 function assertRecoveryNamespaces(namespaces: readonly string[]): void {
-  if (
-    namespaces.length !== VERSION_RECORD_NAMESPACES.length ||
-    namespaces.some((namespace, index) => namespace !== VERSION_RECORD_NAMESPACES[index])
-  ) {
+  if (!isSupportedNamespaceList(namespaces)) {
     throw new Error('Version manifest contains an invalid required namespace list');
   }
 }

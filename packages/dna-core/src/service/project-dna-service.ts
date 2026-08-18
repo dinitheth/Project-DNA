@@ -47,6 +47,7 @@ import type { RepositoryHealth } from '../models/repository-health.js';
 import type { RepositoryProfile } from '../models/repository-profile.js';
 import type { RepositoryStory } from '../models/repository-story.js';
 import type { RiskAssessment } from '../models/risk-assessment.js';
+import type { RiskNode } from '../models/risk-node.js';
 import {
   AnalysisPerformanceStages,
   measureAnalysisPerformance,
@@ -499,6 +500,7 @@ export class ProjectDNAService implements IProjectDNAService {
         domains: synthesis.value.domains,
         capabilities: synthesis.value.capabilities,
         knowledge: analysis.value.knowledge.nodes,
+        risks: analysis.value.knowledge.risks,
         dependencyGraph: analysis.value.graph,
         dnaGraph: synthesis.value.dnaGraph,
       };
@@ -620,6 +622,15 @@ export class ProjectDNAService implements IProjectDNAService {
     const nodes = this.collections.knowledge;
     return Ok(limit === undefined ? [...nodes] : nodes.slice(0, Math.max(0, limit)));
   }
+  async getRiskNodes(): Promise<Result<RiskNode[]>> {
+    if (!this.collections) return Err(new Error('No Project DNA collections are currently loaded'));
+    if (this.collections.risks === null) {
+      return Err(
+        new Error('Complete risk observations are unavailable for this persisted version'),
+      );
+    }
+    return Ok([...this.collections.risks]);
+  }
   async getEntities(filter: EntityFilter = {}): Promise<Result<DNAObject[]>> {
     if (!this.collections) return Err(new Error('No Project DNA collections are currently loaded'));
     let entities = this.collections.entities.filter(
@@ -709,6 +720,7 @@ export class ProjectDNAService implements IProjectDNAService {
       [STORAGE_NAMESPACES.domains, versionKey, collections.domains],
       [STORAGE_NAMESPACES.capabilities, versionKey, collections.capabilities],
       [STORAGE_NAMESPACES.knowledge, versionKey, collections.knowledge],
+      [STORAGE_NAMESPACES.risks, versionKey, collections.risks],
       [STORAGE_NAMESPACES.dependencyGraph, versionKey, collections.dependencyGraph.toJSON()],
       [STORAGE_NAMESPACES.dnaGraph, versionKey, collections.dnaGraph.toJSON()],
       [STORAGE_NAMESPACES.snapshots, versionKey, snapshot],

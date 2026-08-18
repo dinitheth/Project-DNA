@@ -178,6 +178,32 @@ describe('ProjectDNAService integration', () => {
     expect(isErr(await service.analyze('C:/cancelled', controller.signal))).toBe(true);
   });
 
+  it('retains complete risk observations across persistence and restore', async () => {
+    const root = await fixtureRepository();
+    const storageDirectory = await mkdtemp(path.join(tmpdir(), 'project-dna-risks-'));
+    roots.push(storageDirectory);
+    const storagePath = path.join(storageDirectory, 'project-dna.sqlite');
+    const firstContainer = createContainer({ logger: createSilentLogger(), storagePath });
+    const firstService = firstContainer.resolve<IProjectDNAService>(TOKENS.ProjectDNAService);
+    const analyzed = await firstService.analyze(root);
+    if (isErr(analyzed)) throw analyzed.error;
+    const original = await firstService.getRiskNodes();
+    if (isErr(original)) throw original.error;
+    expect(original.value.length).toBe(analyzed.value.riskCount);
+    expect(original.value.every((risk) => risk.id && risk.description)).toBe(true);
+    await firstService.dispose();
+
+    const restoredContainer = createContainer({ logger: createSilentLogger(), storagePath });
+    const restoredService = restoredContainer.resolve<IProjectDNAService>(TOKENS.ProjectDNAService);
+    const restored = await restoredService.restore(root);
+    if (isErr(restored)) throw restored.error;
+    expect(restored.value?.version).toBe(analyzed.value.version);
+    const restoredRisks = await restoredService.getRiskNodes();
+    if (isErr(restoredRisks)) throw restoredRisks.error;
+    expect(restoredRisks.value).toEqual(original.value);
+    await restoredService.dispose();
+  }, 30_000);
+
   it('automatically coalesces watcher bursts and ignores duplicate sequences', async () => {
     const root = await fixtureRepository();
     const container = createContainer(createSilentLogger());
@@ -865,7 +891,7 @@ describe('ProjectDNAService integration', () => {
     if (isErr(latest)) throw latest.error;
     expect(rootIndex.value).toBe(repositoryId);
     expect(latest.value).toEqual({ version: 1 });
-    expect(await versionRows(storagePath, versionKey)).toHaveLength(8);
+    expect(await versionRows(storagePath, versionKey)).toHaveLength(9);
     await service.dispose();
   }, 20_000);
 
@@ -1163,7 +1189,7 @@ describe('ProjectDNAService integration', () => {
     const preserved = await storage.exists('project-dna:entities', fixture.versionKey);
     if (isErr(preserved)) throw preserved.error;
     expect(preserved.value).toBe(true);
-    expect(await versionRows(fixture.storagePath, fixture.versionKey)).toHaveLength(9);
+    expect(await versionRows(fixture.storagePath, fixture.versionKey)).toHaveLength(10);
     await service.dispose();
   }, 20_000);
 
@@ -1351,6 +1377,7 @@ describe('ProjectDNAService integration', () => {
       'project-dna:domains': 1,
       'project-dna:capabilities': 1,
       'project-dna:knowledge': 1,
+      'project-dna:risks': 1,
       'project-dna:dependency-graph': 1,
       'project-dna:dna-graph': 1,
       'project-dna:snapshots': 1,

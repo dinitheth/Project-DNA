@@ -9,6 +9,8 @@ import {
   createProjectDnaSnapshotMetrics,
 } from '../models/evolution-snapshot.js';
 import { KnowledgeNodeSchema, type KnowledgeNode } from '../models/knowledge-node.js';
+import { RiskNodeSchema, type RiskNode } from '../models/risk-node.js';
+import { createRiskAssessment } from '../models/risk-assessment.js';
 import { ProjectDNASchema, type ProjectDNA } from '../models/project-dna.js';
 import { RepositoryGraph } from '../models/repository-graph.js';
 import { createComplexityProfile } from '../models/complexity-profile.js';
@@ -23,6 +25,7 @@ export const STORAGE_NAMESPACES = {
   domains: 'project-dna:domains',
   capabilities: 'project-dna:capabilities',
   knowledge: 'project-dna:knowledge',
+  risks: 'project-dna:risks',
   dependencyGraph: 'project-dna:dependency-graph',
   dnaGraph: 'project-dna:dna-graph',
   snapshots: 'project-dna:snapshots',
@@ -30,7 +33,7 @@ export const STORAGE_NAMESPACES = {
   quarantine: 'project-dna:quarantine',
 } as const;
 
-export const VERSION_RECORD_NAMESPACES = [
+export const LEGACY_VERSION_RECORD_NAMESPACES = [
   STORAGE_NAMESPACES.aggregate,
   STORAGE_NAMESPACES.entities,
   STORAGE_NAMESPACES.domains,
@@ -39,6 +42,12 @@ export const VERSION_RECORD_NAMESPACES = [
   STORAGE_NAMESPACES.dependencyGraph,
   STORAGE_NAMESPACES.dnaGraph,
   STORAGE_NAMESPACES.snapshots,
+] as const;
+
+export const VERSION_RECORD_NAMESPACES = [
+  ...LEGACY_VERSION_RECORD_NAMESPACES.slice(0, 5),
+  STORAGE_NAMESPACES.risks,
+  ...LEGACY_VERSION_RECORD_NAMESPACES.slice(5),
 ] as const;
 
 export const PERSISTED_VERSION_FORMAT = 1;
@@ -89,6 +98,7 @@ export interface PersistedCollections {
   readonly domains: BusinessDomain[];
   readonly capabilities: Capability[];
   readonly knowledge: KnowledgeNode[];
+  readonly risks: RiskNode[] | null;
   readonly dependencyGraph: RepositoryGraph;
   readonly dnaGraph: DNAGraph;
 }
@@ -103,6 +113,7 @@ interface PersistedAnalysisInput {
   readonly domains: unknown;
   readonly capabilities: unknown;
   readonly knowledge: unknown;
+  readonly risks: unknown | null;
   readonly dependencyGraph: unknown;
   readonly dnaGraph: unknown;
   readonly snapshot: unknown;
@@ -182,6 +193,7 @@ export function validatePersistedAnalysis(
     domains: BusinessDomainSchema.array().parse(input.domains),
     capabilities: CapabilitySchema.array().parse(input.capabilities),
     knowledge: KnowledgeNodeSchema.array().parse(input.knowledge),
+    risks: input.risks === null ? null : RiskNodeSchema.array().parse(input.risks),
     dependencyGraph: RepositoryGraph.fromJSON(asSerializedGraph(input.dependencyGraph)),
     dnaGraph: DNAGraph.fromJSON(asSerializedGraph(input.dnaGraph)),
   };
@@ -255,7 +267,7 @@ function validateSemanticIntegrity(
   snapshot: EvolutionSnapshot,
   hadAnalysisCoverage: boolean,
 ): void {
-  const { entities, domains, capabilities, knowledge, dependencyGraph } = collections;
+  const { entities, domains, capabilities, knowledge, risks, dependencyGraph } = collections;
   const entityIds = new Set<string>();
   const entitiesById = new Map<string, DNAObject>();
   for (const entity of entities) {
@@ -357,10 +369,32 @@ function validateSemanticIntegrity(
     }
   }
 
+  if (risks !== null) validateRiskObservations(dna, entities, risks);
+
   validateDependencyGraph(entities, dependencyGraph);
   validateDnaGraph(dna, collections);
   validateAggregateSemantics(dna, collections, hadAnalysisCoverage);
   validateSnapshot(dna, snapshot);
+}
+
+function validateRiskObservations(
+  dna: ProjectDNA,
+  entities: readonly DNAObject[],
+  risks: readonly RiskNode[],
+): void {
+  const riskIds = uniqueIds(risks, 'risk observation');
+  const entityRiskIds = new Set(entities.flatMap((entity) => entity.risks));
+  if (riskIds.size !== entityRiskIds.size || [...riskIds].some((id) => !entityRiskIds.has(id))) {
+    throw new Error('Persisted risk observations do not match entity risk references');
+  }
+  for (const risk of risks) {
+    assertUniqueStrings(risk.affectedEntities, `Affected entities for risk ${risk.id}`);
+  }
+  assertDeepEqual(
+    createRiskAssessment(risks, dna.risks.computedAt),
+    dna.risks,
+    'Repository risk assessment',
+  );
 }
 
 function validateDependencyGraph(entities: readonly DNAObject[], graph: RepositoryGraph): void {
@@ -566,12 +600,17 @@ function hasOwnProperty(value: unknown, key: string): boolean {
 }
 
 function assertNamespaceList(actual: readonly string[]): void {
-  if (
-    actual.length !== VERSION_RECORD_NAMESPACES.length ||
-    actual.some((namespace, index) => namespace !== VERSION_RECORD_NAMESPACES[index])
-  ) {
+  if (!isSupportedNamespaceList(actual)) {
     throw new Error('Version manifest contains an invalid required namespace list');
   }
+}
+
+export function isSupportedNamespaceList(actual: readonly string[]): boolean {
+  return [LEGACY_VERSION_RECORD_NAMESPACES, VERSION_RECORD_NAMESPACES].some(
+    (expected) =>
+      actual.length === expected.length &&
+      actual.every((namespace, index) => namespace === expected[index]),
+  );
 }
 
 function assertEqual<T>(actual: T, expected: T, label: string): void {

@@ -18,6 +18,7 @@ import type { RepositoryHealth } from '../models/repository-health.js';
 import type { RepositoryProfile } from '../models/repository-profile.js';
 import type { RepositoryStory } from '../models/repository-story.js';
 import type { RiskAssessment } from '../models/risk-assessment.js';
+import type { RiskNode } from '../models/risk-node.js';
 import type { CriticalComponent } from '../models/critical-component.js';
 import type { BusinessDomain } from '../models/business-domain.js';
 import type { Capability } from '../models/capability.js';
@@ -83,6 +84,8 @@ export interface IProjectDNAQuery {
   getDomains(): Promise<Result<BusinessDomain[]>>;
   getCapabilities(): Promise<Result<Capability[]>>;
   getKnowledge(limit?: number): Promise<Result<KnowledgeNode[]>>;
+  /** Complete deterministic risk observations for the current analysis version. */
+  getRiskNodes(): Promise<Result<RiskNode[]>>;
   getEntities(filter?: EntityFilter): Promise<Result<DNAObject[]>>;
   getEntity(id: string): Promise<Result<DNAObject | null>>;
 
