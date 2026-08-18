@@ -154,6 +154,23 @@ describe('ImpactEngine structural file impact', () => {
     expectFailure(graph, { kind: 'file', path: 'A.ts' }, 'cancelled', controller.signal);
   });
 
+  it('terminates when cancellation arrives during traversal expansion', () => {
+    const graph = graphWithFiles(['A.ts', 'B.ts', 'C.ts', 'D.ts']);
+    connect(graph, 'A.ts', 'B.ts');
+    connect(graph, 'B.ts', 'C.ts');
+    connect(graph, 'C.ts', 'D.ts');
+    let checks = 0;
+    const signal = {
+      get aborted() {
+        checks += 1;
+        return checks > 5;
+      },
+    } as AbortSignal;
+
+    expectFailure(graph, { kind: 'file', path: 'D.ts' }, 'cancelled', signal);
+    expect(checks).toBeGreaterThan(5);
+  });
+
   it('accepts canonical file entity IDs and keeps result ordering stable', () => {
     const graph = graphWithFiles(['A.ts', 'B.ts']);
     connect(graph, 'A.ts', 'B.ts');
