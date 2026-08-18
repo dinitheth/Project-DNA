@@ -100,19 +100,16 @@ describe('ImpactEngine explainable blast-radius scoring', () => {
 
   it('uses distinct domains, canonical risks, and unique layer crossings', () => {
     const semantic = semanticFixture();
-    const result = score(
-      chainGraph(),
-      {
-        ...semantic,
-        domains: [...semantic.domains!, { ...semantic.domains![0]!, entityIds: ['file:B.ts'] }],
-        risks: [
-          ...semantic.risks!,
-          risk('risk:medium:A', 'medium', ['A.ts']),
-          risk('risk:low:C', 'low', ['C.ts']),
-        ],
-      },
-      'C.ts',
-    );
+    const enrichedSemantic: ImpactSemanticInput = {
+      ...semantic,
+      domains: [...semantic.domains!, { ...semantic.domains![0]!, entityIds: ['file:B.ts'] }],
+      risks: [
+        ...semantic.risks!,
+        risk('risk:medium:A', 'medium', ['A.ts']),
+        risk('risk:low:C', 'low', ['C.ts']),
+      ],
+    };
+    const result = score(chainGraph(), enrichedSemantic, 'C.ts');
 
     expect(new Set(result.semanticEffects.domains.map((item) => item.id)).size).toBe(
       result.semanticEffects.domains.length,
@@ -120,6 +117,19 @@ describe('ImpactEngine explainable blast-radius scoring', () => {
     expect(result.semanticEffects.domains).toHaveLength(2);
     expect(component(result, 'risk-exposure').rawInput).toBe(13);
     expect(result.semanticEffects.architecture.boundaryCrossings).toHaveLength(1);
+
+    const duplicateDomain = { ...semantic.domains![0]!, entityIds: ['file:B.ts'] };
+    const reordered = score(
+      chainGraph(),
+      {
+        ...enrichedSemantic,
+        domains: [duplicateDomain, semantic.domains![1]!, semantic.domains![0]!],
+      },
+      'C.ts',
+    );
+    expect(reordered.semanticEffects).toEqual(result.semanticEffects);
+    expect(reordered.score).toEqual(result.score);
+    expect(reordered.evidence).toEqual(result.evidence);
   });
 
   it('marks missing inputs unavailable and bounded observations partial', () => {

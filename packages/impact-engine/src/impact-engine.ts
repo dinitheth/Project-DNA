@@ -513,7 +513,11 @@ function enrichCollection<T extends { readonly id: string }>(
   const matched = [...values]
     .map((value) => ({ value, entityId: match(value) }))
     .filter((item): item is { value: T; entityId: string } => item.entityId !== undefined)
-    .sort((left, right) => compareIds(left.value.id, right.value.id));
+    .sort(
+      (left, right) =>
+        compareIds(left.value.id, right.value.id) ||
+        compareIds(canonicalValueKey(left.value), canonicalValueKey(right.value)),
+    );
   const unique = matched.filter(
     (item, index, items) => index === 0 || item.value.id !== items[index - 1]!.value.id,
   );
@@ -572,6 +576,7 @@ const SCORE_WEIGHTS = {
   'architecture-boundaries': 0.1,
 } as const;
 
+// Each component is normalized independently, then contributes normalized * weight * 100.
 function calculateScore(input: ScoreInput): ImpactScore {
   const structuralPartial = input.truncations.some(
     (truncation) => truncation.kind === 'max-depth' || truncation.kind === 'max-entities',
@@ -682,10 +687,12 @@ function evidenceIds(
 }
 
 function countNormalization(raw: number): number {
+  // Saturating count normalization: n / (n + 1), independent of repository size.
   return raw <= 0 ? 0 : raw / (raw + 1);
 }
 
 function probabilityNormalization(values: readonly number[]): number {
+  // Independent exposure accumulation: 1 - product(1 - bounded factor).
   return 1 - values.reduce((remaining, value) => remaining * (1 - clamp(value)), 1);
 }
 
@@ -699,6 +706,17 @@ function clamp(value: number): number {
 
 function round(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function canonicalValueKey(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return `[${value.map(canonicalValueKey).join(',')}]`;
+  if (typeof value !== 'object') return JSON.stringify(value) ?? String(value);
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort(compareIds)
+    .map((key) => `${JSON.stringify(key)}:${canonicalValueKey(record[key])}`)
+    .join(',')}}`;
 }
 
 function normalizePath(value: string): string {
