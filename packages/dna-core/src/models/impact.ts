@@ -130,6 +130,7 @@ export const ImpactEvidenceReasonSchema = z.enum([
   'capability-implementation',
   'critical-component',
   'risk-reference',
+  'architecture-layer-membership',
   'layer-boundary',
 ]);
 

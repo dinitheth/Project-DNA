@@ -4,13 +4,20 @@ import {
   ImpactResultSchema,
   ImpactTargetSchema,
   traverseDependencyGraph,
+  type ArchitectureDNA,
+  type BusinessDomain,
+  type Capability,
+  type CriticalComponent,
+  type DNAObject,
   type ImpactEvidence,
   type ImpactNode,
   type ImpactOptions,
   type ImpactPath,
   type ImpactResult,
+  type ImpactSemanticEffects,
   type ImpactScore,
   type ImpactTarget,
+  type RiskNode,
   type RepositoryGraph,
 } from '@project-dna/dna-core';
 
@@ -18,6 +25,16 @@ export interface ImpactEngineInput {
   readonly repositoryId: string;
   readonly analysisVersion: number;
   readonly graph: RepositoryGraph;
+  readonly semantic?: ImpactSemanticInput;
+}
+
+export interface ImpactSemanticInput {
+  readonly entities?: readonly DNAObject[];
+  readonly domains?: readonly BusinessDomain[];
+  readonly capabilities?: readonly Capability[];
+  readonly criticalComponents?: readonly CriticalComponent[];
+  readonly risks?: readonly RiskNode[];
+  readonly architecture?: ArchitectureDNA;
 }
 
 const SCORE_COMPONENT_KINDS = [
@@ -113,6 +130,13 @@ export class ImpactEngine {
         });
       }
 
+      const semantic = enrichSemanticImpact(
+        input.semantic,
+        new Set([targetNode.value.id, ...impacted.map((node) => node.id)]),
+        canonicalPaths,
+        parsedOptions.data.maxEntities,
+      );
+
       const result = ImpactResultSchema.safeParse({
         repositoryId: input.repositoryId,
         analysisVersion: input.analysisVersion,
@@ -122,16 +146,10 @@ export class ImpactEngine {
         minimumDepth:
           impacted.length > 0 ? Math.min(...impacted.map((node) => node.minimumDepth)) : null,
         canonicalPaths,
-        semanticEffects: {
-          domains: [],
-          capabilities: [],
-          criticalComponents: [],
-          risks: [],
-          architecture: { layers: [], boundaryCrossings: [] },
-        },
+        semanticEffects: semantic.effects,
         score: emptyScore(),
-        evidence,
-        warnings: [],
+        evidence: [...evidence, ...semantic.evidence],
+        warnings: semantic.warnings,
         complete: truncations.length === 0,
         truncations,
         appliedBounds: {
@@ -263,6 +281,206 @@ function toGraphId(entityId: string): string {
   return entityId.startsWith(FILE_ENTITY_PREFIX)
     ? entityId.slice(FILE_ENTITY_PREFIX.length)
     : entityId;
+}
+
+interface SemanticEnrichment {
+  readonly effects: ImpactSemanticEffects;
+  readonly evidence: ImpactEvidence[];
+  readonly warnings: string[];
+}
+
+function enrichSemanticImpact(
+  input: ImpactSemanticInput | undefined,
+  scope: ReadonlySet<string>,
+  canonicalPaths: readonly ImpactPath[],
+  maxEntities: number,
+): SemanticEnrichment {
+  const warnings: string[] = [];
+  const evidence: ImpactEvidence[] = [];
+  const entities = input?.entities;
+  const entityById = new Map((entities ?? []).map((entity) => [entity.id, entity]));
+  const pathByEntity = new Map(canonicalPaths.map((path) => [path.impactedEntityId, path]));
+
+  const domains = enrichCollection(
+    input?.domains,
+    'domains',
+    (domain) => [...domain.entityIds].sort().find((entityId) => scope.has(entityId)),
+    (domain, entityId) =>
+      semanticEvidence(
+        'domain-membership',
+        domain.id,
+        entityId!,
+        entityById,
+        pathByEntity,
+        domain.confidence,
+      ),
+    evidence,
+    warnings,
+    maxEntities,
+  );
+  const capabilities = enrichCollection(
+    input?.capabilities,
+    'capabilities',
+    (capability) => [...capability.implementedBy].sort().find((entityId) => scope.has(entityId)),
+    (capability, entityId) =>
+      semanticEvidence(
+        'capability-implementation',
+        capability.id,
+        entityId!,
+        entityById,
+        pathByEntity,
+        capability.confidence,
+      ),
+    evidence,
+    warnings,
+    maxEntities,
+  );
+  const criticalComponents = enrichCollection(
+    input?.criticalComponents,
+    'critical components',
+    (component) => (scope.has(component.entityId) ? component.entityId : undefined),
+    (component, entityId) =>
+      semanticEvidence(
+        'critical-component',
+        component.id,
+        entityId!,
+        entityById,
+        pathByEntity,
+        component.score,
+      ),
+    evidence,
+    warnings,
+    maxEntities,
+  );
+  const risks = enrichCollection(
+    input?.risks,
+    'risks',
+    (risk) =>
+      [...risk.affectedEntities]
+        .map(toFileEntityId)
+        .sort()
+        .find((entityId) => scope.has(entityId)),
+    (risk, entityId) =>
+      semanticEvidence(
+        'risk-reference',
+        risk.id,
+        entityId!,
+        entityById,
+        pathByEntity,
+        1,
+        normalizePath(toGraphId(entityId!)),
+      ),
+    evidence,
+    warnings,
+    maxEntities,
+  );
+
+  let layers: ArchitectureDNA['layers'] = [];
+  if (input?.architecture === undefined) {
+    warnings.push('Semantic enrichment incomplete: architecture layers unavailable');
+  } else if (entities === undefined) {
+    warnings.push('Semantic enrichment incomplete: entities unavailable for layer membership');
+  } else {
+    const layerNames = new Set(
+      entities
+        .filter((entity) => scope.has(entity.id) && entity.belongsToLayer !== null)
+        .map((entity) => entity.belongsToLayer as string),
+    );
+    layers = input.architecture.layers
+      .filter((layer) => layerNames.has(layer.name))
+      .sort((left, right) => compareIds(left.name, right.name))
+      .slice(0, maxEntities);
+    if (
+      input.architecture.layers.filter((layer) => layerNames.has(layer.name)).length > maxEntities
+    ) {
+      warnings.push(`Semantic enrichment truncated architecture layers to ${maxEntities}`);
+    }
+    for (const layer of layers) {
+      const entityId = [...entityById.values()]
+        .filter((entity) => scope.has(entity.id) && entity.belongsToLayer === layer.name)
+        .map((entity) => entity.id)
+        .sort(compareIds)[0];
+      if (entityId) {
+        evidence.push(
+          semanticEvidence(
+            'architecture-layer-membership',
+            layer.name,
+            entityId,
+            entityById,
+            pathByEntity,
+            input.architecture.confidence,
+          ),
+        );
+      }
+    }
+  }
+
+  return {
+    effects: {
+      domains,
+      capabilities,
+      criticalComponents,
+      risks,
+      architecture: { layers, boundaryCrossings: [] },
+    },
+    evidence,
+    warnings,
+  };
+}
+
+function enrichCollection<T extends { readonly id: string }>(
+  values: readonly T[] | undefined,
+  label: string,
+  match: (value: T) => string | undefined,
+  addEvidence: (value: T, entityId: string | undefined) => ImpactEvidence,
+  evidence: ImpactEvidence[],
+  warnings: string[],
+  maxEntities: number,
+): T[] {
+  if (values === undefined) {
+    warnings.push(`Semantic enrichment incomplete: ${label} unavailable`);
+    return [];
+  }
+  const matched = [...values]
+    .map((value) => ({ value, entityId: match(value) }))
+    .filter((item): item is { value: T; entityId: string } => item.entityId !== undefined)
+    .sort((left, right) => compareIds(left.value.id, right.value.id));
+  if (matched.length > maxEntities) {
+    warnings.push(`Semantic enrichment truncated ${label} to ${maxEntities}`);
+  }
+  for (const item of matched.slice(0, maxEntities)) {
+    evidence.push(addEvidence(item.value, item.entityId));
+  }
+  return matched.slice(0, maxEntities).map((item) => item.value);
+}
+
+function semanticEvidence(
+  reason: ImpactEvidence['reason'],
+  semanticId: string,
+  entityId: string,
+  entities: ReadonlyMap<string, DNAObject>,
+  paths: ReadonlyMap<string, ImpactPath>,
+  confidence: number,
+  fallbackSourcePath: string | null = null,
+): ImpactEvidence {
+  return {
+    id: `evidence:semantic:${reason}:${semanticId}:${entityId}`,
+    entityId,
+    reason,
+    path: paths.get(entityId) ?? null,
+    sourcePath: entities.get(entityId)?.path ?? fallbackSourcePath,
+    confidence,
+  };
+}
+
+function toFileEntityId(value: string): string {
+  return value.startsWith(FILE_ENTITY_PREFIX)
+    ? value
+    : `${FILE_ENTITY_PREFIX}${normalizePath(value)}`;
+}
+
+function compareIds(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function emptyScore(): ImpactScore {
