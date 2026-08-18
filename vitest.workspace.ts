@@ -7,6 +7,7 @@ export default defineWorkspace([
   'packages/dependency-engine',
   'packages/architecture-engine',
   'packages/dna-core',
+  'packages/impact-engine',
   'packages/dna-engine',
   'packages/knowledge-engine',
   'packages/software-intelligence-engine',
