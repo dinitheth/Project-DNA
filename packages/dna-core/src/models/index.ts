@@ -120,6 +120,21 @@ export type { EvolutionSnapshot, SnapshotTrigger } from './evolution-snapshot.js
 export { DNADiffSchema, EntityDiffSchema } from './dna-diff.js';
 export type { DNADiff, EntityDiff } from './dna-diff.js';
 
+export {
+  AnalysisStateNodeSchema,
+  AnalysisStateRelationshipSchema,
+  AnalysisStateViewSchema,
+  createAnalysisStateView,
+  createRepositoryGraphFromAnalysisState,
+  serializeAnalysisStateView,
+} from './analysis-state-view.js';
+export type {
+  AnalysisStateNode,
+  AnalysisStateRelationship,
+  AnalysisStateView,
+  AnalysisStateViewInput,
+} from './analysis-state-view.js';
+
 export { RepositoryStorySchema } from './repository-story.js';
 export type { RepositoryStory } from './repository-story.js';
 
