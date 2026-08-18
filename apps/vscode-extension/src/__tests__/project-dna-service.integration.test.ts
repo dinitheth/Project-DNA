@@ -228,7 +228,7 @@ describe('ProjectDNAService integration', () => {
 
   it('rejects an impact query when a newer analysis starts during calculation', async () => {
     const root = await fixtureRepository();
-    let service!: IProjectDNAService;
+    const serviceHolder: { value?: IProjectDNAService } = {};
     let refreshPromise: ReturnType<IProjectDNAService['refresh']> | undefined;
     const baseEngine = new ImpactEngine();
     const eventBusHolder: { value?: EventBus<DNAEventMap> } = {};
@@ -244,12 +244,14 @@ describe('ProjectDNAService integration', () => {
           observedAt: Date.now(),
           changes: [{ kind: 'modified', path: changedPath }],
         });
-        refreshPromise = service.refresh();
+        if (!serviceHolder.value) throw new Error('Missing test service');
+        refreshPromise = serviceHolder.value.refresh();
         return baseEngine.getImpact(input, target, options, signal);
       },
     };
     const container = createContainer({ logger: createSilentLogger(), impactEngine });
-    service = container.resolve<IProjectDNAService>(TOKENS.ProjectDNAService);
+    const service = container.resolve<IProjectDNAService>(TOKENS.ProjectDNAService);
+    serviceHolder.value = service;
     eventBusHolder.value = container.resolve<EventBus<DNAEventMap>>(TOKENS.EventBus);
     const analyzed = await service.analyze(root);
     if (isErr(analyzed)) throw analyzed.error;
