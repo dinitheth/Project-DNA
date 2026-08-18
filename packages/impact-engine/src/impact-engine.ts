@@ -65,6 +65,12 @@ export class ImpactEngine {
           ),
         );
       }
+      if (input.state.repositoryId !== input.repositoryId) {
+        return Err(new Error('Impact analysis state repository does not match the request'));
+      }
+      if (input.state.analysisVersion !== input.analysisVersion) {
+        return Err(new Error('Impact analysis state version does not match the request'));
+      }
 
       const graph = createRepositoryGraphFromAnalysisState(input.state);
       const resolvedTarget = resolveFileTarget(graph, parsedTarget.value);

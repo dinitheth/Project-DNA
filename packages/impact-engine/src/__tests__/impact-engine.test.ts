@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isErr } from '@project-dna/shared';
-import {
-  createAnalysisStateView,
-  RepositoryGraph,
-  type ImpactResult,
-} from '@project-dna/dna-core';
+import { createAnalysisStateView, RepositoryGraph, type ImpactResult } from '@project-dna/dna-core';
 import { ImpactEngine } from '../index.js';
 
 const engine = new ImpactEngine();

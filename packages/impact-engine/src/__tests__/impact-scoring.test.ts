@@ -242,6 +242,37 @@ describe('ImpactEngine explainable blast-radius scoring', () => {
     );
     expect(cancelled).toMatchObject({ ok: false, error: { message: 'Impact analysis cancelled' } });
   });
+
+  it('rejects shared state from another repository or analysis version', () => {
+    const graphValue = chainGraph();
+    const validState = state(graphValue);
+    expect(
+      engine.getImpact(
+        {
+          repositoryId: 'repo:other',
+          analysisVersion: 1,
+          state: validState,
+        },
+        { kind: 'file', path: 'C.ts' },
+      ),
+    ).toMatchObject({
+      ok: false,
+      error: { message: 'Impact analysis state repository does not match the request' },
+    });
+    expect(
+      engine.getImpact(
+        {
+          repositoryId: 'repo:score',
+          analysisVersion: 2,
+          state: validState,
+        },
+        { kind: 'file', path: 'C.ts' },
+      ),
+    ).toMatchObject({
+      ok: false,
+      error: { message: 'Impact analysis state version does not match the request' },
+    });
+  });
 });
 
 function score(

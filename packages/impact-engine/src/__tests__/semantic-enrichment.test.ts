@@ -98,7 +98,8 @@ describe('ImpactEngine semantic enrichment', () => {
 });
 
 function calculate(input: {
-  readonly semantic?: ReturnType<typeof semanticFixture> | Partial<ReturnType<typeof semanticFixture>>;
+  readonly semantic?:
+    ReturnType<typeof semanticFixture> | Partial<ReturnType<typeof semanticFixture>>;
   readonly graphOrder?: readonly string[];
   readonly options?: Parameters<ImpactEngine['getImpact']>[2];
 }) {
