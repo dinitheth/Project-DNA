@@ -27,6 +27,7 @@ const SCORE_COMPONENT_KINDS = [
   'risk-exposure',
   'architecture-boundaries',
 ] as const;
+const FILE_ENTITY_PREFIX = 'file:';
 
 /** Calculates bounded structural blast radius for canonical file graph nodes. */
 export class ImpactEngine {
@@ -84,7 +85,7 @@ export class ImpactEngine {
       const evidence: ImpactEvidence[] = [];
       for (const [index, node] of impacted.entries()) {
         if (signal?.aborted) return Err(new Error('Impact analysis cancelled'));
-        const path = buildCanonicalPath(targetId, node.id, traversalById);
+        const path = buildCanonicalPath(targetId, toGraphId(node.id), traversalById);
         if (!path.ok) return path;
         allCanonicalPaths.push(path.value);
         const reason = node.minimumDepth === 1 ? 'direct-dependent' : 'transitive-dependent';
@@ -99,7 +100,10 @@ export class ImpactEngine {
       }
 
       const canonicalPaths = allCanonicalPaths.slice(0, parsedOptions.data.maxEvidencePaths);
-      const truncations = [...traversal.value.truncations];
+      const truncations = traversal.value.truncations.map((truncation) => ({
+        ...truncation,
+        atEntityId: truncation.atEntityId === null ? null : toEntityId(truncation.atEntityId),
+      }));
       const firstOmittedPath = impacted[parsedOptions.data.maxEvidencePaths];
       if (firstOmittedPath) {
         truncations.push({
@@ -160,11 +164,13 @@ function parseTarget(target: ImpactTarget): Result<ImpactTarget> {
 
 function resolveFileTarget(graph: RepositoryGraph, target: ImpactTarget): Result<string> {
   const rawId = target.kind === 'file' ? target.path : target.id;
-  const direct = resolveDirectNode(graph, rawId);
+  const graphId = rawId.startsWith(FILE_ENTITY_PREFIX)
+    ? rawId.slice(FILE_ENTITY_PREFIX.length)
+    : rawId;
+  const direct = resolveDirectNode(graph, graphId);
   if (direct.ok) return direct;
 
-  const pathCandidates =
-    target.kind === 'entity' && rawId.startsWith('file:') ? [rawId.slice('file:'.length)] : [rawId];
+  const pathCandidates = [graphId];
   const normalizedCandidates = new Set(pathCandidates.map(normalizePath));
   const matches = graph
     .getNodesByKind('file')
@@ -204,7 +210,7 @@ function createImpactNode(
     return Err(new Error(`Impact graph node is not a supported file: ${id}`));
   }
   return Ok({
-    id,
+    id: toEntityId(id),
     kind: 'file',
     name: attributes.label,
     path: attributes.path ?? id,
@@ -238,7 +244,25 @@ function buildCanonicalPath(
   }
   const nodeIds = reverseNodeIds.reverse();
   const relationships = reverseRelationships.reverse();
-  return Ok({ impactedEntityId: impactedId, nodeIds, relationships });
+  return Ok({
+    impactedEntityId: toEntityId(impactedId),
+    nodeIds: nodeIds.map(toEntityId),
+    relationships: relationships.map((relationship) => ({
+      ...relationship,
+      dependentId: toEntityId(relationship.dependentId),
+      dependencyId: toEntityId(relationship.dependencyId),
+    })),
+  });
+}
+
+function toEntityId(graphId: string): string {
+  return graphId.startsWith(FILE_ENTITY_PREFIX) ? graphId : `${FILE_ENTITY_PREFIX}${graphId}`;
+}
+
+function toGraphId(entityId: string): string {
+  return entityId.startsWith(FILE_ENTITY_PREFIX)
+    ? entityId.slice(FILE_ENTITY_PREFIX.length)
+    : entityId;
 }
 
 function emptyScore(): ImpactScore {

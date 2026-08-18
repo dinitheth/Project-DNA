@@ -7,9 +7,9 @@ const engine = new ImpactEngine();
 
 describe('ImpactEngine structural file impact', () => {
   it('calculates a chain with direct and transitive dependents', () => {
-    const graph = graphWithFiles(['file:A.ts', 'file:B.ts', 'file:C.ts']);
-    connect(graph, 'file:A.ts', 'file:B.ts');
-    connect(graph, 'file:B.ts', 'file:C.ts', { type: 'type-import', isTypeOnly: true });
+    const graph = graphWithFiles(['A.ts', 'B.ts', 'C.ts']);
+    connect(graph, 'A.ts', 'B.ts');
+    connect(graph, 'B.ts', 'C.ts', { type: 'type-import', isTypeOnly: true });
 
     const result = impact(graph, { kind: 'file', path: 'C.ts' }, { maxEvidencePaths: 2 });
 
@@ -41,18 +41,18 @@ describe('ImpactEngine structural file impact', () => {
   });
 
   it('follows incoming edges for fan-out and fan-in', () => {
-    const fanOut = graphWithFiles(['file:A.ts', 'file:B.ts', 'file:C.ts', 'file:D.ts']);
-    connect(fanOut, 'file:A.ts', 'file:B.ts');
-    connect(fanOut, 'file:A.ts', 'file:C.ts');
-    connect(fanOut, 'file:A.ts', 'file:D.ts');
+    const fanOut = graphWithFiles(['A.ts', 'B.ts', 'C.ts', 'D.ts']);
+    connect(fanOut, 'A.ts', 'B.ts');
+    connect(fanOut, 'A.ts', 'C.ts');
+    connect(fanOut, 'A.ts', 'D.ts');
     expect(
       impact(fanOut, { kind: 'file', path: 'B.ts' }).directImpactedEntities.map((node) => node.id),
     ).toEqual(['file:A.ts']);
 
-    const fanIn = graphWithFiles(['file:A.ts', 'file:B.ts', 'file:C.ts', 'file:X.ts']);
-    connect(fanIn, 'file:A.ts', 'file:X.ts');
-    connect(fanIn, 'file:B.ts', 'file:X.ts');
-    connect(fanIn, 'file:C.ts', 'file:X.ts');
+    const fanIn = graphWithFiles(['A.ts', 'B.ts', 'C.ts', 'X.ts']);
+    connect(fanIn, 'A.ts', 'X.ts');
+    connect(fanIn, 'B.ts', 'X.ts');
+    connect(fanIn, 'C.ts', 'X.ts');
     expect(
       impact(fanIn, { kind: 'entity', id: 'file:X.ts' }).directImpactedEntities.map(
         (node) => node.id,
@@ -61,10 +61,10 @@ describe('ImpactEngine structural file impact', () => {
   });
 
   it('terminates cycles and never returns the target', () => {
-    const graph = graphWithFiles(['file:A.ts', 'file:B.ts', 'file:C.ts']);
-    connect(graph, 'file:A.ts', 'file:B.ts');
-    connect(graph, 'file:B.ts', 'file:C.ts');
-    connect(graph, 'file:C.ts', 'file:A.ts');
+    const graph = graphWithFiles(['A.ts', 'B.ts', 'C.ts']);
+    connect(graph, 'A.ts', 'B.ts');
+    connect(graph, 'B.ts', 'C.ts');
+    connect(graph, 'C.ts', 'A.ts');
 
     const result = impact(graph, { kind: 'file', path: 'A.ts' });
     expect(result.directImpactedEntities.map((node) => node.id)).toEqual(['file:C.ts']);
@@ -77,18 +77,18 @@ describe('ImpactEngine structural file impact', () => {
   });
 
   it('preserves merged relationship metadata and canonical ordering across insertion orders', () => {
-    const first = graphWithFiles(['file:D.ts', 'file:C.ts', 'file:B.ts', 'file:A.ts']);
-    const second = graphWithFiles(['file:A.ts', 'file:B.ts', 'file:C.ts', 'file:D.ts']);
+    const first = graphWithFiles(['D.ts', 'C.ts', 'B.ts', 'A.ts']);
+    const second = graphWithFiles(['A.ts', 'B.ts', 'C.ts', 'D.ts']);
     for (const graph of [first, second]) {
-      connect(graph, 'file:B.ts', 'file:D.ts');
-      connect(graph, 'file:B.ts', 'file:D.ts', {
+      connect(graph, 'B.ts', 'D.ts');
+      connect(graph, 'B.ts', 'D.ts', {
         type: 'type-import',
         isTypeOnly: true,
         specifierCount: 2,
       });
-      connect(graph, 'file:C.ts', 'file:D.ts');
-      connect(graph, 'file:A.ts', 'file:B.ts');
-      connect(graph, 'file:A.ts', 'file:C.ts');
+      connect(graph, 'C.ts', 'D.ts');
+      connect(graph, 'A.ts', 'B.ts');
+      connect(graph, 'A.ts', 'C.ts');
     }
 
     const firstResult = impact(first, { kind: 'file', path: 'D.ts' });
@@ -107,10 +107,10 @@ describe('ImpactEngine structural file impact', () => {
   });
 
   it('honors depth and entity bounds with explicit truncation', () => {
-    const graph = graphWithFiles(['file:A.ts', 'file:B.ts', 'file:C.ts', 'file:D.ts']);
-    connect(graph, 'file:A.ts', 'file:B.ts');
-    connect(graph, 'file:B.ts', 'file:D.ts');
-    connect(graph, 'file:C.ts', 'file:D.ts');
+    const graph = graphWithFiles(['A.ts', 'B.ts', 'C.ts', 'D.ts']);
+    connect(graph, 'A.ts', 'B.ts');
+    connect(graph, 'B.ts', 'D.ts');
+    connect(graph, 'C.ts', 'D.ts');
 
     const depth = impact(
       graph,
@@ -139,7 +139,7 @@ describe('ImpactEngine structural file impact', () => {
   });
 
   it('rejects missing and unsupported targets and honors cancellation', () => {
-    const graph = graphWithFiles(['file:A.ts']);
+    const graph = graphWithFiles(['A.ts']);
     graph.addModuleNode('module:src', { label: 'src', path: 'src' });
     expectFailure(graph, { kind: 'file', path: 'missing.ts' }, 'does not resolve');
     expectFailure(graph, { kind: 'entity', id: 'module:src' }, 'supported');
@@ -155,9 +155,9 @@ describe('ImpactEngine structural file impact', () => {
   });
 
   it('accepts canonical file entity IDs and keeps result ordering stable', () => {
-    const graph = graphWithFiles(['file:A.ts', 'file:B.ts']);
-    connect(graph, 'file:A.ts', 'file:B.ts');
-    const result = impact(graph, { kind: 'entity', id: 'file:file:B.ts' });
+    const graph = graphWithFiles(['A.ts', 'B.ts']);
+    connect(graph, 'A.ts', 'B.ts');
+    const result = impact(graph, { kind: 'entity', id: 'file:B.ts' });
     expect(result.directImpactedEntities.map((node) => node.id)).toEqual(['file:A.ts']);
     expect(new Set(result.directImpactedEntities.map((node) => node.id)).size).toBe(1);
   });
@@ -196,8 +196,7 @@ function expectFailure(
 
 function graphWithFiles(ids: readonly string[]): RepositoryGraph {
   const graph = new RepositoryGraph();
-  for (const id of ids)
-    graph.addFileNode(id, { label: id.replace('file:', ''), path: id.replace('file:', '') });
+  for (const id of ids) graph.addFileNode(id, { label: id, path: id });
   return graph;
 }
 
