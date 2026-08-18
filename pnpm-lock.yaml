@@ -253,6 +253,22 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@20.19.43)
 
+  packages/impact-engine:
+    dependencies:
+      '@project-dna/dna-core':
+        specifier: workspace:*
+        version: link:../dna-core
+      '@project-dna/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@20.19.43)
+
   packages/knowledge-engine:
     dependencies:
       '@project-dna/dna-core':

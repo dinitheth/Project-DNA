@@ -3,6 +3,7 @@
   "references": [
     { "path": "packages/shared" },
     { "path": "packages/dna-core" },
+    { "path": "packages/impact-engine" },
     { "path": "packages/repository-scanner" },
     { "path": "packages/ast-engine" },
     { "path": "packages/dependency-engine" },
