@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { isErr } from '@project-dna/shared';
 import {
+  createAnalysisStateView,
   RepositoryGraph,
   type ArchitectureDNA,
   type BusinessDomain,
@@ -222,8 +223,7 @@ describe('ImpactEngine explainable blast-radius scoring', () => {
         repositoryId: 'repo:score',
         analysisVersion: 2,
         expectedAnalysisVersion: 3,
-        graph: graphValue,
-        semantic: semanticFixture(),
+        state: state(graphValue, semanticFixture(), 2),
       },
       { kind: 'file', path: 'C.ts' },
     );
@@ -235,7 +235,7 @@ describe('ImpactEngine explainable blast-radius scoring', () => {
     const controller = new AbortController();
     controller.abort();
     const cancelled = engine.getImpact(
-      { repositoryId: 'repo:score', analysisVersion: 1, graph: graphValue },
+      { repositoryId: 'repo:score', analysisVersion: 1, state: state(graphValue) },
       { kind: 'file', path: 'C.ts' },
       {},
       controller.signal,
@@ -251,12 +251,30 @@ function score(
   options: Parameters<ImpactEngine['getImpact']>[2] = {},
 ): ImpactResult {
   const result = engine.getImpact(
-    { repositoryId: 'repo:score', analysisVersion: 1, graph: graphValue, semantic },
+    { repositoryId: 'repo:score', analysisVersion: 1, state: state(graphValue, semantic) },
     { kind: 'file', path: targetPath },
     { maxEvidencePaths: 3, ...options },
   );
   if (isErr(result)) throw result.error;
   return result.value;
+}
+
+function state(
+  graphValue: RepositoryGraph,
+  semantic: ImpactSemanticInput | undefined = undefined,
+  analysisVersion = 1,
+) {
+  return createAnalysisStateView({
+    repositoryId: 'repo:score',
+    analysisVersion,
+    entities: semantic?.entities ?? [],
+    graph: graphValue,
+    domains: semantic?.domains,
+    capabilities: semantic?.capabilities,
+    criticalComponents: semantic?.criticalComponents,
+    risks: semantic?.risks,
+    architecture: semantic?.architecture,
+  });
 }
 
 function component(

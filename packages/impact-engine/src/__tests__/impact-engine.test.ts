@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { isErr } from '@project-dna/shared';
-import { RepositoryGraph, type ImpactResult } from '@project-dna/dna-core';
+import {
+  createAnalysisStateView,
+  RepositoryGraph,
+  type ImpactResult,
+} from '@project-dna/dna-core';
 import { ImpactEngine } from '../index.js';
 
 const engine = new ImpactEngine();
@@ -187,7 +191,7 @@ function impact(
   signal?: AbortSignal,
 ): ImpactResult {
   const result = engine.getImpact(
-    { repositoryId: 'repo:fixture', analysisVersion: 1, graph },
+    { repositoryId: 'repo:fixture', analysisVersion: 1, state: state(graph) },
     target,
     options,
     signal,
@@ -203,12 +207,21 @@ function expectFailure(
   signal?: AbortSignal,
 ): void {
   const result = engine.getImpact(
-    { repositoryId: 'repo:fixture', analysisVersion: 1, graph },
+    { repositoryId: 'repo:fixture', analysisVersion: 1, state: state(graph) },
     target,
     {},
     signal,
   );
   expect(result).toMatchObject({ ok: false, error: { message: expect.stringContaining(message) } });
+}
+
+function state(graph: RepositoryGraph) {
+  return createAnalysisStateView({
+    repositoryId: 'repo:fixture',
+    analysisVersion: 1,
+    entities: [],
+    graph,
+  });
 }
 
 function graphWithFiles(ids: readonly string[]): RepositoryGraph {

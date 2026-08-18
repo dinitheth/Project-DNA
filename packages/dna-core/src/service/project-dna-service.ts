@@ -22,7 +22,7 @@ import {
 import type { IDNAEngine, SynthesisOutput } from '../interfaces/dna-engine.interface.js';
 import type { IEvolutionEngine } from '../interfaces/evolution-engine.interface.js';
 import type { ISoftwareIntelligenceEngine } from '../interfaces/intelligence-engine.interface.js';
-import type { IImpactEngine, ImpactSemanticInput } from '../interfaces/impact-engine.interface.js';
+import type { IImpactEngine } from '../interfaces/impact-engine.interface.js';
 import type {
   IStoragePort,
   StorageMutation,
@@ -49,6 +49,7 @@ import type { RepositoryProfile } from '../models/repository-profile.js';
 import type { RepositoryStory } from '../models/repository-story.js';
 import type { RiskAssessment } from '../models/risk-assessment.js';
 import type { RiskNode } from '../models/risk-node.js';
+import { createAnalysisStateView, type AnalysisStateView } from '../models/analysis-state-view.js';
 import {
   ImpactResultSchema,
   type ImpactOptions,
@@ -109,8 +110,7 @@ interface IncrementalBaseline {
 interface CapturedImpactState {
   readonly repositoryId: string;
   readonly analysisVersion: number;
-  readonly graph: RepositoryGraph;
-  readonly semantic: ImpactSemanticInput;
+  readonly state: AnalysisStateView;
 }
 
 class SupersededAnalysisError extends Error {
@@ -502,17 +502,6 @@ export class ProjectDNAService implements IProjectDNAService {
       const previousHistory = await this.dependencies.evolutionEngine.getHistory();
       if (isErr(previousHistory))
         return this.stageError('ComputingEvolution', previousHistory.error);
-      const snapshot = await measureAnalysisPerformance(
-        this.dependencies.performanceRecorder,
-        AnalysisPerformanceStages.EvolutionSnapshot,
-        () => this.dependencies.evolutionEngine.createSnapshot(dna, signal),
-      );
-      if (isErr(snapshot)) return this.stageError('ComputingEvolution', snapshot.error);
-      if (this.changeGeneration !== operationGeneration || this.disposed) {
-        await this.dependencies.evolutionEngine.restoreSnapshots(previousHistory.value);
-        return Err(new SupersededAnalysisError());
-      }
-
       const collections: LoadedCollections = {
         entities: synthesis.value.entities,
         domains: synthesis.value.domains,
@@ -522,6 +511,17 @@ export class ProjectDNAService implements IProjectDNAService {
         dependencyGraph: analysis.value.graph,
         dnaGraph: synthesis.value.dnaGraph,
       };
+      const analysisState = this.createAnalysisState(dna, collections);
+      const snapshot = await measureAnalysisPerformance(
+        this.dependencies.performanceRecorder,
+        AnalysisPerformanceStages.EvolutionSnapshot,
+        () => this.dependencies.evolutionEngine.createSnapshot(dna, signal, analysisState),
+      );
+      if (isErr(snapshot)) return this.stageError('ComputingEvolution', snapshot.error);
+      if (this.changeGeneration !== operationGeneration || this.disposed) {
+        await this.dependencies.evolutionEngine.restoreSnapshots(previousHistory.value);
+        return Err(new SupersededAnalysisError());
+      }
       const previousLatestRecord = this.persistedLatestRecord;
       const persisted = await measureAnalysisPerformance(
         this.dependencies.performanceRecorder,
@@ -629,8 +629,7 @@ export class ProjectDNAService implements IProjectDNAService {
         repositoryId: captured.value.repositoryId,
         analysisVersion: captured.value.analysisVersion,
         expectedAnalysisVersion: captured.value.analysisVersion,
-        graph: captured.value.graph,
-        semantic: captured.value.semantic,
+        state: captured.value.state,
       },
       target,
       options,
@@ -754,17 +753,20 @@ export class ProjectDNAService implements IProjectDNAService {
     return Ok({
       repositoryId: this.current.id,
       analysisVersion: this.current.version,
-      graph: RepositoryGraph.fromJSON(
-        this.collections.dependencyGraph.toJSON() as Record<string, unknown>,
-      ),
-      semantic: {
-        entities: cloneDto(this.collections.entities),
-        domains: cloneDto(this.collections.domains),
-        capabilities: cloneDto(this.collections.capabilities),
-        criticalComponents: cloneDto(this.current.criticalComponents),
-        risks: cloneDto(this.collections.risks),
-        architecture: cloneDto(this.current.architecture),
-      },
+      state: this.createAnalysisState(this.current, this.collections),
+    });
+  }
+  private createAnalysisState(dna: ProjectDNA, collections: LoadedCollections): AnalysisStateView {
+    return createAnalysisStateView({
+      repositoryId: dna.id,
+      analysisVersion: dna.version,
+      entities: collections.entities,
+      graph: collections.dependencyGraph,
+      domains: collections.domains,
+      capabilities: collections.capabilities,
+      criticalComponents: dna.criticalComponents,
+      risks: collections.risks,
+      architecture: dna.architecture,
     });
   }
   private clearCurrent(): void {

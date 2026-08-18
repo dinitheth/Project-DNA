@@ -6,7 +6,11 @@
  */
 
 import type { Logger } from '@project-dna/shared';
-import type { EvolutionSnapshot, DNADiff } from '@project-dna/dna-core';
+import {
+  createAnalysisChangeSet,
+  type EvolutionSnapshot,
+  type DNADiff,
+} from '@project-dna/dna-core';
 
 export class DNADiffer {
   constructor(private readonly logger: Logger) {}
@@ -15,16 +19,23 @@ export class DNADiffer {
     this.logger.info(`Computing diff: v${fromSnapshot.version} -> v${toSnapshot.version}`);
 
     const healthDelta = this.computeHealthDelta(fromSnapshot.metrics, toSnapshot.metrics);
+    const changes =
+      fromSnapshot.analysisState && toSnapshot.analysisState
+        ? createAnalysisChangeSet(fromSnapshot.analysisState, toSnapshot.analysisState)
+        : null;
 
     return {
       fromVersion: fromSnapshot.version,
       toVersion: toSnapshot.version,
       timestamp: Date.now(),
 
-      // Entity changes (computed from metrics since we store counts)
-      addedEntities: [],
-      removedEntities: [],
-      modifiedEntities: [],
+      addedEntities: changes?.addedEntityIds ?? [],
+      removedEntities: changes?.removedEntityIds ?? [],
+      modifiedEntities:
+        changes?.modifiedEntities.map((entity) => ({
+          entityId: entity.id,
+          changes: entity.changes,
+        })) ?? [],
 
       // Health changes
       healthDelta: {
@@ -33,14 +44,13 @@ export class DNADiffer {
       },
 
       // Risk changes
-      newRisks: [],
-      resolvedRisks: [],
+      newRisks: changes?.addedRiskIds ?? [],
+      resolvedRisks: changes?.resolvedRiskIds ?? [],
 
-      // Graph topology (approximated from metrics)
-      addedEdges: 0,
-      removedEdges: 0,
-      newDomains: [],
-      removedDomains: [],
+      addedEdges: changes?.addedRelationships.length ?? 0,
+      removedEdges: changes?.removedRelationships.length ?? 0,
+      newDomains: changes?.addedDomainIds ?? [],
+      removedDomains: changes?.removedDomainIds ?? [],
 
       architecturalSignificance: this.computeArchitecturalSignificance(
         fromSnapshot.metrics,

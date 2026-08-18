@@ -135,6 +135,14 @@ export type {
   AnalysisStateViewInput,
 } from './analysis-state-view.js';
 
+export {
+  AnalysisChangeSetSchema,
+  AnalysisValueChangeSchema,
+  createAnalysisChangeSet,
+  serializeAnalysisChangeSet,
+} from './analysis-change-set.js';
+export type { AnalysisChangeSet, AnalysisValueChange } from './analysis-change-set.js';
+
 export { RepositoryStorySchema } from './repository-story.js';
 export type { RepositoryStory } from './repository-story.js';
 

@@ -13,6 +13,7 @@ import {
   type ProjectDNA,
   type EvolutionSnapshot,
   type SnapshotTrigger,
+  type AnalysisStateView,
 } from '@project-dna/dna-core';
 
 export class SnapshotCreator {
@@ -30,7 +31,11 @@ export class SnapshotCreator {
     this.lastSnapshotId = latest?.id ?? null;
   }
 
-  create(dna: ProjectDNA, trigger: SnapshotTrigger = 'manual'): EvolutionSnapshot {
+  create(
+    dna: ProjectDNA,
+    trigger: SnapshotTrigger = 'manual',
+    analysisState?: AnalysisStateView,
+  ): EvolutionSnapshot {
     this.logger.info(`Creating evolution snapshot v${this.nextVersion}...`);
 
     const snapshotId = this.generateSnapshotId(dna);
@@ -48,6 +53,7 @@ export class SnapshotCreator {
       parentSnapshotId: this.lastSnapshotId,
       isFullSnapshot: this.shouldCreateFullSnapshot(),
       projectDnaRef: `snapshot:${snapshotId}`,
+      ...(analysisState ? { analysisState } : {}),
     };
 
     this.lastSnapshotId = snapshotId;

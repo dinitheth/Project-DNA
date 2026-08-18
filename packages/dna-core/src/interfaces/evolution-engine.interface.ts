@@ -10,6 +10,7 @@ import type { Result } from '@project-dna/shared';
 import type { ProjectDNA } from '../models/project-dna.js';
 import type { EvolutionSnapshot } from '../models/evolution-snapshot.js';
 import type { DNADiff } from '../models/dna-diff.js';
+import type { AnalysisStateView } from '../models/analysis-state-view.js';
 
 export interface IEvolutionEngine {
   /** Replace in-memory history with previously persisted snapshots. */
@@ -24,7 +25,11 @@ export interface IEvolutionEngine {
    * @param signal - Optional cancellation signal.
    * @returns The created snapshot.
    */
-  createSnapshot(dna: ProjectDNA, signal?: AbortSignal): Promise<Result<EvolutionSnapshot>>;
+  createSnapshot(
+    dna: ProjectDNA,
+    signal?: AbortSignal,
+    analysisState?: AnalysisStateView,
+  ): Promise<Result<EvolutionSnapshot>>;
 
   /**
    * Compute the diff between two versions.

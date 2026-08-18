@@ -340,7 +340,7 @@ describe('ProjectDNAService integration', () => {
         return baseEngine.getImpact(
           {
             ...input,
-            semantic: { ...input.semantic, risks: null },
+            state: { ...input.state, risks: null },
           },
           target,
           options,

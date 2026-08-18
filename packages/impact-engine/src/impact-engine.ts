@@ -4,6 +4,7 @@ import {
   ImpactResultSchema,
   ImpactTargetSchema,
   RISK_SEVERITY_WEIGHTS,
+  createRepositoryGraphFromAnalysisState,
   traverseDependencyGraph,
   type ArchitectureDNA,
   type DNAObject,
@@ -18,7 +19,7 @@ import {
   type ImpactScoreComponentStatus,
   type ImpactTarget,
   type ImpactEngineInput,
-  type ImpactSemanticInput,
+  type AnalysisStateView,
   type RepositoryGraph,
 } from '@project-dna/dna-core';
 
@@ -65,15 +66,16 @@ export class ImpactEngine {
         );
       }
 
-      const resolvedTarget = resolveFileTarget(input.graph, parsedTarget.value);
+      const graph = createRepositoryGraphFromAnalysisState(input.state);
+      const resolvedTarget = resolveFileTarget(graph, parsedTarget.value);
       if (!resolvedTarget.ok) return resolvedTarget;
       const targetId = resolvedTarget.value;
-      const targetNode = createImpactNode(input.graph, targetId, 0);
+      const targetNode = createImpactNode(graph, targetId, 0);
       if (!targetNode.ok) return targetNode;
 
       const traversal = traverseDependencyGraph(
         {
-          graphs: [input.graph],
+          graphs: [graph],
           startIds: [targetId],
           options: {
             direction: 'dependents',
@@ -89,7 +91,7 @@ export class ImpactEngine {
       const traversalById = new Map(traversal.value.nodes.map((node) => [node.id, node]));
       const impacted: ImpactNode[] = [];
       for (const node of traversal.value.nodes) {
-        const impactedNode = createImpactNode(input.graph, node.id, node.minimumDepth);
+        const impactedNode = createImpactNode(graph, node.id, node.minimumDepth);
         if (!impactedNode.ok) return impactedNode;
         impacted.push(impactedNode.value);
       }
@@ -129,7 +131,7 @@ export class ImpactEngine {
       }
 
       const semantic = enrichSemanticImpact(
-        input.semantic,
+        input.state,
         new Set([targetNode.value.id, ...impacted.map((node) => node.id)]),
         canonicalPaths,
         parsedOptions.data.maxEntities,
@@ -150,7 +152,7 @@ export class ImpactEngine {
           semantic: semantic.effects,
           evidence: [...evidence, ...semantic.evidence],
           truncations,
-          semanticInput: input.semantic,
+          semanticInput: input.state,
           warnings: semantic.warnings,
         }),
         evidence: [...evidence, ...semantic.evidence],
@@ -295,19 +297,19 @@ interface SemanticEnrichment {
 }
 
 function enrichSemanticImpact(
-  input: ImpactSemanticInput | undefined,
+  input: AnalysisStateView,
   scope: ReadonlySet<string>,
   canonicalPaths: readonly ImpactPath[],
   maxEntities: number,
 ): SemanticEnrichment {
   const warnings: string[] = [];
   const evidence: ImpactEvidence[] = [];
-  const entities = input?.entities;
+  const entities = input.entities;
   const entityById = new Map((entities ?? []).map((entity) => [entity.id, entity]));
   const pathByEntity = new Map(canonicalPaths.map((path) => [path.impactedEntityId, path]));
 
   const domains = enrichCollection(
-    input?.domains,
+    input.domains,
     'domains',
     (domain) => [...domain.entityIds].sort().find((entityId) => scope.has(entityId)),
     (domain, entityId) =>
@@ -324,7 +326,7 @@ function enrichSemanticImpact(
     maxEntities,
   );
   const capabilities = enrichCollection(
-    input?.capabilities,
+    input.capabilities,
     'capabilities',
     (capability) => [...capability.implementedBy].sort().find((entityId) => scope.has(entityId)),
     (capability, entityId) =>
@@ -341,7 +343,7 @@ function enrichSemanticImpact(
     maxEntities,
   );
   const criticalComponents = enrichCollection(
-    input?.criticalComponents,
+    input.criticalComponents,
     'critical components',
     (component) => (scope.has(component.entityId) ? component.entityId : undefined),
     (component, entityId) =>
@@ -358,7 +360,7 @@ function enrichSemanticImpact(
     maxEntities,
   );
   const risks = enrichCollection(
-    input?.risks,
+    input.risks,
     'risks',
     (risk) =>
       [...risk.affectedEntities]
@@ -382,9 +384,9 @@ function enrichSemanticImpact(
 
   let layers: ArchitectureDNA['layers'] = [];
   const boundaryCrossings: ImpactSemanticEffects['architecture']['boundaryCrossings'] = [];
-  if (input?.architecture === undefined || input.architecture === null) {
+  if (input.architecture === null) {
     warnings.push('Semantic enrichment incomplete: architecture layers unavailable');
-  } else if (entities === undefined || entities === null) {
+  } else if (entities.length === 0) {
     warnings.push('Semantic enrichment incomplete: entities unavailable for layer membership');
   } else {
     const layerNames = new Set(
@@ -547,7 +549,7 @@ interface ScoreInput {
   readonly semantic: ImpactSemanticEffects;
   readonly evidence: readonly ImpactEvidence[];
   readonly truncations: readonly { readonly kind: string }[];
-  readonly semanticInput: ImpactSemanticInput | undefined;
+  readonly semanticInput: AnalysisStateView;
   readonly warnings: readonly string[];
 }
 

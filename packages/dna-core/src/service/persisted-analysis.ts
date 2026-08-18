@@ -13,6 +13,10 @@ import { RiskNodeSchema, type RiskNode } from '../models/risk-node.js';
 import { createRiskAssessment } from '../models/risk-assessment.js';
 import { ProjectDNASchema, type ProjectDNA } from '../models/project-dna.js';
 import { RepositoryGraph } from '../models/repository-graph.js';
+import {
+  createAnalysisStateView,
+  serializeAnalysisStateView,
+} from '../models/analysis-state-view.js';
 import { createComplexityProfile } from '../models/complexity-profile.js';
 import { createRepositoryHealth } from '../models/repository-health.js';
 import type { IStoragePort, ITransactionalStoragePort } from '../interfaces/storage.interface.js';
@@ -224,6 +228,24 @@ export function validatePersistedAnalysis(
     'DNA graph reference',
   );
   validateSemanticIntegrity(dna, collections, snapshot, hadAnalysisCoverage);
+  if (snapshot.analysisState) {
+    const expectedState = createAnalysisStateView({
+      repositoryId: dna.id,
+      analysisVersion: dna.version,
+      entities: collections.entities,
+      graph: collections.dependencyGraph,
+      domains: collections.domains,
+      capabilities: collections.capabilities,
+      criticalComponents: dna.criticalComponents,
+      risks: collections.risks,
+      architecture: dna.architecture,
+    });
+    assertEqual(
+      serializeAnalysisStateView(snapshot.analysisState),
+      serializeAnalysisStateView(expectedState),
+      'Evolution snapshot analysis state',
+    );
+  }
 
   if (input.latest.manifestFormat !== undefined && manifest === null) {
     throw new Error(`Persisted version ${input.versionKey} is missing its version manifest`);

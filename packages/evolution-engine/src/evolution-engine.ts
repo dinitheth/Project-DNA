@@ -15,6 +15,7 @@ import type {
   ProjectDNA,
   EvolutionSnapshot,
   DNADiff,
+  AnalysisStateView,
 } from '@project-dna/dna-core';
 import { EvolutionSnapshotSchema } from '@project-dna/dna-core';
 import { SnapshotCreator } from './snapshot/snapshot-creator.js';
@@ -54,11 +55,15 @@ export class EvolutionEngine implements IEvolutionEngine {
     }
   }
 
-  async createSnapshot(dna: ProjectDNA, signal?: AbortSignal): Promise<Result<EvolutionSnapshot>> {
+  async createSnapshot(
+    dna: ProjectDNA,
+    signal?: AbortSignal,
+    analysisState?: AnalysisStateView,
+  ): Promise<Result<EvolutionSnapshot>> {
     try {
       if (signal?.aborted) return Err(new Error('Evolution snapshot creation cancelled'));
       const trigger = this.snapshots.length === 0 ? 'manual' : 'incremental';
-      const snapshot = this.snapshotCreator.create(dna, trigger);
+      const snapshot = this.snapshotCreator.create(dna, trigger, analysisState);
       this.snapshots.push(snapshot);
 
       this.logger.info(

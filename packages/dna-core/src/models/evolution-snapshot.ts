@@ -9,6 +9,7 @@
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import type { ProjectDNA } from './project-dna.js';
+import { AnalysisStateViewSchema } from './analysis-state-view.js';
 
 export const SnapshotTriggerSchema = z.enum([
   'manual',
@@ -48,6 +49,9 @@ export const EvolutionSnapshotSchema = z.object({
 
   /** Storage key for the full ProjectDNA data (if full snapshot). */
   projectDnaRef: z.string().nullable(),
+
+  /** Canonical deterministic analysis state used by Evolution and Impact. */
+  analysisState: AnalysisStateViewSchema.optional(),
 });
 
 export type EvolutionSnapshot = z.infer<typeof EvolutionSnapshotSchema>;

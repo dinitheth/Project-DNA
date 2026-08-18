@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { isErr } from '@project-dna/shared';
 import {
+  createAnalysisStateView,
   RepositoryGraph,
   type ArchitectureDNA,
   type BusinessDomain,
@@ -97,7 +98,7 @@ describe('ImpactEngine semantic enrichment', () => {
 });
 
 function calculate(input: {
-  readonly semantic?: Parameters<ImpactEngine['getImpact']>[0]['semantic'];
+  readonly semantic?: ReturnType<typeof semanticFixture> | Partial<ReturnType<typeof semanticFixture>>;
   readonly graphOrder?: readonly string[];
   readonly options?: Parameters<ImpactEngine['getImpact']>[2];
 }) {
@@ -108,7 +109,21 @@ function calculate(input: {
   graph.addDependency('A.ts', 'B.ts', edge());
   graph.addDependency('B.ts', 'C.ts', edge());
   const result = engine.getImpact(
-    { repositoryId: 'repo:semantic', analysisVersion: 1, graph, semantic: input.semantic },
+    {
+      repositoryId: 'repo:semantic',
+      analysisVersion: 1,
+      state: createAnalysisStateView({
+        repositoryId: 'repo:semantic',
+        analysisVersion: 1,
+        entities: input.semantic?.entities ?? [],
+        graph,
+        domains: input.semantic?.domains,
+        capabilities: input.semantic?.capabilities,
+        criticalComponents: input.semantic?.criticalComponents,
+        risks: input.semantic?.risks,
+        architecture: input.semantic?.architecture,
+      }),
+    },
     { kind: 'entity', id: 'file:C.ts' },
     { maxEvidencePaths: 3, ...input.options },
   );
