@@ -102,6 +102,7 @@ export type { ComplexityProfile, ComplexityDistribution } from './complexity-pro
 
 export {
   RiskAssessmentSchema,
+  RISK_SEVERITY_WEIGHTS,
   calculateRiskExposureScore,
   compareRiskExposure,
   createRiskAssessment,
@@ -133,6 +134,7 @@ export {
   ImpactEvidenceSchema,
   ImpactScoreComponentKindSchema,
   ImpactScoreComponentSchema,
+  ImpactScoreComponentStatusSchema,
   ImpactScoreSchema,
   ImpactTruncationKindSchema,
   ImpactTruncationSchema,
@@ -150,6 +152,7 @@ export type {
   ImpactPath,
   ImpactEvidence,
   ImpactScoreComponent,
+  ImpactScoreComponentStatus,
   ImpactScore,
   ImpactTruncation,
   ImpactBounds,

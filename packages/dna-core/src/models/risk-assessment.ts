@@ -49,7 +49,7 @@ export const RiskAssessmentSchema = z.object({
 
 export type RiskAssessment = z.infer<typeof RiskAssessmentSchema>;
 
-const RISK_SEVERITY_WEIGHTS: Record<RiskNode['severity'], number> = {
+export const RISK_SEVERITY_WEIGHTS: Record<RiskNode['severity'], number> = {
   info: 1,
   low: 2,
   medium: 4,

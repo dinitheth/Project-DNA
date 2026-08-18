@@ -3,6 +3,7 @@ import {
   ImpactOptionsSchema,
   ImpactResultSchema,
   ImpactTargetSchema,
+  RISK_SEVERITY_WEIGHTS,
   traverseDependencyGraph,
   type ArchitectureDNA,
   type BusinessDomain,
@@ -16,6 +17,8 @@ import {
   type ImpactResult,
   type ImpactSemanticEffects,
   type ImpactScore,
+  type ImpactScoreComponent,
+  type ImpactScoreComponentStatus,
   type ImpactTarget,
   type RiskNode,
   type RepositoryGraph,
@@ -24,26 +27,20 @@ import {
 export interface ImpactEngineInput {
   readonly repositoryId: string;
   readonly analysisVersion: number;
+  readonly expectedAnalysisVersion?: number;
   readonly graph: RepositoryGraph;
   readonly semantic?: ImpactSemanticInput;
 }
 
 export interface ImpactSemanticInput {
-  readonly entities?: readonly DNAObject[];
-  readonly domains?: readonly BusinessDomain[];
-  readonly capabilities?: readonly Capability[];
-  readonly criticalComponents?: readonly CriticalComponent[];
-  readonly risks?: readonly RiskNode[];
-  readonly architecture?: ArchitectureDNA;
+  readonly entities?: readonly DNAObject[] | null;
+  readonly domains?: readonly BusinessDomain[] | null;
+  readonly capabilities?: readonly Capability[] | null;
+  readonly criticalComponents?: readonly CriticalComponent[] | null;
+  readonly risks?: readonly RiskNode[] | null;
+  readonly architecture?: ArchitectureDNA | null;
 }
 
-const SCORE_COMPONENT_KINDS = [
-  'dependency-reach',
-  'critical-component-exposure',
-  'domain-reach',
-  'risk-exposure',
-  'architecture-boundaries',
-] as const;
 const FILE_ENTITY_PREFIX = 'file:';
 
 /** Calculates bounded structural blast radius for canonical file graph nodes. */
@@ -65,6 +62,24 @@ export class ImpactEngine {
       if (!input.repositoryId.trim()) return Err(new Error('Impact repository ID is required'));
       if (!Number.isSafeInteger(input.analysisVersion) || input.analysisVersion < 0) {
         return Err(new Error('Impact analysis version must be a safe nonnegative integer'));
+      }
+      if (
+        input.expectedAnalysisVersion !== undefined &&
+        (!Number.isSafeInteger(input.expectedAnalysisVersion) || input.expectedAnalysisVersion < 0)
+      ) {
+        return Err(
+          new Error('Expected impact analysis version must be a safe nonnegative integer'),
+        );
+      }
+      if (
+        input.expectedAnalysisVersion !== undefined &&
+        input.expectedAnalysisVersion !== input.analysisVersion
+      ) {
+        return Err(
+          new Error(
+            `Stale impact analysis version: expected ${input.expectedAnalysisVersion}, received ${input.analysisVersion}`,
+          ),
+        );
       }
 
       const resolvedTarget = resolveFileTarget(input.graph, parsedTarget.value);
@@ -147,7 +162,14 @@ export class ImpactEngine {
           impacted.length > 0 ? Math.min(...impacted.map((node) => node.minimumDepth)) : null,
         canonicalPaths,
         semanticEffects: semantic.effects,
-        score: emptyScore(),
+        score: calculateScore({
+          impacted,
+          semantic: semantic.effects,
+          evidence: [...evidence, ...semantic.evidence],
+          truncations,
+          semanticInput: input.semantic,
+          warnings: semantic.warnings,
+        }),
         evidence: [...evidence, ...semantic.evidence],
         warnings: semantic.warnings,
         complete: truncations.length === 0,
@@ -376,9 +398,10 @@ function enrichSemanticImpact(
   );
 
   let layers: ArchitectureDNA['layers'] = [];
-  if (input?.architecture === undefined) {
+  const boundaryCrossings: ImpactSemanticEffects['architecture']['boundaryCrossings'] = [];
+  if (input?.architecture === undefined || input.architecture === null) {
     warnings.push('Semantic enrichment incomplete: architecture layers unavailable');
-  } else if (entities === undefined) {
+  } else if (entities === undefined || entities === null) {
     warnings.push('Semantic enrichment incomplete: entities unavailable for layer membership');
   } else {
     const layerNames = new Set(
@@ -413,6 +436,52 @@ function enrichSemanticImpact(
         );
       }
     }
+    if (scope.size > 1 && canonicalPaths.length === 0) {
+      warnings.push(
+        'Semantic enrichment incomplete: canonical paths unavailable for layer crossings',
+      );
+    }
+    const crossingByKey = new Map<
+      string,
+      ImpactSemanticEffects['architecture']['boundaryCrossings'][number]
+    >();
+    for (const path of canonicalPaths) {
+      for (const relationship of path.relationships) {
+        const dependencyLayer = entityById.get(relationship.dependencyId)?.belongsToLayer;
+        const dependentLayer = entityById.get(relationship.dependentId)?.belongsToLayer;
+        if (!dependencyLayer || !dependentLayer || dependencyLayer === dependentLayer) continue;
+        const crossing = {
+          fromLayer: dependencyLayer,
+          toLayer: dependentLayer,
+          dependentId: relationship.dependentId,
+          dependencyId: relationship.dependencyId,
+        };
+        crossingByKey.set(
+          `${crossing.fromLayer}:${crossing.toLayer}:${crossing.dependentId}:${crossing.dependencyId}`,
+          crossing,
+        );
+      }
+    }
+    boundaryCrossings.push(
+      ...[...crossingByKey.values()].sort((left, right) =>
+        compareIds(
+          `${left.fromLayer}:${left.toLayer}:${left.dependentId}:${left.dependencyId}`,
+          `${right.fromLayer}:${right.toLayer}:${right.dependentId}:${right.dependencyId}`,
+        ),
+      ),
+    );
+    for (const crossing of boundaryCrossings) {
+      evidence.push(
+        semanticEvidence(
+          'layer-boundary',
+          `${crossing.fromLayer}:${crossing.toLayer}:${crossing.dependentId}:${crossing.dependencyId}`,
+          crossing.dependentId,
+          entityById,
+          pathByEntity,
+          input.architecture.confidence,
+        ),
+      );
+    }
   }
 
   return {
@@ -421,7 +490,7 @@ function enrichSemanticImpact(
       capabilities,
       criticalComponents,
       risks,
-      architecture: { layers, boundaryCrossings: [] },
+      architecture: { layers, boundaryCrossings },
     },
     evidence,
     warnings,
@@ -429,7 +498,7 @@ function enrichSemanticImpact(
 }
 
 function enrichCollection<T extends { readonly id: string }>(
-  values: readonly T[] | undefined,
+  values: readonly T[] | null | undefined,
   label: string,
   match: (value: T) => string | undefined,
   addEvidence: (value: T, entityId: string | undefined) => ImpactEvidence,
@@ -437,7 +506,7 @@ function enrichCollection<T extends { readonly id: string }>(
   warnings: string[],
   maxEntities: number,
 ): T[] {
-  if (values === undefined) {
+  if (values === undefined || values === null) {
     warnings.push(`Semantic enrichment incomplete: ${label} unavailable`);
     return [];
   }
@@ -445,13 +514,16 @@ function enrichCollection<T extends { readonly id: string }>(
     .map((value) => ({ value, entityId: match(value) }))
     .filter((item): item is { value: T; entityId: string } => item.entityId !== undefined)
     .sort((left, right) => compareIds(left.value.id, right.value.id));
-  if (matched.length > maxEntities) {
+  const unique = matched.filter(
+    (item, index, items) => index === 0 || item.value.id !== items[index - 1]!.value.id,
+  );
+  if (unique.length > maxEntities) {
     warnings.push(`Semantic enrichment truncated ${label} to ${maxEntities}`);
   }
-  for (const item of matched.slice(0, maxEntities)) {
+  for (const item of unique.slice(0, maxEntities)) {
     evidence.push(addEvidence(item.value, item.entityId));
   }
-  return matched.slice(0, maxEntities).map((item) => item.value);
+  return unique.slice(0, maxEntities).map((item) => item.value);
 }
 
 function semanticEvidence(
@@ -483,18 +555,150 @@ function compareIds(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function emptyScore(): ImpactScore {
+interface ScoreInput {
+  readonly impacted: readonly ImpactNode[];
+  readonly semantic: ImpactSemanticEffects;
+  readonly evidence: readonly ImpactEvidence[];
+  readonly truncations: readonly { readonly kind: string }[];
+  readonly semanticInput: ImpactSemanticInput | undefined;
+  readonly warnings: readonly string[];
+}
+
+const SCORE_WEIGHTS = {
+  'dependency-reach': 0.35,
+  'critical-component-exposure': 0.25,
+  'domain-reach': 0.15,
+  'risk-exposure': 0.15,
+  'architecture-boundaries': 0.1,
+} as const;
+
+function calculateScore(input: ScoreInput): ImpactScore {
+  const structuralPartial = input.truncations.some(
+    (truncation) => truncation.kind === 'max-depth' || truncation.kind === 'max-entities',
+  );
+  const pathPartial = input.truncations.some(
+    (truncation) => truncation.kind === 'max-evidence-paths',
+  );
+  const components = [
+    scoreComponent(
+      'dependency-reach',
+      input.impacted.length,
+      countNormalization(input.impacted.length),
+      structuralPartial ? 'partial' : 'available',
+      evidenceIds(input.evidence, ['direct-dependent', 'transitive-dependent']),
+    ),
+    scoreComponent(
+      'critical-component-exposure',
+      sum(input.semantic.criticalComponents.map((component) => component.score)),
+      probabilityNormalization(
+        input.semantic.criticalComponents.map((component) => component.score),
+      ),
+      semanticStatus(
+        input.semanticInput?.criticalComponents,
+        structuralPartial,
+        input.warnings,
+        'critical components',
+      ),
+      evidenceIds(input.evidence, ['critical-component']),
+    ),
+    scoreComponent(
+      'domain-reach',
+      input.semantic.domains.length,
+      countNormalization(input.semantic.domains.length),
+      semanticStatus(input.semanticInput?.domains, structuralPartial, input.warnings, 'domains'),
+      evidenceIds(input.evidence, ['domain-membership']),
+    ),
+    scoreComponent(
+      'risk-exposure',
+      sum(input.semantic.risks.map((risk) => RISK_SEVERITY_WEIGHTS[risk.severity])),
+      probabilityNormalization(
+        input.semantic.risks.map((risk) => RISK_SEVERITY_WEIGHTS[risk.severity] / 10),
+      ),
+      semanticStatus(input.semanticInput?.risks, structuralPartial, input.warnings, 'risks'),
+      evidenceIds(input.evidence, ['risk-reference']),
+    ),
+    scoreComponent(
+      'architecture-boundaries',
+      input.semantic.architecture.boundaryCrossings.length,
+      countNormalization(input.semantic.architecture.boundaryCrossings.length),
+      semanticStatus(
+        input.semanticInput?.architecture,
+        structuralPartial || pathPartial,
+        input.warnings,
+        'architecture layers',
+      ),
+      evidenceIds(input.evidence, ['layer-boundary']),
+    ),
+  ];
   return {
-    total: 0,
-    components: SCORE_COMPONENT_KINDS.map((kind) => ({
-      kind,
-      rawInput: 0,
-      normalizedValue: 0,
-      weight: 0,
-      contribution: 0,
-      evidenceIds: [],
-    })),
+    total: round(components.reduce((total, component) => total + component.contribution, 0)),
+    components,
   };
+}
+
+function scoreComponent(
+  kind: ImpactScoreComponent['kind'],
+  rawInput: number,
+  normalizedValue: number,
+  status: ImpactScoreComponentStatus,
+  evidenceIds: string[],
+): ImpactScoreComponent {
+  const normalized = status === 'unavailable' ? 0 : clamp(normalizedValue);
+  return {
+    kind,
+    rawInput: status === 'unavailable' ? 0 : rawInput,
+    normalizedValue: normalized,
+    weight: SCORE_WEIGHTS[kind],
+    contribution: round(normalized * SCORE_WEIGHTS[kind] * 100),
+    evidenceIds: [...evidenceIds].sort(compareIds),
+    status,
+  };
+}
+
+function semanticStatus(
+  values: readonly unknown[] | object | null | undefined,
+  structuralPartial: boolean,
+  warnings: readonly string[],
+  label: string,
+): ImpactScoreComponentStatus {
+  if (values === undefined || values === null) return 'unavailable';
+  return structuralPartial ||
+    warnings.some(
+      (warning) =>
+        warning.includes(`truncated ${label}`) ||
+        (label === 'architecture layers' &&
+          warning.includes('entities unavailable for layer membership')),
+    )
+    ? 'partial'
+    : 'available';
+}
+
+function evidenceIds(
+  evidence: readonly ImpactEvidence[],
+  reasons: readonly ImpactEvidence['reason'][],
+): string[] {
+  const reasonSet = new Set(reasons);
+  return evidence.filter((item) => reasonSet.has(item.reason)).map((item) => item.id);
+}
+
+function countNormalization(raw: number): number {
+  return raw <= 0 ? 0 : raw / (raw + 1);
+}
+
+function probabilityNormalization(values: readonly number[]): number {
+  return 1 - values.reduce((remaining, value) => remaining * (1 - clamp(value)), 1);
+}
+
+function sum(values: readonly number[]): number {
+  return values.reduce((total, value) => total + value, 0);
+}
+
+function clamp(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function round(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
 function normalizePath(value: string): string {

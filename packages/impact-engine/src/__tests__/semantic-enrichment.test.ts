@@ -33,7 +33,14 @@ describe('ImpactEngine semantic enrichment', () => {
       'application',
       'presentation',
     ]);
-    expect(result.semanticEffects.architecture.boundaryCrossings).toEqual([]);
+    expect(result.semanticEffects.architecture.boundaryCrossings).toEqual([
+      {
+        fromLayer: 'presentation',
+        toLayer: 'application',
+        dependencyId: 'file:C.ts',
+        dependentId: 'file:B.ts',
+      },
+    ]);
     expect(result.evidence.map((item) => item.reason)).toEqual(
       expect.arrayContaining([
         'domain-membership',
@@ -41,6 +48,7 @@ describe('ImpactEngine semantic enrichment', () => {
         'critical-component',
         'risk-reference',
         'architecture-layer-membership',
+        'layer-boundary',
       ]),
     );
   });

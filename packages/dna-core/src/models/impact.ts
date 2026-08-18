@@ -152,6 +152,9 @@ export const ImpactScoreComponentKindSchema = z.enum([
   'architecture-boundaries',
 ]);
 
+export const ImpactScoreComponentStatusSchema = z.enum(['available', 'partial', 'unavailable']);
+export type ImpactScoreComponentStatus = z.infer<typeof ImpactScoreComponentStatusSchema>;
+
 export const ImpactScoreComponentSchema = z.object({
   kind: ImpactScoreComponentKindSchema,
   rawInput: z.number().nonnegative(),
@@ -159,6 +162,7 @@ export const ImpactScoreComponentSchema = z.object({
   weight: z.number().min(0).max(1),
   contribution: z.number().min(0).max(100),
   evidenceIds: z.array(z.string().min(1)),
+  status: ImpactScoreComponentStatusSchema.default('available'),
 });
 export type ImpactScoreComponent = z.infer<typeof ImpactScoreComponentSchema>;
 
