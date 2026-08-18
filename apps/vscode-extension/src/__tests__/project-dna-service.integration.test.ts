@@ -11,7 +11,9 @@ import {
   createProjectDnaSnapshotHash,
   createProjectDnaSnapshotMetrics,
   type ITransactionalStoragePort,
+  type IImpactEngine,
   type IProjectDNAService,
+  type ImpactTarget,
   type IStoragePort,
   type ProjectDNA,
   type StorageBatch,
@@ -26,6 +28,7 @@ import {
 } from '@project-dna/shared';
 import { createContainer } from '../container.js';
 import { buildSidebarData } from '../sidebar/sidebar-data.js';
+import { ImpactEngine } from '@project-dna/impact-engine';
 
 interface TestStatement {
   get(...parameters: unknown[]): unknown;
@@ -173,10 +176,136 @@ describe('ProjectDNAService integration', () => {
       TOKENS.ProjectDNAService,
     );
     expect(isErr(await service.refresh())).toBe(true);
+    expect(await service.getImpact({ kind: 'file', path: 'missing.ts' })).toMatchObject({
+      ok: false,
+      error: { message: 'No complete Project DNA analysis is currently loaded' },
+    });
     const controller = new AbortController();
     controller.abort();
     expect(isErr(await service.analyze('C:/cancelled', controller.signal))).toBe(true);
   });
+
+  it('exposes deterministic serializable impact DTOs from one analysis version', async () => {
+    const root = await fixtureRepository();
+    const service = createContainer(createSilentLogger()).resolve<IProjectDNAService>(
+      TOKENS.ProjectDNAService,
+    );
+    const analyzed = await service.analyze(root);
+    if (isErr(analyzed)) throw analyzed.error;
+
+    const target: ImpactTarget = { kind: 'file', path: 'src/domain/entities/order.ts' };
+    const first = await service.getImpact(target);
+    const second = await service.getImpact(target);
+    if (isErr(first)) throw first.error;
+    if (isErr(second)) throw second.error;
+    expect(first.value.analysisVersion).toBe(analyzed.value.version);
+    expect(JSON.stringify(first.value)).toBe(JSON.stringify(second.value));
+    expect(first.value.score).toEqual(second.value.score);
+    expect(first.value.evidence).toEqual(second.value.evidence);
+
+    first.value.evidence.pop();
+    const third = await service.getImpact(target);
+    if (isErr(third)) throw third.error;
+    expect(third.value.evidence.length).toBe(second.value.evidence.length);
+
+    const missing = await service.getImpact({ kind: 'file', path: 'missing.ts' });
+    expect(missing).toMatchObject({
+      ok: false,
+      error: { message: expect.stringContaining('does not resolve') },
+    });
+    const unsupported = await service.getImpact({ kind: 'class', id: 'class:Order' } as never);
+    expect(unsupported).toMatchObject({
+      ok: false,
+      error: { message: expect.stringContaining('Unsupported impact target kind') },
+    });
+    const malformed = await service.getImpact({} as never);
+    expect(malformed).toMatchObject({
+      ok: false,
+      error: { message: expect.stringContaining('Invalid impact target') },
+    });
+    await service.dispose();
+  }, 30_000);
+
+  it('rejects an impact query when a newer analysis starts during calculation', async () => {
+    const root = await fixtureRepository();
+    let service!: IProjectDNAService;
+    let refreshPromise: ReturnType<IProjectDNAService['refresh']> | undefined;
+    const baseEngine = new ImpactEngine();
+    const eventBusHolder: { value?: EventBus<DNAEventMap> } = {};
+    const impactEngine: IImpactEngine = {
+      getImpact(input, target, options, signal) {
+        const eventBus = eventBusHolder.value;
+        if (!eventBus) throw new Error('Missing test event bus');
+        const changedPath = path.join(root, 'src/orphan-file.ts');
+        eventBus.emit(DNAEventNames.RepositoryFilesChanged, {
+          rootPath: root,
+          watcherEpoch: 1,
+          sequence: 1,
+          observedAt: Date.now(),
+          changes: [{ kind: 'modified', path: changedPath }],
+        });
+        refreshPromise = service.refresh();
+        return baseEngine.getImpact(input, target, options, signal);
+      },
+    };
+    const container = createContainer({ logger: createSilentLogger(), impactEngine });
+    service = container.resolve<IProjectDNAService>(TOKENS.ProjectDNAService);
+    eventBusHolder.value = container.resolve<EventBus<DNAEventMap>>(TOKENS.EventBus);
+    const analyzed = await service.analyze(root);
+    if (isErr(analyzed)) throw analyzed.error;
+    await writeFile(path.join(root, 'src/orphan-file.ts'), 'export const orphan = false;', 'utf8');
+    const query = await service.getImpact({ kind: 'file', path: 'src/domain/entities/order.ts' });
+    expect(query).toMatchObject({
+      ok: false,
+      error: { message: 'Analysis superseded by newer repository changes' },
+    });
+    if (refreshPromise) {
+      const refreshed = await refreshPromise;
+      if (isErr(refreshed)) throw refreshed.error;
+      expect(refreshed.value.version).toBe(2);
+    }
+    await service.dispose();
+  }, 30_000);
+
+  it('propagates cancellation before and during service impact execution', async () => {
+    const root = await fixtureRepository();
+    const before = createContainer(createSilentLogger()).resolve<IProjectDNAService>(
+      TOKENS.ProjectDNAService,
+    );
+    const beforeController = new AbortController();
+    beforeController.abort();
+    expect(
+      await before.getImpact(
+        { kind: 'file', path: 'order.ts' },
+        undefined,
+        beforeController.signal,
+      ),
+    ).toMatchObject({ ok: false, error: { message: 'Impact analysis cancelled' } });
+    await before.dispose();
+
+    const duringController = new AbortController();
+    const baseEngine = new ImpactEngine();
+    const impactEngine: IImpactEngine = {
+      getImpact(input, target, options, signal) {
+        duringController.abort();
+        return baseEngine.getImpact(input, target, options, signal);
+      },
+    };
+    const service = createContainer({
+      logger: createSilentLogger(),
+      impactEngine,
+    }).resolve<IProjectDNAService>(TOKENS.ProjectDNAService);
+    const analyzed = await service.analyze(root);
+    if (isErr(analyzed)) throw analyzed.error;
+    expect(
+      await service.getImpact(
+        { kind: 'file', path: 'src/domain/entities/order.ts' },
+        undefined,
+        duringController.signal,
+      ),
+    ).toMatchObject({ ok: false, error: { message: 'Impact analysis cancelled' } });
+    await service.dispose();
+  }, 30_000);
 
   it('retains complete risk observations across persistence and restore', async () => {
     const root = await fixtureRepository();
