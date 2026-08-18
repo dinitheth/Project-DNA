@@ -269,7 +269,7 @@ describe('ProjectDNAService integration', () => {
     await service.dispose();
   }, 30_000);
 
-  it('propagates cancellation before and during service impact execution', async () => {
+  it('propagates cancellation before, during, and after service impact execution', async () => {
     const root = await fixtureRepository();
     const before = createContainer(createSilentLogger()).resolve<IProjectDNAService>(
       TOKENS.ProjectDNAService,
@@ -306,6 +306,64 @@ describe('ProjectDNAService integration', () => {
         duringController.signal,
       ),
     ).toMatchObject({ ok: false, error: { message: 'Impact analysis cancelled' } });
+    await service.dispose();
+
+    const afterController = new AbortController();
+    const afterEngine: IImpactEngine = {
+      getImpact(input, target, options, signal) {
+        const result = baseEngine.getImpact(input, target, options, signal);
+        afterController.abort();
+        return result;
+      },
+    };
+    const afterService = createContainer({
+      logger: createSilentLogger(),
+      impactEngine: afterEngine,
+    }).resolve<IProjectDNAService>(TOKENS.ProjectDNAService);
+    const afterAnalyzed = await afterService.analyze(root);
+    if (isErr(afterAnalyzed)) throw afterAnalyzed.error;
+    expect(
+      await afterService.getImpact(
+        { kind: 'file', path: 'src/domain/entities/order.ts' },
+        undefined,
+        afterController.signal,
+      ),
+    ).toMatchObject({ ok: false, error: { message: 'Impact analysis cancelled' } });
+    await afterService.dispose();
+  }, 30_000);
+
+  it('reports unavailable semantic collections without fabricating impact evidence', async () => {
+    const root = await fixtureRepository();
+    const baseEngine = new ImpactEngine();
+    const impactEngine: IImpactEngine = {
+      getImpact(input, target, options, signal) {
+        return baseEngine.getImpact(
+          {
+            ...input,
+            semantic: { ...input.semantic, risks: null },
+          },
+          target,
+          options,
+          signal,
+        );
+      },
+    };
+    const service = createContainer({
+      logger: createSilentLogger(),
+      impactEngine,
+    }).resolve<IProjectDNAService>(TOKENS.ProjectDNAService);
+    const analyzed = await service.analyze(root);
+    if (isErr(analyzed)) throw analyzed.error;
+    const impact = await service.getImpact({ kind: 'file', path: 'src/domain/entities/order.ts' });
+    if (isErr(impact)) throw impact.error;
+    const riskScore = impact.value.score.components.find((item) => item.kind === 'risk-exposure');
+    expect(riskScore).toMatchObject({
+      rawInput: 0,
+      normalizedValue: 0,
+      contribution: 0,
+      status: 'unavailable',
+    });
+    expect(impact.value.warnings).toContain('Semantic enrichment incomplete: risks unavailable');
     await service.dispose();
   }, 30_000);
 
