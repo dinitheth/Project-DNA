@@ -42,6 +42,11 @@ export type {
   IntelligenceOutput,
 } from './intelligence-engine.interface.js';
 export type { IEvolutionEngine } from './evolution-engine.interface.js';
+export type {
+  IImpactEngine,
+  ImpactEngineInput,
+  ImpactSemanticInput,
+} from './impact-engine.interface.js';
 
 // ─── Public API ────────────────────────────────────────────────────
 export type {
@@ -50,5 +55,6 @@ export type {
   IProjectDNAQuery,
   IProjectDNAEvolution,
   IProjectDNAEvents,
+  IProjectDNAImpact,
   EntityFilter,
 } from './project-dna-service.interface.js';

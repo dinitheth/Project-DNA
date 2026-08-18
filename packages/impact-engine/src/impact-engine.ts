@@ -6,9 +6,6 @@ import {
   RISK_SEVERITY_WEIGHTS,
   traverseDependencyGraph,
   type ArchitectureDNA,
-  type BusinessDomain,
-  type Capability,
-  type CriticalComponent,
   type DNAObject,
   type ImpactEvidence,
   type ImpactNode,
@@ -20,26 +17,12 @@ import {
   type ImpactScoreComponent,
   type ImpactScoreComponentStatus,
   type ImpactTarget,
-  type RiskNode,
+  type ImpactEngineInput,
+  type ImpactSemanticInput,
   type RepositoryGraph,
 } from '@project-dna/dna-core';
 
-export interface ImpactEngineInput {
-  readonly repositoryId: string;
-  readonly analysisVersion: number;
-  readonly expectedAnalysisVersion?: number;
-  readonly graph: RepositoryGraph;
-  readonly semantic?: ImpactSemanticInput;
-}
-
-export interface ImpactSemanticInput {
-  readonly entities?: readonly DNAObject[] | null;
-  readonly domains?: readonly BusinessDomain[] | null;
-  readonly capabilities?: readonly Capability[] | null;
-  readonly criticalComponents?: readonly CriticalComponent[] | null;
-  readonly risks?: readonly RiskNode[] | null;
-  readonly architecture?: ArchitectureDNA | null;
-}
+export type { ImpactEngineInput, ImpactSemanticInput } from '@project-dna/dna-core';
 
 const FILE_ENTITY_PREFIX = 'file:';
 

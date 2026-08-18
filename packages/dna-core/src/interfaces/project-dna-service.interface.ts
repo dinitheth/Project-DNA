@@ -29,6 +29,7 @@ import type { DNAGraph } from '../models/dna-graph.js';
 import type { EvolutionSnapshot } from '../models/evolution-snapshot.js';
 import type { DNADiff } from '../models/dna-diff.js';
 import type { PipelineProgress } from '../orchestrator/pipeline.js';
+import type { ImpactOptions, ImpactResult, ImpactTarget } from '../models/impact.js';
 
 // ─── Entity Filter ──────────────────────────────────────────────────
 
@@ -113,6 +114,15 @@ export interface IProjectDNAEvents {
   onReady(listener: (dna: ProjectDNA) => void): () => void;
 }
 
+/** Version-consistent structural and semantic impact queries. */
+export interface IProjectDNAImpact {
+  getImpact(
+    target: ImpactTarget,
+    options?: ImpactOptions,
+    signal?: AbortSignal,
+  ): Promise<Result<ImpactResult>>;
+}
+
 // ─── Composed Service ───────────────────────────────────────────────
 
 /**
@@ -125,4 +135,9 @@ export interface IProjectDNAEvents {
  * - Progress bars → IProjectDNAEvents
  */
 export interface IProjectDNAService
-  extends IProjectDNAAnalyzer, IProjectDNAQuery, IProjectDNAEvolution, IProjectDNAEvents {}
+  extends
+    IProjectDNAAnalyzer,
+    IProjectDNAQuery,
+    IProjectDNAEvolution,
+    IProjectDNAEvents,
+    IProjectDNAImpact {}

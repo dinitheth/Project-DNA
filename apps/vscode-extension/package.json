@@ -80,6 +80,7 @@
     "@project-dna/dna-engine": "workspace:*",
     "@project-dna/software-intelligence-engine": "workspace:*",
     "@project-dna/evolution-engine": "workspace:*",
+    "@project-dna/impact-engine": "workspace:*",
     "@project-dna/storage": "workspace:*",
     "@project-dna/ui-components": "workspace:*",
     "better-sqlite3": "^12.11.1",

@@ -22,6 +22,7 @@ import {
 import type { IDNAEngine, SynthesisOutput } from '../interfaces/dna-engine.interface.js';
 import type { IEvolutionEngine } from '../interfaces/evolution-engine.interface.js';
 import type { ISoftwareIntelligenceEngine } from '../interfaces/intelligence-engine.interface.js';
+import type { IImpactEngine, ImpactSemanticInput } from '../interfaces/impact-engine.interface.js';
 import type {
   IStoragePort,
   StorageMutation,
@@ -49,6 +50,12 @@ import type { RepositoryStory } from '../models/repository-story.js';
 import type { RiskAssessment } from '../models/risk-assessment.js';
 import type { RiskNode } from '../models/risk-node.js';
 import {
+  ImpactResultSchema,
+  type ImpactOptions,
+  type ImpactResult,
+  type ImpactTarget,
+} from '../models/impact.js';
+import {
   AnalysisPerformanceStages,
   measureAnalysisPerformance,
   type AnalysisPerformanceRecorder,
@@ -69,6 +76,7 @@ export interface ProjectDNAServiceDependencies {
   readonly orchestrator: DNAOrchestrator;
   readonly dnaEngine: IDNAEngine;
   readonly intelligenceEngine: ISoftwareIntelligenceEngine;
+  readonly impactEngine: IImpactEngine;
   readonly evolutionEngine: IEvolutionEngine;
   readonly eventBus: EventBus<DNAEventMap>;
   readonly logger: Logger;
@@ -96,6 +104,13 @@ const DEFAULT_ANALYSIS_CONFIG: AnalysisConfig = {
 interface IncrementalBaseline {
   readonly analysis: AnalysisResult;
   readonly synthesis: SynthesisOutput;
+}
+
+interface CapturedImpactState {
+  readonly repositoryId: string;
+  readonly analysisVersion: number;
+  readonly graph: RepositoryGraph;
+  readonly semantic: ImpactSemanticInput;
 }
 
 class SupersededAnalysisError extends Error {
@@ -128,6 +143,7 @@ export class ProjectDNAService implements IProjectDNAService {
   private changeTimer: ReturnType<typeof setTimeout> | null = null;
   private changeBatchStartedAt: number | null = null;
   private disposed = false;
+  private impactStateEpoch = 0;
   private readonly unsubscribeRepositoryChanges: () => void;
   private readonly unsubscribeWatcherInvalidation: () => void;
 
@@ -264,6 +280,7 @@ export class ProjectDNAService implements IProjectDNAService {
       this.incrementalBaseline = null;
       this.collections = recovery.value.analysis.collections;
       this.persistedLatestRecord = recovery.value.latest;
+      this.impactStateEpoch++;
       this.dependencies.logger.info(
         `Restored Project DNA v${recovery.value.analysis.dna.version} for ${recovery.value.analysis.dna.rootPath}`,
       );
@@ -294,6 +311,7 @@ export class ProjectDNAService implements IProjectDNAService {
           );
     }
     this.activeAnalysisRoot = normalizedRoot;
+    this.impactStateEpoch++;
     const operation = Promise.resolve()
       .then(() =>
         measureAnalysisPerformance(
@@ -540,6 +558,7 @@ export class ProjectDNAService implements IProjectDNAService {
       this.collections = collections;
       this.incrementalBaseline = candidateBaseline;
       this.persistedLatestRecord = persisted.value;
+      this.impactStateEpoch++;
       this.acknowledgeChanges(operationGeneration);
       this.dependencies.eventBus.emit(DNAEventNames.EvolutionSnapshotCreated, {
         snapshotId: snapshot.value.id,
@@ -588,6 +607,45 @@ export class ProjectDNAService implements IProjectDNAService {
     this.clearCurrent();
     this.readyListeners.clear();
     await this.dependencies.storage?.close();
+  }
+
+  async getImpact(
+    target: ImpactTarget,
+    options?: ImpactOptions,
+    signal?: AbortSignal,
+  ): Promise<Result<ImpactResult>> {
+    if (signal?.aborted) return Err(new Error('Impact analysis cancelled'));
+    const captured = this.captureImpactState();
+    if (isErr(captured)) return captured;
+    const capturedEpoch = this.impactStateEpoch;
+
+    // Give an analysis requested in the same turn a chance to supersede this snapshot.
+    await Promise.resolve();
+    if (signal?.aborted) return Err(new Error('Impact analysis cancelled'));
+    if (this.impactStateEpoch !== capturedEpoch) return Err(new SupersededAnalysisError());
+
+    const impact = this.dependencies.impactEngine.getImpact(
+      {
+        repositoryId: captured.value.repositoryId,
+        analysisVersion: captured.value.analysisVersion,
+        expectedAnalysisVersion: captured.value.analysisVersion,
+        graph: captured.value.graph,
+        semantic: captured.value.semantic,
+      },
+      target,
+      options,
+      signal,
+    );
+    if (isErr(impact)) return impact;
+    if (signal?.aborted) return Err(new Error('Impact analysis cancelled'));
+    if (
+      this.impactStateEpoch !== capturedEpoch ||
+      this.current?.version !== captured.value.analysisVersion
+    ) {
+      return Err(new SupersededAnalysisError());
+    }
+
+    return Ok(ImpactResultSchema.parse(cloneDto(impact.value)));
   }
 
   getArchitecture(): ArchitectureDNA {
@@ -688,12 +746,34 @@ export class ProjectDNAService implements IProjectDNAService {
     if (!this.current) throw new Error('No Project DNA is currently loaded');
     return this.current;
   }
+  private captureImpactState(): Result<CapturedImpactState> {
+    if (this.analysisOperation) return Err(new SupersededAnalysisError());
+    if (!this.current || !this.collections) {
+      return Err(new Error('No complete Project DNA analysis is currently loaded'));
+    }
+    return Ok({
+      repositoryId: this.current.id,
+      analysisVersion: this.current.version,
+      graph: RepositoryGraph.fromJSON(
+        this.collections.dependencyGraph.toJSON() as Record<string, unknown>,
+      ),
+      semantic: {
+        entities: cloneDto(this.collections.entities),
+        domains: cloneDto(this.collections.domains),
+        capabilities: cloneDto(this.collections.capabilities),
+        criticalComponents: cloneDto(this.current.criticalComponents),
+        risks: cloneDto(this.collections.risks),
+        architecture: cloneDto(this.current.architecture),
+      },
+    });
+  }
   private clearCurrent(): void {
     this.current = null;
     this.collections = null;
     this.rootPath = null;
     this.incrementalBaseline = null;
     this.persistedLatestRecord = null;
+    this.impactStateEpoch++;
   }
 
   private acknowledgeChanges(operationGeneration: number): void {
@@ -976,6 +1056,10 @@ function countModules(graph: RepositoryGraph): number {
     modules.add(segments.length > 1 ? segments.slice(0, -1).join('/') : '_root');
   });
   return modules.size;
+}
+
+function cloneDto<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function normalizeRootPath(rootPath: string): string {

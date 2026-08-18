@@ -15,6 +15,7 @@ import {
   type IDNAEngine,
   type IDependencyEngine,
   type IEvolutionEngine,
+  type IImpactEngine,
   type IKnowledgeEngine,
   type IProjectDNAService,
   type IRepositoryScanner,
@@ -29,6 +30,7 @@ import { KnowledgeEngine } from '@project-dna/knowledge-engine';
 import { DNAEngine } from '@project-dna/dna-engine';
 import { SoftwareIntelligenceEngine } from '@project-dna/software-intelligence-engine';
 import { EvolutionEngine } from '@project-dna/evolution-engine';
+import { ImpactEngine } from '@project-dna/impact-engine';
 import { SqliteStorage } from '@project-dna/storage';
 
 export interface ContainerOptions {
@@ -37,6 +39,7 @@ export interface ContainerOptions {
   readonly performanceRecorder?: AnalysisPerformanceRecorder;
   readonly astEngineOptions?: AstEngineOptions;
   readonly nativeBindingPath?: string;
+  readonly impactEngine?: IImpactEngine;
 }
 
 export function createContainer(options: ContainerOptions | Logger = {}): Container {
@@ -106,6 +109,7 @@ export function createContainer(options: ContainerOptions | Logger = {}): Contai
         orchestrator: current.resolve<DNAOrchestrator>(TOKENS.Orchestrator),
         dnaEngine: current.resolve<IDNAEngine>(TOKENS.DNAEngine),
         intelligenceEngine: current.resolve<ISoftwareIntelligenceEngine>(TOKENS.IntelligenceEngine),
+        impactEngine: resolved.impactEngine ?? new ImpactEngine(),
         evolutionEngine: current.resolve<IEvolutionEngine>(TOKENS.EvolutionEngine),
         eventBus: current.resolve<EventBus<DNAEventMap>>(TOKENS.EventBus),
         logger: current.resolve<Logger>(TOKENS.Logger),

@@ -59,6 +59,9 @@ importers:
       '@project-dna/evolution-engine':
         specifier: workspace:*
         version: link:../../packages/evolution-engine
+      '@project-dna/impact-engine':
+        specifier: workspace:*
+        version: link:../../packages/impact-engine
       '@project-dna/knowledge-engine':
         specifier: workspace:*
         version: link:../../packages/knowledge-engine
