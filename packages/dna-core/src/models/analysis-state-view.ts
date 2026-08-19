@@ -9,7 +9,14 @@ import {
   type GraphEdgeAttributes,
   type GraphNodeAttributes,
 } from './repository-graph.js';
+import type { DependencyGraphView } from '../graph/dependency-traversal.js';
 import { RiskNodeSchema, type RiskNode } from './risk-node.js';
+
+const ANALYSIS_GRAPH_VIEW_CACHE_LIMIT = 8;
+const analysisGraphViewCache = new Map<
+  string,
+  { readonly state: AnalysisStateView; readonly view: DependencyGraphView }
+>();
 
 const GraphNodeAttributesSchema = z.object({
   kind: z.enum(['file', 'module', 'package', 'external']),
@@ -99,7 +106,9 @@ export function createAnalysisStateView(input: AnalysisStateViewInput): Analysis
         ? null
         : canonicalValue(input.architecture),
   });
-  return deepFreeze(canonicalValue(parsed));
+  const state = deepFreeze(canonicalValue(parsed));
+  cacheAnalysisStateGraphView(state, buildAnalysisStateGraphView(state));
+  return state;
 }
 
 /** Restore a private mutable graph from the immutable shared state DTO. */
@@ -118,6 +127,64 @@ export function createRepositoryGraphFromAnalysisState(state: AnalysisStateView)
     })),
   };
   return RepositoryGraph.fromJSON(serialized);
+}
+
+/** Build a lightweight read-only traversal index without reconstructing Graphology. */
+export function createAnalysisStateGraphView(state: AnalysisStateView): DependencyGraphView {
+  const key = analysisStateCacheKey(state);
+  const cached = analysisGraphViewCache.get(key);
+  if (cached?.state === state) {
+    analysisGraphViewCache.delete(key);
+    analysisGraphViewCache.set(key, cached);
+    return cached.view;
+  }
+  const view = buildAnalysisStateGraphView(state);
+  cacheAnalysisStateGraphView(state, view);
+  return view;
+}
+
+function buildAnalysisStateGraphView(state: AnalysisStateView): DependencyGraphView {
+  const nodes = new Map(state.structuralNodes.map((node) => [node.id, node.attributes]));
+  const dependents = new Map<string, string[]>();
+  const dependencies = new Map<string, string[]>();
+  const relationships = new Map<string, GraphEdgeAttributes>();
+  for (const relationship of state.structuralRelationships) {
+    append(dependents, relationship.targetId, relationship.sourceId);
+    append(dependencies, relationship.sourceId, relationship.targetId);
+    relationships.set(
+      relationshipKey(relationship.sourceId, relationship.targetId),
+      relationship.attributes,
+    );
+  }
+  for (const values of dependents.values()) values.sort(compareStrings);
+  for (const values of dependencies.values()) values.sort(compareStrings);
+  const nodeIdsByKind = new Map<GraphNodeAttributes['kind'], string[]>();
+  for (const [id, attributes] of nodes) append(nodeIdsByKind, attributes.kind, id);
+
+  return Object.freeze({
+    hasNode: (id: string) => nodes.has(id),
+    getNodeAttributes: (id: string) => nodes.get(id),
+    getNodesByKind: (kind: GraphNodeAttributes['kind']) => [...(nodeIdsByKind.get(kind) ?? [])],
+    getDependents: (id: string) => dependents.get(id) ?? [],
+    getDependencies: (id: string) => dependencies.get(id) ?? [],
+    getEdgeAttributes: (sourceId: string, targetId: string) =>
+      relationships.get(relationshipKey(sourceId, targetId)),
+  });
+}
+
+function cacheAnalysisStateGraphView(state: AnalysisStateView, view: DependencyGraphView): void {
+  const key = analysisStateCacheKey(state);
+  analysisGraphViewCache.delete(key);
+  analysisGraphViewCache.set(key, { state, view });
+  while (analysisGraphViewCache.size > ANALYSIS_GRAPH_VIEW_CACHE_LIMIT) {
+    const oldestKey = analysisGraphViewCache.keys().next().value as string | undefined;
+    if (oldestKey === undefined) break;
+    analysisGraphViewCache.delete(oldestKey);
+  }
+}
+
+function analysisStateCacheKey(state: AnalysisStateView): string {
+  return `${state.repositoryId}\u0000${state.analysisVersion}`;
 }
 
 /** Stable serialization for hashing, persistence comparisons, and regression tests. */
@@ -173,6 +240,16 @@ function relationshipIdentity(relationship: AnalysisStateRelationship): string {
   return `${relationship.sourceId}\u0000${relationship.targetId}\u0000${JSON.stringify(
     relationship.attributes,
   )}`;
+}
+
+function relationshipKey(sourceId: string, targetId: string): string {
+  return `${sourceId}\u0000${targetId}`;
+}
+
+function append<K>(map: Map<K, string[]>, key: K, value: string): void {
+  const values = map.get(key) ?? [];
+  values.push(value);
+  map.set(key, values);
 }
 
 function compareStrings(left: string, right: string): number {

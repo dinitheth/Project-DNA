@@ -4,7 +4,7 @@ import {
   ImpactResultSchema,
   ImpactTargetSchema,
   RISK_SEVERITY_WEIGHTS,
-  createRepositoryGraphFromAnalysisState,
+  createAnalysisStateGraphView,
   traverseDependencyGraph,
   type ArchitectureDNA,
   type DNAObject,
@@ -20,7 +20,7 @@ import {
   type ImpactTarget,
   type ImpactEngineInput,
   type AnalysisStateView,
-  type RepositoryGraph,
+  type DependencyGraphView,
 } from '@project-dna/dna-core';
 
 export type { ImpactEngineInput, ImpactSemanticInput } from '@project-dna/dna-core';
@@ -72,7 +72,7 @@ export class ImpactEngine {
         return Err(new Error('Impact analysis state version does not match the request'));
       }
 
-      const graph = createRepositoryGraphFromAnalysisState(input.state);
+      const graph = createAnalysisStateGraphView(input.state);
       const resolvedTarget = resolveFileTarget(graph, parsedTarget.value);
       if (!resolvedTarget.ok) return resolvedTarget;
       const targetId = resolvedTarget.value;
@@ -193,7 +193,7 @@ function parseTarget(target: ImpactTarget): Result<ImpactTarget> {
   );
 }
 
-function resolveFileTarget(graph: RepositoryGraph, target: ImpactTarget): Result<string> {
+function resolveFileTarget(graph: DependencyGraphView, target: ImpactTarget): Result<string> {
   const rawId = target.kind === 'file' ? target.path : target.id;
   const graphId = rawId.startsWith(FILE_ENTITY_PREFIX)
     ? rawId.slice(FILE_ENTITY_PREFIX.length)
@@ -220,7 +220,7 @@ function resolveFileTarget(graph: RepositoryGraph, target: ImpactTarget): Result
   return Err(new Error(`Impact target does not resolve to a supported file entity: ${rawId}`));
 }
 
-function resolveDirectNode(graph: RepositoryGraph, id: string): Result<string> {
+function resolveDirectNode(graph: DependencyGraphView, id: string): Result<string> {
   if (!graph.hasNode(id)) return Err(new Error('not a direct graph node'));
   const attributes = graph.getNodeAttributes(id);
   if (attributes?.kind !== 'file') {
@@ -232,7 +232,7 @@ function resolveDirectNode(graph: RepositoryGraph, id: string): Result<string> {
 }
 
 function createImpactNode(
-  graph: RepositoryGraph,
+  graph: DependencyGraphView,
   id: string,
   minimumDepth: number,
 ): Result<ImpactNode> {

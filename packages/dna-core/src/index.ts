@@ -8,6 +8,7 @@ export * from './interfaces/index.js';
 export { compareOrdinalStrings, traverseDependencyGraph } from './graph/dependency-traversal.js';
 export type {
   DependencyTraversalDirection,
+  DependencyGraphView,
   DependencyTraversalNode,
   DependencyTraversalOptions,
   DependencyTraversalRequest,

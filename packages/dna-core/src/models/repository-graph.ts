@@ -141,7 +141,7 @@ export class RepositoryGraph {
    */
   getDependencies(nodeId: string): string[] {
     if (!this.graph.hasNode(nodeId)) return [];
-    return this.graph.outNeighbors(nodeId);
+    return this.graph.outNeighbors(nodeId).sort(compareNodeIds);
   }
 
   /**
@@ -149,7 +149,7 @@ export class RepositoryGraph {
    */
   getDependents(nodeId: string): string[] {
     if (!this.graph.hasNode(nodeId)) return [];
-    return this.graph.inNeighbors(nodeId);
+    return this.graph.inNeighbors(nodeId).sort(compareNodeIds);
   }
 
   // ─── Typed Traversal Methods ────────────────────────────────────
@@ -306,4 +306,8 @@ function selectDependencyType(
   right: GraphEdgeAttributes['type'],
 ): GraphEdgeAttributes['type'] {
   return DEPENDENCY_TYPE_PRIORITY[left] >= DEPENDENCY_TYPE_PRIORITY[right] ? left : right;
+}
+
+function compareNodeIds(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }

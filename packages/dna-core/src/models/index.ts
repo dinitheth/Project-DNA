@@ -124,6 +124,7 @@ export {
   AnalysisStateNodeSchema,
   AnalysisStateRelationshipSchema,
   AnalysisStateViewSchema,
+  createAnalysisStateGraphView,
   createAnalysisStateView,
   createRepositoryGraphFromAnalysisState,
   serializeAnalysisStateView,

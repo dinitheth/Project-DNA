@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  createAnalysisStateGraphView,
   createAnalysisStateView,
   createRepositoryGraphFromAnalysisState,
   serializeAnalysisStateView,
@@ -40,6 +41,16 @@ describe('AnalysisStateView', () => {
       specifierCount: 1,
       isExternal: false,
     });
+  });
+
+  it('caches traversal indexes only for the exact immutable state identity', () => {
+    const first = createAnalysisStateView(fixture(false));
+    const equivalent = createAnalysisStateView(fixture(false));
+    const firstView = createAnalysisStateGraphView(first);
+
+    expect(createAnalysisStateGraphView(first)).toBe(firstView);
+    expect(createAnalysisStateGraphView(equivalent)).not.toBe(firstView);
+    expect(createAnalysisStateGraphView(first)).not.toBe(firstView);
   });
 });
 

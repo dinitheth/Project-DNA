@@ -1,6 +1,16 @@
 import { Err, Ok, type Result } from '@project-dna/shared';
 import type { ImpactRelationship, ImpactTruncation } from '../models/impact.js';
-import type { GraphEdgeAttributes, RepositoryGraph } from '../models/repository-graph.js';
+import type { GraphEdgeAttributes, GraphNodeAttributes } from '../models/repository-graph.js';
+
+/** Minimal immutable/read-only graph contract required by deterministic traversal. */
+export interface DependencyGraphView {
+  hasNode(id: string): boolean;
+  getNodeAttributes(id: string): GraphNodeAttributes | undefined;
+  getNodesByKind(kind: GraphNodeAttributes['kind']): string[];
+  getDependents(nodeId: string): readonly string[];
+  getDependencies(nodeId: string): readonly string[];
+  getEdgeAttributes(sourceId: string, targetId: string): GraphEdgeAttributes | undefined;
+}
 
 export type DependencyTraversalDirection = 'dependents' | 'dependencies' | 'connected';
 
@@ -28,7 +38,7 @@ export interface DependencyTraversalResult {
 }
 
 export interface DependencyTraversalRequest {
-  readonly graphs: readonly RepositoryGraph[];
+  readonly graphs: readonly DependencyGraphView[];
   readonly startIds: readonly string[];
   readonly options: DependencyTraversalOptions;
 }
@@ -94,6 +104,8 @@ export function traverseDependencyGraph(
       request.graphs,
       current.id,
       request.options.direction,
+      visited,
+      Math.max(1, request.options.maxEntities - nodes.length + 1),
       signal,
     );
     if (!neighbors.ok) return neighbors;
@@ -142,11 +154,16 @@ export function traverseDependencyGraph(
 }
 
 function collectNeighbors(
-  graphs: readonly RepositoryGraph[],
+  graphs: readonly DependencyGraphView[],
   nodeId: string,
   direction: DependencyTraversalDirection,
+  visited: ReadonlySet<string>,
+  limit: number,
   signal?: AbortSignal,
 ): Result<NeighborCandidate[]> {
+  if (graphs.length === 1 && direction !== 'connected') {
+    return collectBoundedNeighbors(graphs[0]!, nodeId, direction, visited, limit, signal);
+  }
   const candidates = new Map<string, ImpactRelationship[]>();
   for (const graph of graphs) {
     if (signal?.aborted) return cancelled();
@@ -170,13 +187,43 @@ function collectNeighbors(
       .map(([id, relationships]) => ({
         id,
         relationship: relationships.sort(compareRelationships)[0]!,
-      })),
+      }))
+      .filter((candidate) => !visited.has(candidate.id))
+      .slice(0, limit),
   );
+}
+
+function collectBoundedNeighbors(
+  graph: DependencyGraphView,
+  nodeId: string,
+  direction: Exclude<DependencyTraversalDirection, 'connected'>,
+  visited: ReadonlySet<string>,
+  limit: number,
+  signal?: AbortSignal,
+): Result<NeighborCandidate[]> {
+  const neighborIds =
+    direction === 'dependents' ? graph.getDependents(nodeId) : graph.getDependencies(nodeId);
+  const candidates: NeighborCandidate[] = [];
+  for (const neighborId of neighborIds) {
+    if (signal?.aborted) return cancelled();
+    if (visited.has(neighborId)) continue;
+    const dependentId = direction === 'dependents' ? neighborId : nodeId;
+    const dependencyId = direction === 'dependents' ? nodeId : neighborId;
+    const neighbor = graph.getNodeAttributes(neighborId);
+    const edge = graph.getEdgeAttributes(dependentId, dependencyId);
+    if (neighbor?.kind !== 'file' || !edge || edge.isExternal) continue;
+    candidates.push({
+      id: neighborId,
+      relationship: toRelationship(dependentId, dependencyId, edge),
+    });
+    if (candidates.length >= limit) break;
+  }
+  return Ok(candidates);
 }
 
 function addCandidate(
   candidates: Map<string, ImpactRelationship[]>,
-  graph: RepositoryGraph,
+  graph: DependencyGraphView,
   dependentId: string,
   dependencyId: string,
   neighborId: string,
