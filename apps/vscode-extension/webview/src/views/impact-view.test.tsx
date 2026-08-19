@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ImpactResultData } from '@project-dna/shared';
-import { ImpactResultView, ImpactView } from './impact-view.js';
+import { ImpactResultView, ImpactView, SourceNavigationButton } from './impact-view.js';
 
 describe('impact view', () => {
   it('renders explainable impact result sections with textual severity', () => {
@@ -26,8 +26,14 @@ describe('impact view', () => {
     expect(markup).toContain('Architecture impact');
     expect(markup).toContain('Domain → Infrastructure');
     expect(markup).toContain('Why this score');
+    expect(markup).toContain('Raw input: 2');
+    expect(markup).toContain('Domains');
+    expect(markup).toContain('Risks');
+    expect(markup).toContain('Critical');
+    expect(markup).toContain('Boundaries');
     expect(markup).toContain('Evidence and paths');
     expect(markup).toContain('aria-expanded="false"');
+    expect(markup).toContain('title="src/api.ts"');
   });
 
   it('keeps loading, cancellation, empty, and error states accessible', () => {
@@ -100,6 +106,77 @@ describe('impact view', () => {
         />,
       ),
     ).toContain('No direct dependents found.');
+  });
+
+  it('separates traversal limits from unavailable semantic evidence', () => {
+    const markup = renderToStaticMarkup(
+      <ImpactResultView
+        result={{
+          ...emptyResult(),
+          complete: false,
+          warnings: [
+            'Semantic enrichment incomplete: risks unavailable',
+            'Semantic enrichment incomplete: domains unavailable',
+          ],
+          truncations: [{ kind: 'max-depth', limit: 8, atEntityId: 'file:a.ts' }],
+        }}
+        onOpenWorkspaceTarget={() => undefined}
+        onSelectEntity={() => undefined}
+      />,
+    );
+    expect(markup).toContain('Traversal limited');
+    expect(markup).toContain('Depth bound reached at 8');
+    expect(markup).toContain('Semantic evidence incomplete');
+    expect(markup).toContain(
+      'Risk analysis unavailable; no conclusion about affected risks can be made.',
+    );
+    expect(markup).not.toContain('No retained risks affect this blast radius.');
+    expect(markup).not.toContain('This result is incomplete.');
+  });
+
+  it.each([
+    ['opened', 'Source opened'],
+    ['missing', 'Source missing'],
+    ['rejected', 'Source navigation rejected'],
+    ['failed', 'Source navigation failed'],
+  ] as const)('surfaces workspace target %s outcomes accessibly', (outcome, label) => {
+    const markup = renderToStaticMarkup(
+      <ImpactView
+        navigationFeedback={{
+          requestId: 4,
+          path: 'src/missing.ts',
+          outcome,
+          message: 'File operation result.',
+        }}
+        state={{ status: 'idle', target: null, result: null, error: null }}
+        onCancel={() => undefined}
+        onOpenWorkspaceTarget={() => undefined}
+        onSelectEntity={() => undefined}
+      />,
+    );
+    expect(markup).toContain(label);
+    expect(markup).toContain('src/missing.ts');
+    expect(markup).toContain('File operation result.');
+    expect(markup).toContain('role="status"');
+  });
+
+  it('routes critical-component and evidence source actions through canonical paths', () => {
+    const open = vi.fn();
+    const button = SourceNavigationButton({
+      path: 'src/payments.ts',
+      onOpenWorkspaceTarget: open,
+    });
+    button.props.onClick();
+    const markup = renderToStaticMarkup(
+      <ImpactResultView
+        result={result()}
+        onOpenWorkspaceTarget={open}
+        onSelectEntity={() => undefined}
+      />,
+    );
+    expect(open).toHaveBeenCalledWith('src/payments.ts');
+    expect(markup).toContain('Open source');
+    expect(markup).toContain('title="Payment service"');
   });
 });
 

@@ -7,11 +7,19 @@ import type {
 import { EmptyCollection, MetricCard, Section } from '../components/ui';
 import { Panel } from '@project-dna/ui-components';
 
+export interface NavigationFeedback {
+  readonly requestId: number;
+  readonly path: WorkspaceRelativePath;
+  readonly outcome: 'opened' | 'missing' | 'rejected' | 'failed';
+  readonly message: string | null;
+}
+
 export function ImpactView({
   state,
   onCancel,
   onSelectEntity,
   onOpenWorkspaceTarget,
+  navigationFeedback,
 }: {
   state: {
     status: 'idle' | 'loading' | 'ready' | 'error' | 'cancelled';
@@ -22,53 +30,69 @@ export function ImpactView({
   onCancel: () => void;
   onSelectEntity: (entityId: string) => void;
   onOpenWorkspaceTarget: (path: WorkspaceRelativePath) => void;
+  navigationFeedback?: NavigationFeedback | null;
 }) {
-  if (state.status === 'idle') return null;
+  const feedback = navigationFeedback ? (
+    <NavigationFeedbackView feedback={navigationFeedback} />
+  ) : null;
+  if (state.status === 'idle') return feedback;
   if (state.status === 'loading')
     return (
-      <section
-        aria-live="polite"
-        role="status"
-        className="mt-4 rounded border border-dna-border bg-dna-surface p-3"
-      >
-        <h2 className="text-sm font-semibold">Impact analysis</h2>
-        <p className="mt-2 text-xs text-dna-muted">Calculating downstream dependents…</p>
-        <button
-          className="mt-3 rounded border border-dna-border px-3 py-1.5 text-xs"
-          onClick={onCancel}
-          type="button"
+      <>
+        {feedback}
+        <section
+          aria-live="polite"
+          role="status"
+          className="mt-4 rounded border border-dna-border bg-dna-surface p-3"
         >
-          Cancel
-        </button>
-      </section>
+          <h2 className="text-sm font-semibold">Impact analysis</h2>
+          <p className="mt-2 text-xs text-dna-muted">Calculating downstream dependents…</p>
+          <button
+            className="mt-3 rounded border border-dna-border px-3 py-1.5 text-xs"
+            onClick={onCancel}
+            type="button"
+          >
+            Cancel
+          </button>
+        </section>
+      </>
     );
   if (state.status === 'cancelled')
     return (
-      <section
-        aria-live="polite"
-        className="mb-4 rounded border border-dna-border bg-dna-surface p-3 text-sm"
-        role="status"
-      >
-        Impact analysis cancelled.
-      </section>
+      <>
+        {feedback}
+        <section
+          aria-live="polite"
+          className="mb-4 rounded border border-dna-border bg-dna-surface p-3 text-sm"
+          role="status"
+        >
+          Impact analysis cancelled.
+        </section>
+      </>
     );
   if (state.status === 'error' || !state.result)
     return (
-      <section
-        aria-live="assertive"
-        role="alert"
-        className="mt-4 rounded border border-error p-3 text-sm text-error"
-      >
-        <h2 className="font-semibold">Impact unavailable</h2>
-        <p className="mt-1">{state.error ?? 'Impact analysis unavailable.'}</p>
-      </section>
+      <>
+        {feedback}
+        <section
+          aria-live="assertive"
+          role="alert"
+          className="mt-4 rounded border border-error p-3 text-sm text-error"
+        >
+          <h2 className="font-semibold">Impact unavailable</h2>
+          <p className="mt-1">{state.error ?? 'Impact analysis unavailable.'}</p>
+        </section>
+      </>
     );
   return (
-    <ImpactResultView
-      result={state.result}
-      onSelectEntity={onSelectEntity}
-      onOpenWorkspaceTarget={onOpenWorkspaceTarget}
-    />
+    <>
+      {feedback}
+      <ImpactResultView
+        result={state.result}
+        onSelectEntity={onSelectEntity}
+        onOpenWorkspaceTarget={onOpenWorkspaceTarget}
+      />
+    </>
   );
 }
 
@@ -85,6 +109,17 @@ export function ImpactResultView({
   const severity = scoreSeverity(result.score.total);
   const targetLabel = result.target.path ?? result.target.name;
   const allEntities = [...result.directImpactedEntities, ...result.transitiveImpactedEntities];
+  const semanticUnavailable = semanticUnavailableMessages(result.warnings);
+  const domainsUnavailable = hasSemanticWarning(result.warnings, 'domains unavailable');
+  const capabilitiesUnavailable = hasSemanticWarning(result.warnings, 'capabilities unavailable');
+  const criticalUnavailable = hasSemanticWarning(
+    result.warnings,
+    'critical components unavailable',
+  );
+  const risksUnavailable = hasSemanticWarning(result.warnings, 'risks unavailable');
+  const architectureUnavailable =
+    hasSemanticWarning(result.warnings, 'architecture layers unavailable') ||
+    hasSemanticWarning(result.warnings, 'entities unavailable for layer membership');
   return (
     <div className="mt-4 pb-4">
       <section className="rounded border border-dna-border bg-dna-surface p-3">
@@ -113,24 +148,28 @@ export function ImpactResultView({
             label="Transitive"
             value={result.transitiveImpactedEntities.length}
           />
+          <MetricCard
+            className="border-dna-border bg-dna-background"
+            label="Domains"
+            value={result.semanticEffects.domains.length}
+          />
+          <MetricCard
+            className="border-dna-border bg-dna-background"
+            label="Risks"
+            value={result.semanticEffects.risks.length}
+          />
+          <MetricCard
+            className="border-dna-border bg-dna-background"
+            label="Critical"
+            value={result.semanticEffects.criticalComponents.length}
+          />
+          <MetricCard
+            className="border-dna-border bg-dna-background"
+            label="Boundaries"
+            value={result.semanticEffects.architecture.boundaryCrossings.length}
+          />
         </div>
       </section>
-      <Panel title="Why this score" collapsible>
-        <div className="space-y-2">
-          {result.score.components.map((component) => (
-            <div className="rounded border border-dna-border p-2" key={component.kind}>
-              <div className="flex justify-between gap-2 text-xs">
-                <span>{format(component.kind)}</span>
-                <strong>+{component.contribution.toFixed(1)}</strong>
-              </div>
-              <p className="mt-1 text-xs text-dna-muted">
-                {component.status} · {Math.round(component.normalizedValue * 100)}% normalized ·
-                weight {Math.round(component.weight * 100)}%
-              </p>
-            </div>
-          ))}
-        </div>
-      </Panel>
       <ListSection
         title="Direct dependents"
         items={result.directImpactedEntities}
@@ -143,9 +182,30 @@ export function ImpactResultView({
         onSelectEntity={onSelectEntity}
         onOpenWorkspaceTarget={onOpenWorkspaceTarget}
       />
+      <Panel defaultOpen={false} title="Why this score" collapsible>
+        <div className="space-y-2">
+          {result.score.components.map((component) => (
+            <div className="rounded border border-dna-border p-2" key={component.kind}>
+              <div className="flex justify-between gap-2 text-xs">
+                <span>{scoreComponentLabel(component.kind)}</span>
+                <strong>+{component.contribution.toFixed(1)}</strong>
+              </div>
+              <p className="mt-1 text-xs text-dna-muted">
+                Raw input: {component.rawInput} · normalized{' '}
+                {Math.round(component.normalizedValue * 100)}%{' · '}weight{' '}
+                {Math.round(component.weight * 100)}% · {component.status}
+              </p>
+            </div>
+          ))}
+        </div>
+      </Panel>
       <EffectSection
         title="Affected domains"
-        empty="No affected domains were found."
+        empty={
+          domainsUnavailable
+            ? 'Domain analysis unavailable; no conclusion about affected domains can be made.'
+            : 'No affected domains were found.'
+        }
         isEmpty={result.semanticEffects.domains.length === 0}
       >
         {result.semanticEffects.domains.map((item) => (
@@ -158,7 +218,11 @@ export function ImpactResultView({
       </EffectSection>
       <EffectSection
         title="Capabilities"
-        empty="No affected capabilities were found."
+        empty={
+          capabilitiesUnavailable
+            ? 'Capability analysis unavailable; no conclusion about affected capabilities can be made.'
+            : 'No affected capabilities were found.'
+        }
         isEmpty={result.semanticEffects.capabilities.length === 0}
       >
         {result.semanticEffects.capabilities.map((item) => (
@@ -171,7 +235,11 @@ export function ImpactResultView({
       </EffectSection>
       <EffectSection
         title="Critical components"
-        empty="No critical components were exposed."
+        empty={
+          criticalUnavailable
+            ? 'Critical-component analysis unavailable; no conclusion about critical exposure can be made.'
+            : 'No critical components were exposed.'
+        }
         isEmpty={result.semanticEffects.criticalComponents.length === 0}
       >
         {result.semanticEffects.criticalComponents.map((item) => (
@@ -179,12 +247,18 @@ export function ImpactResultView({
             key={item.id}
             title={item.name}
             detail={`${format(item.criticality)} · ${item.reason}`}
+            path={item.path}
+            onOpenWorkspaceTarget={onOpenWorkspaceTarget}
           />
         ))}
       </EffectSection>
       <EffectSection
         title="Risks"
-        empty="No retained risks affect this blast radius."
+        empty={
+          risksUnavailable
+            ? 'Risk analysis unavailable; no conclusion about affected risks can be made.'
+            : 'No retained risks affect this blast radius.'
+        }
         isEmpty={result.semanticEffects.risks.length === 0}
       >
         {result.semanticEffects.risks.map((item) => (
@@ -197,7 +271,11 @@ export function ImpactResultView({
       </EffectSection>
       <EffectSection
         title="Architecture impact"
-        empty="No architecture layers or boundaries were affected."
+        empty={
+          architectureUnavailable
+            ? 'Architecture analysis unavailable; no conclusion about layer impact can be made.'
+            : 'No architecture layers or boundaries were affected.'
+        }
         isEmpty={
           result.semanticEffects.architecture.layers.length === 0 &&
           result.semanticEffects.architecture.boundaryCrossings.length === 0
@@ -235,47 +313,74 @@ export function ImpactResultView({
                 key={`path:${path.impactedEntityId}`}
               >
                 <p className="font-medium">Canonical shortest path</p>
-                <p className="mt-1 break-words text-dna-muted">{path.nodeIds.join(' → ')}</p>
+                <p className="mt-1 break-words text-dna-muted" title={path.nodeIds.join(' → ')}>
+                  {path.nodeIds.join(' → ')}
+                </p>
               </div>
             ))}
             {result.evidence.map((item) => (
               <div className="rounded border border-dna-border p-2 text-xs" key={item.id}>
                 <p className="font-medium">{format(item.reason)}</p>
-                <p className="mt-1 text-dna-muted">{item.sourcePath ?? item.entityId}</p>
+                <p
+                  className="mt-1 break-words text-dna-muted"
+                  title={item.sourcePath ?? item.entityId}
+                >
+                  {item.sourcePath ?? item.entityId}
+                </p>
                 {item.sourcePath ? (
-                  <button
-                    className="mt-2 rounded border border-dna-border px-2 py-1 hover:bg-dna-surface-hover"
-                    onClick={() => onOpenWorkspaceTarget(item.sourcePath!)}
-                    type="button"
-                  >
-                    Open source
-                  </button>
+                  <SourceNavigationButton
+                    onOpenWorkspaceTarget={onOpenWorkspaceTarget}
+                    path={item.sourcePath}
+                  />
                 ) : null}
                 {item.path ? (
-                  <p className="mt-1 break-words text-dna-muted">{item.path.nodeIds.join(' → ')}</p>
+                  <p
+                    className="mt-1 break-words text-dna-muted"
+                    title={item.path.nodeIds.join(' → ')}
+                  >
+                    {item.path.nodeIds.join(' → ')}
+                  </p>
                 ) : null}
               </div>
             ))}
           </div>
         ) : null}
       </Panel>
-      {result.warnings.length || result.truncations.length || !result.complete ? (
-        <section aria-live="polite" className="rounded border border-dna-border bg-dna-surface p-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wide">Warnings</h3>
-          {result.warnings.map((warning) => (
+      {result.truncations.length > 0 ? (
+        <NoticeSection title="Traversal limited">
+          <p className="text-xs text-dna-muted">
+            The displayed dependent set may not be exhaustive.
+          </p>
+          {result.truncations.map((item) => (
+            <p className="mt-1 text-xs text-dna-muted" key={`${item.kind}-${item.limit}`}>
+              {truncationMessage(item.kind, item.limit)}
+            </p>
+          ))}
+        </NoticeSection>
+      ) : null}
+      {semanticUnavailable.length > 0 ? (
+        <NoticeSection title="Semantic evidence incomplete">
+          {semanticUnavailable.map((warning) => (
             <p className="mt-1 text-xs text-dna-muted" key={warning}>
               {warning}
             </p>
           ))}
-          {result.truncations.map((item) => (
-            <p className="mt-1 text-xs text-dna-muted" key={`${item.kind}-${item.limit}`}>
-              Truncated at {format(item.kind)} (limit {item.limit}).
-            </p>
-          ))}
-          {!result.complete ? (
+        </NoticeSection>
+      ) : null}
+      {result.warnings.filter((warning) => !warning.startsWith('Semantic enrichment incomplete:'))
+        .length > 0 ? (
+        <NoticeSection title="Additional notes">
+          {result.warnings
+            .filter((warning) => !warning.startsWith('Semantic enrichment incomplete:'))
+            .map((warning) => (
+              <p className="mt-1 text-xs text-dna-muted" key={warning}>
+                {warning}
+              </p>
+            ))}
+          {!result.complete && result.truncations.length === 0 ? (
             <p className="mt-1 text-xs text-dna-muted">This result is incomplete.</p>
           ) : null}
-        </section>
+        </NoticeSection>
       ) : null}
       <p className="mt-2 text-xs text-dna-muted">
         {allEntities.length} affected entities · analysis v{result.analysisVersion}
@@ -303,8 +408,13 @@ function ListSection({
         <div className="space-y-1">
           {items.map((item) => (
             <div className="rounded border border-dna-border bg-dna-surface p-2" key={item.id}>
-              <span className="block truncate text-xs font-medium">{item.name}</span>
-              <span className="block truncate text-xs text-dna-muted">
+              <span className="block truncate text-xs font-medium" title={item.name}>
+                {item.name}
+              </span>
+              <span
+                className="block break-words text-xs text-dna-muted"
+                title={item.path ?? item.id}
+              >
                 {item.path ?? item.id} · depth {item.minimumDepth}
               </span>
               <div className="mt-2 flex flex-wrap gap-2">
@@ -353,11 +463,28 @@ function EffectSection({
     </Section>
   );
 }
-function Effect({ title, detail }: { title: string; detail: string }) {
+function Effect({
+  title,
+  detail,
+  path,
+  onOpenWorkspaceTarget,
+}: {
+  title: string;
+  detail: string;
+  path?: WorkspaceRelativePath;
+  onOpenWorkspaceTarget?: (path: WorkspaceRelativePath) => void;
+}) {
   return (
     <div className="rounded border border-dna-border bg-dna-surface p-2">
-      <p className="text-xs font-medium">{title}</p>
-      <p className="mt-1 text-xs text-dna-muted">{detail}</p>
+      <p className="break-words text-xs font-medium" title={title}>
+        {title}
+      </p>
+      <p className="mt-1 break-words text-xs text-dna-muted" title={detail}>
+        {detail}
+      </p>
+      {path && onOpenWorkspaceTarget ? (
+        <SourceNavigationButton onOpenWorkspaceTarget={onOpenWorkspaceTarget} path={path} />
+      ) : null}
     </div>
   );
 }
@@ -379,7 +506,10 @@ function Severity({ severity, score }: { severity: string; score: number }) {
         className="mt-1 h-1.5 overflow-hidden rounded bg-dna-surface-hover"
         role="progressbar"
       >
-        <div className={`h-full ${colors[severity]}`} style={{ width: `${score}%` }} />
+        <div
+          className={`h-full ${colors[severity]}`}
+          style={{ width: `${Math.min(100, Math.max(0, score))}%` }}
+        />
       </div>
     </div>
   );
@@ -392,4 +522,122 @@ function scoreSeverity(score: number): string {
 }
 function format(value: string): string {
   return value.replaceAll('-', ' ').replace(/\b\w/gu, (character) => character.toUpperCase());
+}
+
+function scoreComponentLabel(kind: string): string {
+  return (
+    {
+      'dependency-reach': 'Dependency reach · downstream entity count',
+      'critical-component-exposure': 'Critical exposure · critical-component exposure',
+      'domain-reach': 'Domain reach · affected domain count',
+      'risk-exposure': 'Risk exposure',
+      'architecture-boundaries': 'Architecture boundaries · boundary count',
+    }[kind] ?? format(kind)
+  );
+}
+
+function truncationMessage(kind: string, limit: number): string {
+  return (
+    {
+      'max-depth': `Depth bound reached at ${limit}; deeper dependents are omitted.`,
+      'max-entities': `Entity bound reached at ${limit}; additional dependents are omitted.`,
+      'max-evidence-paths': `Evidence bound reached at ${limit}; additional paths are omitted.`,
+    }[kind] ?? `Traversal bound reached at ${limit}.`
+  );
+}
+
+function semanticUnavailableMessages(warnings: readonly string[]): string[] {
+  const messages: string[] = [];
+  const mapping: Array<[string, string]> = [
+    [
+      'domains unavailable',
+      'Domain analysis unavailable; no conclusion about affected domains can be made.',
+    ],
+    [
+      'capabilities unavailable',
+      'Capability analysis unavailable; no conclusion about affected capabilities can be made.',
+    ],
+    [
+      'critical components unavailable',
+      'Critical-component analysis unavailable; no conclusion about critical exposure can be made.',
+    ],
+    [
+      'risks unavailable',
+      'Risk analysis unavailable; no conclusion about affected risks can be made.',
+    ],
+    [
+      'architecture layers unavailable',
+      'Architecture analysis unavailable; no conclusion about layer impact can be made.',
+    ],
+    [
+      'entities unavailable for layer membership',
+      'Architecture membership data unavailable; no conclusion about layer impact can be made.',
+    ],
+    [
+      'canonical paths unavailable',
+      'Canonical paths unavailable; architecture boundary evidence may be incomplete.',
+    ],
+  ];
+  for (const [needle, message] of mapping) {
+    if (warnings.some((warning) => warning.includes(needle))) messages.push(message);
+  }
+  return messages;
+}
+
+function hasSemanticWarning(warnings: readonly string[], needle: string): boolean {
+  return warnings.some(
+    (warning) => warning.startsWith('Semantic enrichment incomplete:') && warning.includes(needle),
+  );
+}
+
+export function SourceNavigationButton({
+  path,
+  onOpenWorkspaceTarget,
+}: {
+  path: WorkspaceRelativePath;
+  onOpenWorkspaceTarget: (path: WorkspaceRelativePath) => void;
+}) {
+  return (
+    <button
+      className="mt-2 rounded border border-dna-border px-2 py-1 text-xs hover:bg-dna-surface-hover"
+      onClick={() => onOpenWorkspaceTarget(path)}
+      type="button"
+    >
+      Open source
+    </button>
+  );
+}
+
+function NoticeSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section aria-live="polite" className="rounded border border-dna-border bg-dna-surface p-3">
+      <h3 className="text-xs font-semibold uppercase tracking-wide">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function NavigationFeedbackView({ feedback }: { feedback: NavigationFeedback }) {
+  const labels = {
+    opened: 'Source opened',
+    missing: 'Source missing',
+    rejected: 'Source navigation rejected',
+    failed: 'Source navigation failed',
+  } as const;
+  const tone = feedback.outcome === 'opened' ? 'text-dna-foreground' : 'text-error';
+  return (
+    <section
+      aria-live="polite"
+      className="mb-3 rounded border border-dna-border bg-dna-surface p-2 text-xs"
+      role="status"
+    >
+      <p className={`font-medium ${tone}`}>{labels[feedback.outcome]}</p>
+      <p className="mt-1 break-words text-dna-muted" title={feedback.path}>
+        {feedback.path}
+      </p>
+      {feedback.message ? (
+        <p className="mt-1 break-words text-dna-muted">{feedback.message}</p>
+      ) : null}
+    </section>
+  );
 }

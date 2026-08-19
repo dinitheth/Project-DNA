@@ -9,6 +9,7 @@ import { KnowledgeView } from './views/knowledge-view';
 import { DependenciesView } from './views/dependencies-view';
 import { SettingsView } from './views/settings-view';
 import { ImpactView } from './views/impact-view';
+import type { NavigationFeedback } from './views/impact-view';
 import { SidebarNavigationController, type NavigationState } from './state/navigation-state';
 import {
   reduceEntityDetailState,
@@ -26,6 +27,8 @@ export default function App() {
   const vscode = useVSCodeApi();
   const navigationController = useRef<SidebarNavigationController | null>(null);
   const workspaceTargetRequestId = useRef(0);
+  const activeImpactNavigationRequestId = useRef<number | null>(null);
+  const [navigationFeedback, setNavigationFeedback] = useState<NavigationFeedback | null>(null);
   const restoredEntityDetail = useRef(restoreEntityDetailState(vscode.getState()));
   const entityDetailRequestId = useRef(
     restoredEntityDetail.current.requestId === Number.MAX_SAFE_INTEGER
@@ -75,6 +78,18 @@ export default function App() {
     if (message.type === 'navigateTo') {
       navigationController.current?.receive(message);
       return;
+    }
+    if (
+      message.type === 'workspaceTargetResult' &&
+      message.requestId === activeImpactNavigationRequestId.current
+    ) {
+      activeImpactNavigationRequestId.current = null;
+      setNavigationFeedback({
+        requestId: message.requestId,
+        path: message.path,
+        outcome: message.outcome,
+        message: message.message ?? null,
+      });
     }
     dispatchEntityDetail({ type: 'message', message });
     dispatchEvolutionComparison({ type: 'message', message });
@@ -158,6 +173,19 @@ export default function App() {
       const requestId = workspaceTargetRequestId.current;
       if (requestId === Number.MAX_SAFE_INTEGER) workspaceTargetRequestId.current = 0;
       else workspaceTargetRequestId.current++;
+      activeImpactNavigationRequestId.current = null;
+      setNavigationFeedback(null);
+      vscode.postMessage({ type: 'openWorkspaceTarget', requestId, path });
+    },
+    [vscode],
+  );
+  const openImpactWorkspaceTarget = useCallback(
+    (path: WorkspaceRelativePath) => {
+      const requestId = workspaceTargetRequestId.current;
+      if (requestId === Number.MAX_SAFE_INTEGER) workspaceTargetRequestId.current = 0;
+      else workspaceTargetRequestId.current++;
+      activeImpactNavigationRequestId.current = requestId;
+      setNavigationFeedback(null);
       vscode.postMessage({ type: 'openWorkspaceTarget', requestId, path });
     },
     [vscode],
@@ -314,10 +342,11 @@ export default function App() {
       </header>
       <main className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
         <ImpactView
+          navigationFeedback={navigationFeedback}
           state={impact}
           onCancel={cancelImpact}
           onSelectEntity={selectEntity}
-          onOpenWorkspaceTarget={openWorkspaceTarget}
+          onOpenWorkspaceTarget={openImpactWorkspaceTarget}
         />
         {renderView()}
         <EntityDetailPanel
