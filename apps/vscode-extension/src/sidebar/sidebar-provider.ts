@@ -5,6 +5,7 @@ import {
   WebviewMessageSchema,
   WorkspaceRelativePathSchema,
   ImpactResultDataSchema,
+  WorkingTreeImpactDataSchema,
   isErr,
   type ExtensionMessage,
   type SidebarRoute,
@@ -37,6 +38,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         readonly controller: AbortController;
       }
     | undefined;
+  private activeWorkingTreeImpact:
+    | {
+        readonly view: vscode.WebviewView;
+        readonly requestId: number;
+        readonly controller: AbortController;
+      }
+    | undefined;
   private readonly unsubscribeProgress: () => void;
   private readonly unsubscribeReady: () => void;
 
@@ -48,6 +56,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     this.unsubscribeProgress = service.onProgress((progress) => {
       if (progress.stage === 'scanning' && !this.analysisInProgress) {
         this.cancelActiveImpact();
+        this.cancelActiveWorkingTreeImpact();
         const rootPath = this.getWorkspaceRoot();
         if (rootPath) {
           this.publicationEpoch++;
@@ -84,6 +93,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
   public handleWorkspaceChanged(rootPath: string | null): void {
     this.cancelActiveImpact();
+    this.cancelActiveWorkingTreeImpact();
     this.publicationEpoch++;
     this.analysisInProgress = false;
     this.activeRootPath = null;
@@ -104,6 +114,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     _token: vscode.CancellationToken,
   ): void {
     this.cancelActiveImpact();
+    this.cancelActiveWorkingTreeImpact();
     this.webviewView = webviewView;
     this.webviewReady = false;
     this.deliveredNavigationRevision = -1;
@@ -111,6 +122,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     webviewView.onDidDispose(() => {
       if (this.webviewView === webviewView) {
         this.cancelActiveImpact();
+        this.cancelActiveWorkingTreeImpact();
         this.webviewView = undefined;
         this.webviewReady = false;
       }
@@ -131,6 +143,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
   public dispose(): void {
     this.disposed = true;
     this.cancelActiveImpact();
+    this.cancelActiveWorkingTreeImpact();
     this.publicationEpoch++;
     this.unsubscribeProgress();
     this.unsubscribeReady();
@@ -179,12 +192,23 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
           message.target,
         );
         return;
+      case 'requestWorkingTreeImpact':
+        await this.publishWorkingTreeImpact(sourceView, message.requestId, message.analysisVersion);
+        return;
       case 'cancelImpact':
         if (
           this.activeImpact?.view === sourceView &&
           this.activeImpact.requestId === message.requestId
         ) {
           this.cancelActiveImpact();
+        }
+        return;
+      case 'cancelWorkingTreeImpact':
+        if (
+          this.activeWorkingTreeImpact?.view === sourceView &&
+          this.activeWorkingTreeImpact.requestId === message.requestId
+        ) {
+          this.cancelActiveWorkingTreeImpact();
         }
         return;
       case 'requestAnalysis':
@@ -665,9 +689,99 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     });
   }
 
+  private async publishWorkingTreeImpact(
+    sourceView: vscode.WebviewView,
+    requestId: number,
+    analysisVersion: number,
+  ): Promise<void> {
+    if (this.webviewView !== sourceView || this.disposed) return;
+    this.cancelActiveWorkingTreeImpact();
+    const current = this.service.getCurrent();
+    if (isErr(current) || !current.value || current.value.version !== analysisVersion) {
+      await this.postWorkingTreeImpact(
+        sourceView,
+        requestId,
+        analysisVersion,
+        null,
+        'Analysis version is no longer current.',
+      );
+      return;
+    }
+
+    const controller = new AbortController();
+    const operation = { view: sourceView, requestId, controller };
+    this.activeWorkingTreeImpact = operation;
+    const result = await this.service.getWorkingTreeImpact(undefined, controller.signal);
+    if (
+      this.activeWorkingTreeImpact !== operation ||
+      this.webviewView !== sourceView ||
+      this.disposed
+    ) {
+      return;
+    }
+    this.activeWorkingTreeImpact = undefined;
+    if (isErr(result)) {
+      await this.postWorkingTreeImpact(
+        sourceView,
+        requestId,
+        analysisVersion,
+        null,
+        result.error.message,
+      );
+      return;
+    }
+    if (
+      result.value.afterAnalysisVersion !== null &&
+      result.value.afterAnalysisVersion !== analysisVersion
+    ) {
+      await this.postWorkingTreeImpact(
+        sourceView,
+        requestId,
+        analysisVersion,
+        null,
+        'Working-tree impact was superseded by a newer analysis.',
+      );
+      return;
+    }
+    const serialized = WorkingTreeImpactDataSchema.safeParse(toWorkingTreeImpactData(result.value));
+    if (!serialized.success) {
+      await this.postWorkingTreeImpact(
+        sourceView,
+        requestId,
+        analysisVersion,
+        null,
+        `Working-tree impact could not cross the webview boundary: ${serialized.error.message}`,
+      );
+      return;
+    }
+    await this.postWorkingTreeImpact(sourceView, requestId, analysisVersion, serialized.data);
+  }
+
+  private async postWorkingTreeImpact(
+    sourceView: vscode.WebviewView,
+    requestId: number,
+    analysisVersion: number,
+    result: import('@project-dna/shared').WorkingTreeImpactData | null,
+    error?: string,
+  ): Promise<void> {
+    if (this.webviewView !== sourceView) return;
+    await safePostMessage(sourceView, {
+      type: 'workingTreeImpactResult',
+      requestId,
+      analysisVersion,
+      result,
+      error,
+    });
+  }
+
   private cancelActiveImpact(): void {
     this.activeImpact?.controller.abort();
     this.activeImpact = undefined;
+  }
+
+  private cancelActiveWorkingTreeImpact(): void {
+    this.activeWorkingTreeImpact?.controller.abort();
+    this.activeWorkingTreeImpact = undefined;
   }
 
   private requestPublication(): void {
@@ -891,6 +1005,30 @@ function toImpactResultData(
     complete: result.complete,
     truncations: result.truncations,
     appliedBounds: result.appliedBounds,
+  };
+}
+
+function toWorkingTreeImpactData(
+  result: import('@project-dna/dna-core').WorkingTreeImpactResult,
+): import('@project-dna/shared').WorkingTreeImpactData {
+  return {
+    repositoryId: result.repositoryId,
+    headCommit: result.headCommit,
+    changedPaths: result.changedPaths,
+    resolvedTargets: result.resolvedTargets,
+    unresolvedPaths: result.unresolvedPaths,
+    impacts: result.impacts.map((impact) => ({
+      path: impact.path,
+      side: impact.side,
+      result: toImpactResultData(impact.result),
+    })),
+    changedEntityIds: result.changedEntityIds,
+    impactedEntityIds: result.impactedEntityIds,
+    beforeAnalysisVersion: result.beforeAnalysisVersion,
+    afterAnalysisVersion: result.afterAnalysisVersion,
+    warnings: result.warnings,
+    complete: result.complete,
+    truncations: result.truncations,
   };
 }
 

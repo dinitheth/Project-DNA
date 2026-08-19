@@ -213,6 +213,53 @@ describe('SidebarProvider navigation', () => {
     });
   });
 
+  it('publishes a bounded working-tree impact DTO and forwards cancellation', async () => {
+    const pending = createDeferred<ReturnType<typeof Ok<never>>>();
+    let signal: AbortSignal | undefined;
+    const service = createService({ currentVersion: 3 });
+    service.getWorkingTreeImpact = vi.fn((_options, candidate) => {
+      signal = candidate;
+      return pending.promise as never;
+    });
+    const harness = createHarness({ service });
+    harness.resolve();
+    harness.receive({ type: 'requestWorkingTreeImpact', requestId: 8, analysisVersion: 3 });
+    expect(service.getWorkingTreeImpact).toHaveBeenCalledOnce();
+    expect(signal).toBeInstanceOf(AbortSignal);
+    pending.resolve(Ok(workingTreeImpactResult(3)) as never);
+    await harness.waitForWorkingTreeImpactResultCount(1);
+    expect(harness.workingTreeImpactResults()[0]).toMatchObject({
+      requestId: 8,
+      analysisVersion: 3,
+      result: {
+        headCommit: 'a'.repeat(40),
+        changedPaths: [expect.objectContaining({ path: 'src/changed.ts', staged: true })],
+      },
+    });
+    harness.receive({ type: 'cancelWorkingTreeImpact', requestId: 8 });
+    expect(signal?.aborted).toBe(false);
+  });
+
+  it('cancels a superseded working-tree request and suppresses its late result', async () => {
+    const first = createDeferred<ReturnType<typeof Ok<never>>>();
+    const second = createDeferred<ReturnType<typeof Ok<never>>>();
+    const signals: AbortSignal[] = [];
+    const service = createService({ currentVersion: 3 });
+    service.getWorkingTreeImpact = vi.fn((_options, candidate) => {
+      signals.push(candidate!);
+      return (signals.length === 1 ? first.promise : second.promise) as never;
+    });
+    const harness = createHarness({ service });
+    harness.resolve();
+    harness.receive({ type: 'requestWorkingTreeImpact', requestId: 1, analysisVersion: 3 });
+    harness.receive({ type: 'requestWorkingTreeImpact', requestId: 2, analysisVersion: 3 });
+    expect(signals[0]?.aborted).toBe(true);
+    first.resolve(Ok(workingTreeImpactResult(3)) as never);
+    second.resolve(Ok(workingTreeImpactResult(3)) as never);
+    await harness.waitForWorkingTreeImpactResultCount(1);
+    expect(harness.workingTreeImpactResults()[0]?.requestId).toBe(2);
+  });
+
   it('rejects stale impact versions and suppresses disposed or failed deliveries', async () => {
     const service = createService({ currentVersion: 4 });
     service.getImpact = vi.fn(async () => Ok(impactResult('src/a.ts', 4)) as never);
@@ -835,6 +882,11 @@ function createHarness(
         .map((message) => ExtensionMessageSchema.parse(message))
         .filter((message) => message.type === 'impactResult');
     },
+    workingTreeImpactResults() {
+      return messages
+        .map((message) => ExtensionMessageSchema.parse(message))
+        .filter((message) => message.type === 'workingTreeImpactResult');
+    },
     async waitForNavigationCount(count: number) {
       if (count === 0) {
         await this.waitForUnavailableCount(1);
@@ -860,6 +912,9 @@ function createHarness(
     async waitForImpactResultCount(count: number) {
       await vi.waitFor(() => expect(this.impactResults()).toHaveLength(count));
     },
+    async waitForWorkingTreeImpactResultCount(count: number) {
+      await vi.waitFor(() => expect(this.workingTreeImpactResults()).toHaveLength(count));
+    },
   };
 }
 
@@ -876,6 +931,9 @@ function createService(options: { currentVersion?: number; entity?: unknown } = 
     },
     async getEntity() {
       return Ok(options.entity ?? null);
+    },
+    async getWorkingTreeImpact() {
+      return Ok(workingTreeImpactResult(options.currentVersion ?? 3));
     },
   } as unknown as IProjectDNAService;
 }
@@ -931,5 +989,39 @@ function impactResult(path: string, analysisVersion: number) {
     complete: true,
     truncations: [],
     appliedBounds: { maxDepth: 8, maxEntities: 500, maxEvidencePaths: 1 },
+  };
+}
+
+function workingTreeImpactResult(analysisVersion: number) {
+  return {
+    repositoryId: 'repo',
+    headCommit: 'a'.repeat(40),
+    changedPaths: [
+      {
+        kind: 'modified' as const,
+        path: 'src/changed.ts',
+        staged: true,
+        unstaged: false,
+        untracked: false,
+        contentKind: 'text' as const,
+      },
+    ],
+    resolvedTargets: [],
+    unresolvedPaths: [
+      {
+        path: 'src/changed.ts',
+        side: 'after' as const,
+        reason: 'analysis-refresh-required' as const,
+      },
+    ],
+    impacts: [],
+    changedEntityIds: [],
+    impactedEntityIds: [],
+    changeSet: null,
+    beforeAnalysisVersion: analysisVersion,
+    afterAnalysisVersion: null,
+    warnings: ['analysis-refresh-required'],
+    complete: false,
+    truncations: [],
   };
 }
