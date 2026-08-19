@@ -26,6 +26,8 @@ describe('accessible UI components', () => {
     expect(markup).toContain('<button');
     expect(markup).toContain('aria-expanded="false"');
     expect(markup).toContain('aria-controls=');
+    expect(markup).toContain('<h3');
+    expect(markup).toContain('aria-labelledby=');
     expect(markup).toContain('hidden=""');
   });
 

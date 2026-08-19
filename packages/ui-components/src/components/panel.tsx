@@ -19,28 +19,38 @@ export function Panel({
 }: PanelProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const contentId = useId();
+  const titleId = `${contentId}-title`;
 
   return (
-    <section className={cn('rounded border border-[var(--vscode-panel-border)]', className)}>
+    <section
+      aria-labelledby={titleId}
+      className={cn('rounded border border-[var(--vscode-panel-border)]', className)}
+    >
       {collapsible ? (
-        <button
-          aria-controls={contentId}
-          aria-expanded={isOpen}
-          className="flex w-full items-center justify-between gap-2 bg-[var(--vscode-sideBarSectionHeader-background)] px-3 py-2 text-left"
-          onClick={() => setIsOpen((open) => !open)}
-          type="button"
+        <h3 className="m-0 text-inherit">
+          <button
+            aria-controls={contentId}
+            aria-expanded={isOpen}
+            className="flex w-full items-center justify-between gap-2 bg-[var(--vscode-sideBarSectionHeader-background)] px-3 py-2 text-left"
+            id={titleId}
+            onClick={() => setIsOpen((open) => !open)}
+            type="button"
+          >
+            <span className="text-xs font-semibold uppercase text-[var(--vscode-sideBarSectionHeader-foreground)]">
+              {title}
+            </span>
+            <Icon name={isOpen ? 'chevron-down' : 'chevron-right'} />
+          </button>
+        </h3>
+      ) : (
+        <h3
+          className="m-0 bg-[var(--vscode-sideBarSectionHeader-background)] px-3 py-2 text-xs font-semibold uppercase text-[var(--vscode-sideBarSectionHeader-foreground)]"
+          id={titleId}
         >
           <span className="text-xs font-semibold uppercase text-[var(--vscode-sideBarSectionHeader-foreground)]">
             {title}
           </span>
-          <Icon name={isOpen ? 'chevron-down' : 'chevron-right'} />
-        </button>
-      ) : (
-        <div className="bg-[var(--vscode-sideBarSectionHeader-background)] px-3 py-2">
-          <span className="text-xs font-semibold uppercase text-[var(--vscode-sideBarSectionHeader-foreground)]">
-            {title}
-          </span>
-        </div>
+        </h3>
       )}
       <div hidden={!isOpen} id={contentId}>
         <div className="p-3">{children}</div>
