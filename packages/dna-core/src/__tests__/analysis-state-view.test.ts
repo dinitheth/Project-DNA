@@ -52,6 +52,16 @@ describe('AnalysisStateView', () => {
     expect(createAnalysisStateGraphView(equivalent)).not.toBe(firstView);
     expect(createAnalysisStateGraphView(first)).not.toBe(firstView);
   });
+
+  it('evicts old traversal indexes after the bounded cache limit', () => {
+    const oldest = createAnalysisStateView({ ...fixture(false), analysisVersion: 100 });
+    const oldestView = createAnalysisStateGraphView(oldest);
+    for (let version = 101; version <= 108; version++) {
+      createAnalysisStateView({ ...fixture(false), analysisVersion: version });
+    }
+
+    expect(createAnalysisStateGraphView(oldest)).not.toBe(oldestView);
+  });
 });
 
 function fixture(reverse: boolean): AnalysisStateViewInput & { entities: DNAObject[] } {
