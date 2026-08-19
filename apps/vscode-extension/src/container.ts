@@ -9,6 +9,7 @@ import {
 import {
   DNAOrchestrator,
   ProjectDNAService,
+  GitChangeSetProvider,
   type AnalysisPerformanceRecorder,
   type IArchitectureEngine,
   type IAstEngine,
@@ -21,6 +22,7 @@ import {
   type IRepositoryScanner,
   type ISoftwareIntelligenceEngine,
   type IStoragePort,
+  type IWorkingTreeChangeSetProvider,
 } from '@project-dna/dna-core';
 import { RepositoryScanner } from '@project-dna/repository-scanner';
 import { AstEngine, type AstEngineOptions } from '@project-dna/ast-engine';
@@ -40,6 +42,7 @@ export interface ContainerOptions {
   readonly astEngineOptions?: AstEngineOptions;
   readonly nativeBindingPath?: string;
   readonly impactEngine?: IImpactEngine;
+  readonly workingTreeProvider?: IWorkingTreeChangeSetProvider;
 }
 
 export function createContainer(options: ContainerOptions | Logger = {}): Container {
@@ -115,6 +118,7 @@ export function createContainer(options: ContainerOptions | Logger = {}): Contai
         logger: current.resolve<Logger>(TOKENS.Logger),
         storage: current.resolve<IStoragePort>(TOKENS.StoragePort),
         performanceRecorder: resolved.performanceRecorder,
+        workingTreeProvider: resolved.workingTreeProvider ?? new GitChangeSetProvider(),
       }),
   );
 

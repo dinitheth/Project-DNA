@@ -15,6 +15,8 @@ import {
   type IProjectDNAService,
   type ImpactTarget,
   type IStoragePort,
+  type IWorkingTreeChangeSetProvider,
+  type WorkingTreeChangeSet,
   type ProjectDNA,
   type StorageBatch,
 } from '@project-dna/dna-core';
@@ -22,7 +24,9 @@ import {
   DNAEventNames,
   TOKENS,
   createSilentLogger,
+  Ok,
   isErr,
+  type Result,
   type DNAEventMap,
   type EventBus,
 } from '@project-dna/shared';
@@ -184,6 +188,84 @@ describe('ProjectDNAService integration', () => {
     controller.abort();
     expect(isErr(await service.analyze('C:/cancelled', controller.signal))).toBe(true);
   });
+
+  it('calculates deterministic working-tree impact from proven snapshot provenance', async () => {
+    const root = await fixtureRepository();
+    const provider = new MutableWorkingTreeProvider();
+    const service = createContainer({
+      logger: createSilentLogger(),
+      workingTreeProvider: provider,
+    }).resolve<IProjectDNAService>(TOKENS.ProjectDNAService);
+    const analyzed = await service.analyze(root);
+    if (isErr(analyzed)) throw analyzed.error;
+    provider.setChanges([
+      {
+        kind: 'modified',
+        path: 'src/domain/entities/order.ts',
+        staged: false,
+        unstaged: true,
+        untracked: false,
+        contentKind: 'text',
+      },
+    ]);
+    const first = await service.getWorkingTreeImpact();
+    const second = await service.getWorkingTreeImpact();
+    if (isErr(first)) throw first.error;
+    if (isErr(second)) throw second.error;
+    expect(first.value.beforeAnalysisVersion).toBe(analyzed.value.version);
+    expect(first.value.afterAnalysisVersion).toBeNull();
+    expect(first.value.resolvedTargets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          side: 'before',
+          entityId: 'file:src/domain/entities/order.ts',
+        }),
+      ]),
+    );
+    expect(first.value.unresolvedPaths).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ side: 'after', reason: 'analysis-refresh-required' }),
+      ]),
+    );
+    expect(first.value.complete).toBe(false);
+    expect(JSON.stringify(first.value)).toBe(JSON.stringify(second.value));
+    await service.dispose();
+  }, 30_000);
+
+  it('rejects working-tree impact when Git state mutates during calculation', async () => {
+    const root = await fixtureRepository();
+    const provider = new MutableWorkingTreeProvider();
+    const baseEngine = new ImpactEngine();
+    const impactEngine: IImpactEngine = {
+      getImpact(input, target, options, signal) {
+        provider.bumpFingerprint();
+        return baseEngine.getImpact(input, target, options, signal);
+      },
+    };
+    const service = createContainer({
+      logger: createSilentLogger(),
+      workingTreeProvider: provider,
+      impactEngine,
+    }).resolve<IProjectDNAService>(TOKENS.ProjectDNAService);
+    const analyzed = await service.analyze(root);
+    if (isErr(analyzed)) throw analyzed.error;
+    provider.setChanges([
+      {
+        kind: 'modified',
+        path: 'src/domain/entities/order.ts',
+        staged: false,
+        unstaged: true,
+        untracked: false,
+        contentKind: 'text',
+      },
+    ]);
+    const result = await service.getWorkingTreeImpact();
+    expect(result).toMatchObject({
+      ok: false,
+      error: { message: 'Working tree or analysis changed during impact calculation' },
+    });
+    await service.dispose();
+  }, 30_000);
 
   it('exposes deterministic serializable impact DTOs from one analysis version', async () => {
     const root = await fixtureRepository();
@@ -1858,6 +1940,33 @@ async function fixtureRepository(): Promise<string> {
     await writeFile(absolute, content, 'utf8');
   }
   return root;
+}
+
+class MutableWorkingTreeProvider implements IWorkingTreeChangeSetProvider {
+  private changes: WorkingTreeChangeSet['changes'] = [];
+  private revision = 0;
+
+  setChanges(changes: WorkingTreeChangeSet['changes']): void {
+    this.changes = changes;
+    this.revision++;
+  }
+
+  bumpFingerprint(): void {
+    this.revision++;
+  }
+
+  async getWorkingTreeChangeSet(): Promise<Result<WorkingTreeChangeSet>> {
+    const digest = this.revision.toString(16).padStart(64, '0');
+    return Ok({
+      headCommit: 'a'.repeat(40),
+      gitVersion: 'git version fixture',
+      changes: this.changes,
+      changeSetFingerprint: digest,
+      contentFingerprint: digest,
+      complete: true,
+      truncations: [],
+    });
+  }
 }
 
 async function versionRows(storagePath: string, versionKey: string): Promise<string[]> {

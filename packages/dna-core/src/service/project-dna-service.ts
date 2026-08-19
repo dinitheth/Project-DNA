@@ -32,6 +32,7 @@ import type {
   EntityFilter,
   IProjectDNAService,
 } from '../interfaces/project-dna-service.interface.js';
+import type { IWorkingTreeChangeSetProvider } from '../interfaces/working-tree-impact.interface.js';
 import { ProjectDNASchema, type AnalysisConfig, type ProjectDNA } from '../models/project-dna.js';
 import { createRepositoryId } from '../models/repository-dna.js';
 import type { ArchitectureDNA } from '../models/architecture-dna.js';
@@ -50,6 +51,14 @@ import type { RepositoryStory } from '../models/repository-story.js';
 import type { RiskAssessment } from '../models/risk-assessment.js';
 import type { RiskNode } from '../models/risk-node.js';
 import { createAnalysisStateView, type AnalysisStateView } from '../models/analysis-state-view.js';
+import {
+  WorkingTreeImpactOptionsSchema,
+  WorkingTreeImpactResultSchema,
+  type WorkingTreeChangedPath,
+  type WorkingTreeImpactOptions,
+  type WorkingTreeImpactResult,
+} from '../models/working-tree-impact.js';
+import { createAnalysisChangeSet } from '../models/analysis-change-set.js';
 import {
   ImpactResultSchema,
   type ImpactOptions,
@@ -84,6 +93,7 @@ export interface ProjectDNAServiceDependencies {
   readonly storage?: IStoragePort;
   readonly analysisConfig?: Partial<AnalysisConfig>;
   readonly performanceRecorder?: AnalysisPerformanceRecorder;
+  readonly workingTreeProvider?: IWorkingTreeChangeSetProvider;
 }
 
 type LoadedCollections = PersistedCollections;
@@ -343,6 +353,23 @@ export class ProjectDNAService implements IProjectDNAService {
   ): Promise<Result<ProjectDNA>> {
     const startTime = Date.now();
     const operationGeneration = this.changeGeneration;
+    const initialWorkingTree = this.dependencies.workingTreeProvider
+      ? await this.dependencies.workingTreeProvider.getWorkingTreeChangeSet(
+          rootPath,
+          undefined,
+          signal,
+        )
+      : null;
+    const initialProvenance =
+      initialWorkingTree && !isErr(initialWorkingTree)
+        ? {
+            kind: 'git-working-tree' as const,
+            headCommit: initialWorkingTree.value.headCommit,
+            contentFingerprint: initialWorkingTree.value.contentFingerprint,
+            clean: initialWorkingTree.value.changes.length === 0,
+            gitVersion: initialWorkingTree.value.gitVersion,
+          }
+        : undefined;
     const changedPaths = [...this.pendingChanges.values()]
       .filter((entry) => entry.generation <= operationGeneration)
       .map((entry) => entry.path)
@@ -445,6 +472,34 @@ export class ProjectDNAService implements IProjectDNAService {
         analysis: analysis.value,
         synthesis: synthesis.value,
       };
+      let sourceProvenance = initialProvenance;
+      if (
+        this.dependencies.workingTreeProvider &&
+        initialWorkingTree &&
+        !isErr(initialWorkingTree)
+      ) {
+        const finalWorkingTree =
+          await this.dependencies.workingTreeProvider.getWorkingTreeChangeSet(
+            rootPath,
+            undefined,
+            signal,
+          );
+        if (isErr(finalWorkingTree)) return finalWorkingTree;
+        if (
+          finalWorkingTree.value.changeSetFingerprint !==
+            initialWorkingTree.value.changeSetFingerprint ||
+          finalWorkingTree.value.contentFingerprint !== initialWorkingTree.value.contentFingerprint
+        ) {
+          return Err(new SupersededAnalysisError());
+        }
+        sourceProvenance = {
+          kind: 'git-working-tree',
+          headCommit: finalWorkingTree.value.headCommit,
+          contentFingerprint: finalWorkingTree.value.contentFingerprint,
+          clean: initialWorkingTree.value.changes.length === 0,
+          gitVersion: finalWorkingTree.value.gitVersion,
+        };
+      }
       if (this.changeGeneration !== operationGeneration) {
         return Err(new SupersededAnalysisError());
       }
@@ -515,7 +570,13 @@ export class ProjectDNAService implements IProjectDNAService {
       const snapshot = await measureAnalysisPerformance(
         this.dependencies.performanceRecorder,
         AnalysisPerformanceStages.EvolutionSnapshot,
-        () => this.dependencies.evolutionEngine.createSnapshot(dna, signal, analysisState),
+        () =>
+          this.dependencies.evolutionEngine.createSnapshot(
+            dna,
+            signal,
+            analysisState,
+            sourceProvenance,
+          ),
       );
       if (isErr(snapshot)) return this.stageError('ComputingEvolution', snapshot.error);
       if (this.changeGeneration !== operationGeneration || this.disposed) {
@@ -645,6 +706,206 @@ export class ProjectDNAService implements IProjectDNAService {
     }
 
     return Ok(ImpactResultSchema.parse(cloneDto(impact.value)));
+  }
+
+  async getWorkingTreeImpact(
+    options?: WorkingTreeImpactOptions,
+    signal?: AbortSignal,
+  ): Promise<Result<WorkingTreeImpactResult>> {
+    const provider = this.dependencies.workingTreeProvider;
+    if (!provider)
+      return Err(new Error('Working-tree impact is unavailable without a Git provider'));
+    if (signal?.aborted) return Err(new Error('Working-tree impact cancelled'));
+    const parsedOptions = WorkingTreeImpactOptionsSchema.safeParse(options ?? {});
+    if (!parsedOptions.success) return Err(new Error(parsedOptions.error.message));
+    const captured = this.captureImpactState();
+    if (isErr(captured)) return captured;
+    const capturedEpoch = this.impactStateEpoch;
+    const initial = await provider.getWorkingTreeChangeSet(
+      this.rootPath ?? this.current?.rootPath ?? '',
+      { maxChangedPaths: parsedOptions.data.maxChangedPaths },
+      signal,
+    );
+    if (isErr(initial)) return initial;
+    if (signal?.aborted) return Err(new Error('Working-tree impact cancelled'));
+
+    const history = await this.dependencies.evolutionEngine.getHistory();
+    if (isErr(history)) return history;
+    const beforeSnapshot = history.value
+      .filter((snapshot) => snapshot.analysisState?.repositoryId === captured.value.repositoryId)
+      .filter((snapshot) => snapshot.sourceProvenance?.kind === 'git-working-tree')
+      .filter((snapshot) => snapshot.sourceProvenance?.clean === true)
+      .filter((snapshot) => snapshot.sourceProvenance?.headCommit === initial.value.headCommit)
+      .find((snapshot) => snapshot.analysisState !== undefined);
+    const afterSnapshot = history.value
+      .filter((snapshot) => snapshot.analysisState?.repositoryId === captured.value.repositoryId)
+      .filter((snapshot) => snapshot.analysisState !== undefined)
+      .filter(
+        (snapshot) =>
+          snapshot.sourceProvenance?.contentFingerprint === initial.value.contentFingerprint,
+      )
+      .filter((snapshot) => snapshot.sourceProvenance?.headCommit === initial.value.headCommit)
+      .find((snapshot) => snapshot.version === captured.value.analysisVersion);
+    const beforeState = beforeSnapshot?.analysisState;
+    const afterState = afterSnapshot?.analysisState;
+    const afterVersion = afterSnapshot?.version ?? null;
+    const beforeVersion = beforeSnapshot?.version ?? null;
+    const changedPaths = initial.value.changes;
+    const resolvedTargets: WorkingTreeImpactResult['resolvedTargets'][number][] = [];
+    const unresolvedPaths: WorkingTreeImpactResult['unresolvedPaths'][number][] = [];
+    const impacts: WorkingTreeImpactResult['impacts'][number][] = [];
+    const changedEntityIds = new Set<string>();
+    const impactedEntityIds = new Set<string>();
+    const warnings: string[] = [];
+    const truncations = [...initial.value.truncations];
+    if (beforeState === undefined) warnings.push('clean-baseline-unavailable');
+    if (afterSnapshot === undefined) warnings.push('analysis-refresh-required');
+
+    const beforeIndex = beforeState
+      ? createFilePathIndex(beforeState)
+      : new Map<string, DNAObject>();
+    const afterIndex = afterState ? createFilePathIndex(afterState) : new Map<string, DNAObject>();
+    const targetCandidates: Array<{
+      readonly path: WorkingTreeChangedPath;
+      readonly side: 'before' | 'after';
+      readonly targetPath: string;
+      readonly index: ReadonlyMap<string, DNAObject>;
+    }> = [];
+    for (const change of changedPaths) {
+      if (change.contentKind !== 'text' && change.kind !== 'deleted') {
+        unresolvedPaths.push({
+          path: change.path,
+          ...(change.previousPath ? { previousPath: change.previousPath } : {}),
+          side: 'after',
+          reason: 'non-analyzable',
+        });
+        continue;
+      }
+      const beforePath = change.previousPath ?? change.path;
+      if (change.kind !== 'added' && beforeState)
+        targetCandidates.push({
+          path: change,
+          side: 'before',
+          targetPath: beforePath,
+          index: beforeIndex,
+        });
+      else if (change.kind !== 'added' && !beforeState)
+        unresolvedPaths.push({
+          path: beforePath,
+          ...(change.previousPath ? { previousPath: change.previousPath } : {}),
+          side: 'before',
+          reason: 'clean-baseline-unavailable',
+        });
+      if (change.kind !== 'deleted') {
+        if (afterSnapshot && afterState)
+          targetCandidates.push({
+            path: change,
+            side: 'after',
+            targetPath: change.path,
+            index: afterIndex,
+          });
+        else
+          unresolvedPaths.push({
+            path: change.path,
+            ...(change.previousPath ? { previousPath: change.previousPath } : {}),
+            side: 'after',
+            reason: 'analysis-refresh-required',
+          });
+      }
+    }
+    const uniqueCandidates = dedupeWorkingTreeTargets(targetCandidates).slice(
+      0,
+      parsedOptions.data.maxTargets,
+    );
+    if (targetCandidates.length > uniqueCandidates.length)
+      truncations.push({ kind: 'max-targets', limit: parsedOptions.data.maxTargets });
+    for (const candidate of uniqueCandidates) {
+      if (signal?.aborted) return Err(new Error('Working-tree impact cancelled'));
+      const entity = candidate.index.get(normalizeRelativePath(candidate.targetPath));
+      if (!entity || entity.kind !== 'file') {
+        unresolvedPaths.push({
+          path: candidate.path.path,
+          ...(candidate.path.previousPath ? { previousPath: candidate.path.previousPath } : {}),
+          side: candidate.side,
+          reason: 'missing-entity',
+        });
+        continue;
+      }
+      const state = candidate.side === 'before' ? beforeState : afterState;
+      if (!state) continue;
+      const target = { kind: 'entity' as const, id: entity.id };
+      const impact = this.dependencies.impactEngine.getImpact(
+        {
+          repositoryId: state.repositoryId,
+          analysisVersion: state.analysisVersion,
+          expectedAnalysisVersion: state.analysisVersion,
+          state,
+        },
+        target,
+        undefined,
+        signal,
+      );
+      if (isErr(impact)) return impact;
+      resolvedTargets.push({
+        path: candidate.path.path,
+        ...(candidate.path.previousPath ? { previousPath: candidate.path.previousPath } : {}),
+        side: candidate.side,
+        entityId: entity.id,
+        sourceAvailable: candidate.side === 'after' || candidate.path.kind !== 'deleted',
+      });
+      impacts.push({
+        path: candidate.path.path,
+        side: candidate.side,
+        result: cloneDto(impact.value),
+      });
+      changedEntityIds.add(entity.id);
+      for (const impacted of [
+        ...impact.value.directImpactedEntities,
+        ...impact.value.transitiveImpactedEntities,
+      ])
+        impactedEntityIds.add(impacted.id);
+    }
+    let changeSet = null;
+    if (beforeState && afterState) changeSet = createAnalysisChangeSet(beforeState, afterState);
+    const finalChangeSet = await provider.getWorkingTreeChangeSet(
+      this.rootPath ?? this.current?.rootPath ?? '',
+      { maxChangedPaths: parsedOptions.data.maxChangedPaths },
+      signal,
+    );
+    if (isErr(finalChangeSet)) return finalChangeSet;
+    if (
+      finalChangeSet.value.changeSetFingerprint !== initial.value.changeSetFingerprint ||
+      this.impactStateEpoch !== capturedEpoch ||
+      this.current?.version !== captured.value.analysisVersion
+    ) {
+      return Err(new Error('Working tree or analysis changed during impact calculation'));
+    }
+    const orderedImpactedEntityIds = [...impactedEntityIds].sort();
+    if (orderedImpactedEntityIds.length > parsedOptions.data.maxImpactedEntities) {
+      truncations.push({
+        kind: 'max-impacted-entities',
+        limit: parsedOptions.data.maxImpactedEntities,
+      });
+    }
+    const result = WorkingTreeImpactResultSchema.parse({
+      repositoryId: captured.value.repositoryId,
+      headCommit: initial.value.headCommit,
+      changedPaths,
+      resolvedTargets: resolvedTargets.sort(compareResolvedTargets),
+      unresolvedPaths: unresolvedPaths.sort(compareUnresolvedPaths),
+      impacts: impacts.sort(
+        (left, right) => left.path.localeCompare(right.path) || left.side.localeCompare(right.side),
+      ),
+      changedEntityIds: [...changedEntityIds].sort(),
+      impactedEntityIds: orderedImpactedEntityIds.slice(0, parsedOptions.data.maxImpactedEntities),
+      changeSet,
+      beforeAnalysisVersion: beforeVersion,
+      afterAnalysisVersion: afterVersion,
+      warnings: [...new Set(warnings)].sort(),
+      complete: initial.value.complete && unresolvedPaths.length === 0 && truncations.length === 0,
+      truncations,
+    });
+    return Ok(cloneDto(result));
   }
 
   getArchitecture(): ArchitectureDNA {
@@ -1078,6 +1339,68 @@ function isPathWithinRoot(rootPath: string, filePath: string): boolean {
   const root = normalizePathKey(rootPath);
   const candidate = normalizePathKey(filePath);
   return candidate === root || candidate.startsWith(`${root}/`);
+}
+
+function normalizeRelativePath(value: string): string {
+  const normalized = value.replaceAll('\\', '/').replace(/^\.\//u, '').replace(/\/+$/u, '');
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+function createFilePathIndex(state: AnalysisStateView): Map<string, DNAObject> {
+  return new Map(
+    state.entities
+      .filter((entity) => entity.kind === 'file')
+      .map((entity) => [normalizeRelativePath(entity.path), entity]),
+  );
+}
+
+function dedupeWorkingTreeTargets(
+  candidates: ReadonlyArray<{
+    readonly path: WorkingTreeChangedPath;
+    readonly side: 'before' | 'after';
+    readonly targetPath: string;
+    readonly index: ReadonlyMap<string, DNAObject>;
+  }>,
+): Array<{
+  readonly path: WorkingTreeChangedPath;
+  readonly side: 'before' | 'after';
+  readonly targetPath: string;
+  readonly index: ReadonlyMap<string, DNAObject>;
+}> {
+  const seen = new Set<string>();
+  return [...candidates]
+    .sort(
+      (left, right) =>
+        left.targetPath.localeCompare(right.targetPath) || left.side.localeCompare(right.side),
+    )
+    .filter((candidate) => {
+      const key = `${candidate.side}\u0000${normalizeRelativePath(candidate.targetPath)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function compareResolvedTargets(
+  left: WorkingTreeImpactResult['resolvedTargets'][number],
+  right: WorkingTreeImpactResult['resolvedTargets'][number],
+): number {
+  return (
+    left.path.localeCompare(right.path) ||
+    left.side.localeCompare(right.side) ||
+    left.entityId.localeCompare(right.entityId)
+  );
+}
+
+function compareUnresolvedPaths(
+  left: WorkingTreeImpactResult['unresolvedPaths'][number],
+  right: WorkingTreeImpactResult['unresolvedPaths'][number],
+): number {
+  return (
+    left.path.localeCompare(right.path) ||
+    left.side.localeCompare(right.side) ||
+    left.reason.localeCompare(right.reason)
+  );
 }
 
 function equivalentBaseline(left: IncrementalBaseline, right: IncrementalBaseline): boolean {
