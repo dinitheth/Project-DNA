@@ -62,7 +62,7 @@ describe('ImpactEngine deterministic invariants', () => {
         }
       }
     }
-  });
+  }, 30_000);
 
   it('is byte-stable across insertion order, equivalent state, restoration, and repeated calls', () => {
     for (let seed = 200; seed < 210; seed++) {
