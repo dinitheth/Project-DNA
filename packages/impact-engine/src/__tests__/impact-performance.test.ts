@@ -41,7 +41,7 @@ describe('ImpactEngine scalability gates', () => {
       for (const scenario of ['chain', 'high-degree-hub', 'dense-boundary'] as const) {
         const fixture = await getPerformanceFixture(gate.size, scenario);
         const cold = measure(fixture, {});
-        const repeated = measure(fixture, {});
+        const repeated = measureRepeated(fixture, {});
 
         report(gate.size, scenario, 'cold', cold);
         report(gate.size, scenario, 'repeated', repeated);
@@ -156,6 +156,21 @@ function measure(fixture: PerformanceFixture, options: Partial<ImpactOptions>): 
   const rssGrowthBytes = Math.max(0, process.memoryUsage.rss() - rssBefore);
   if (isErr(result)) throw result.error;
   return { durationMs, rssGrowthBytes, result: result.value };
+}
+
+function measureRepeated(
+  fixture: PerformanceFixture,
+  options: Partial<ImpactOptions>,
+): PerformanceSample {
+  const samples = Array.from({ length: 3 }, () => measure(fixture, options));
+  const serialized = JSON.stringify(samples[0]!.result);
+  expect(samples.every((sample) => JSON.stringify(sample.result) === serialized)).toBe(true);
+  const median = [...samples].sort((left, right) => left.durationMs - right.durationMs)[1]!;
+  return {
+    durationMs: median.durationMs,
+    rssGrowthBytes: Math.max(...samples.map((sample) => sample.rssGrowthBytes)),
+    result: median.result,
+  };
 }
 
 function measureCancelled(fixture: PerformanceFixture): Omit<PerformanceSample, 'result'> {
