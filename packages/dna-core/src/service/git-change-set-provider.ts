@@ -251,7 +251,7 @@ export class GitChangeSetProvider implements IWorkingTreeChangeSetProvider {
         settled = true;
         clearTimeout(timer);
         signal?.removeEventListener('abort', abort);
-        if (error) child.kill();
+        if (error) terminateProcessTree(child);
         if (error) reject(error);
         else resolve(value);
       }
@@ -341,6 +341,15 @@ async function classifyPath(
     return 'unknown';
   }
   if (info.isSymbolicLink()) return 'symlink';
+  if (info.isDirectory()) {
+    try {
+      const nestedGit = await lstat(path.join(filePath, '.git'));
+      if (nestedGit.isFile() || nestedGit.isDirectory()) return 'submodule';
+    } catch {
+      // Ordinary directories remain unknown content.
+    }
+    return 'unknown';
+  }
   if (!info.isFile()) return 'unknown';
   const stream = createReadStream(filePath, { start: 0, end: 8191 });
   for await (const chunk of stream) if ((chunk as Buffer).includes(0)) return 'binary';
@@ -434,4 +443,20 @@ function compareStrings(left: string, right: string): number {
 }
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function terminateProcessTree(child: ReturnType<typeof spawn>): void {
+  if (child.pid === undefined) {
+    child.kill();
+    return;
+  }
+  if (process.platform === 'win32') {
+    const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+      windowsHide: true,
+      stdio: 'ignore',
+    });
+    killer.unref();
+    return;
+  }
+  child.kill('SIGKILL');
 }
