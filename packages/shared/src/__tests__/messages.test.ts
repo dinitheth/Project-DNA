@@ -68,6 +68,36 @@ describe('webview message protocol', () => {
     ).toBe(false);
   });
 
+  it('accepts only supported bounded impact targets', () => {
+    expect(
+      WebviewMessageSchema.safeParse({
+        type: 'requestImpact',
+        requestId: 1,
+        analysisVersion: 3,
+        target: { kind: 'file', path: 'src/service.ts' },
+      }).success,
+    ).toBe(true);
+    expect(
+      WebviewMessageSchema.safeParse({
+        type: 'requestImpact',
+        requestId: 1,
+        analysisVersion: 3,
+        target: { kind: 'class', id: 'Service' },
+      }).success,
+    ).toBe(false);
+    expect(
+      WebviewMessageSchema.safeParse({
+        type: 'requestImpact',
+        requestId: 1,
+        analysisVersion: 3,
+        target: { kind: 'file', path: '../outside.ts' },
+      }).success,
+    ).toBe(false);
+    expect(WebviewMessageSchema.safeParse({ type: 'cancelImpact', requestId: 1 }).success).toBe(
+      true,
+    );
+  });
+
   it('accepts only safe revisions and request identifiers at every navigation boundary', () => {
     const safe = Number.MAX_SAFE_INTEGER;
     const unsafe = safe + 1;

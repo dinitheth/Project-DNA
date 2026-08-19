@@ -176,6 +176,178 @@ describe('SidebarProvider navigation', () => {
     expect(harness.entityDetails()).toHaveLength(1);
   });
 
+  it('publishes only the latest versioned impact request and cancels the superseded query', async () => {
+    const first = createDeferred<ReturnType<typeof Ok<never>>>();
+    const second = createDeferred<ReturnType<typeof Ok<never>>>();
+    const signals: AbortSignal[] = [];
+    const service = createService({ currentVersion: 3 });
+    service.getImpact = vi.fn((_target, _options, signal) => {
+      signals.push(signal!);
+      return (signals.length === 1 ? first.promise : second.promise) as never;
+    });
+    const harness = createHarness({ service });
+    harness.resolve();
+    harness.receive({
+      type: 'requestImpact',
+      requestId: 1,
+      analysisVersion: 3,
+      target: { kind: 'file', path: 'src/a.ts' },
+    });
+    harness.receive({
+      type: 'requestImpact',
+      requestId: 2,
+      analysisVersion: 3,
+      target: { kind: 'file', path: 'src/b.ts' },
+    });
+    expect(signals[0]?.aborted).toBe(true);
+
+    first.resolve(Ok(impactResult('src/a.ts', 3)) as never);
+    second.resolve(Ok(impactResult('src/b.ts', 3)) as never);
+    await harness.waitForImpactResultCount(1);
+
+    expect(harness.impactResults()[0]).toMatchObject({
+      requestId: 2,
+      analysisVersion: 3,
+      target: { kind: 'file', path: 'src/b.ts' },
+      result: { target: { path: 'src/b.ts' } },
+    });
+  });
+
+  it('rejects stale impact versions and suppresses disposed or failed deliveries', async () => {
+    const service = createService({ currentVersion: 4 });
+    service.getImpact = vi.fn(async () => Ok(impactResult('src/a.ts', 4)) as never);
+    const harness = createHarness({ service, postResults: [false] });
+    harness.resolve();
+    harness.receive({
+      type: 'requestImpact',
+      requestId: 1,
+      analysisVersion: 3,
+      target: { kind: 'file', path: 'src/a.ts' },
+    });
+    await harness.waitForImpactResultCount(1);
+    expect(service.getImpact).not.toHaveBeenCalled();
+    expect(harness.impactResults()[0]).toMatchObject({
+      result: null,
+      error: 'Analysis version is no longer current.',
+    });
+
+    const pending = createDeferred<ReturnType<typeof Ok<never>>>();
+    service.getImpact = vi.fn(() => pending.promise as never);
+    harness.receive({
+      type: 'requestImpact',
+      requestId: 2,
+      analysisVersion: 4,
+      target: { kind: 'file', path: 'src/a.ts' },
+    });
+    harness.disposeView();
+    pending.resolve(Ok(impactResult('src/a.ts', 4)) as never);
+    await Promise.resolve();
+    expect(harness.impactResults()).toHaveLength(1);
+  });
+
+  it('cancels an active impact query without publishing its late result', async () => {
+    const pending = createDeferred<ReturnType<typeof Ok<never>>>();
+    let signal: AbortSignal | undefined;
+    const service = createService({ currentVersion: 3 });
+    service.getImpact = vi.fn((_target, _options, candidate) => {
+      signal = candidate;
+      return pending.promise as never;
+    });
+    const harness = createHarness({ service });
+    harness.resolve();
+    harness.receive({
+      type: 'requestImpact',
+      requestId: 3,
+      analysisVersion: 3,
+      target: { kind: 'file', path: 'src/a.ts' },
+    });
+    harness.receive({ type: 'cancelImpact', requestId: 3 });
+    expect(signal?.aborted).toBe(true);
+    pending.resolve(Ok(impactResult('src/a.ts', 3)) as never);
+    await Promise.resolve();
+    expect(harness.impactResults()).toEqual([]);
+  });
+
+  it('cancels an active impact query when analysis refresh begins', async () => {
+    const pending = createDeferred<ReturnType<typeof Ok<never>>>();
+    let progressListener:
+      ((progress: { stage: string; message: string; percent: number }) => void) | undefined;
+    let signal: AbortSignal | undefined;
+    const service = createService({ currentVersion: 3 });
+    service.onProgress = vi.fn((listener) => {
+      progressListener = listener as (progress: {
+        stage: string;
+        message: string;
+        percent: number;
+      }) => void;
+      return () => undefined;
+    });
+    service.getImpact = vi.fn((_target, _options, candidate) => {
+      signal = candidate;
+      return pending.promise as never;
+    });
+    const harness = createHarness({ service });
+    harness.resolve();
+    harness.receive({
+      type: 'requestImpact',
+      requestId: 6,
+      analysisVersion: 3,
+      target: { kind: 'file', path: 'src/a.ts' },
+    });
+    progressListener?.({ stage: 'scanning', message: 'Scanning', percent: 0 });
+    expect(signal?.aborted).toBe(true);
+    pending.resolve(Ok(impactResult('src/a.ts', 3)) as never);
+    await Promise.resolve();
+    expect(harness.impactResults()).toEqual([]);
+  });
+
+  it('restarts a restored impact request after webview recreation', async () => {
+    const first = createDeferred<ReturnType<typeof Ok<never>>>();
+    const service = createService({ currentVersion: 3 });
+    const signals: AbortSignal[] = [];
+    service.getImpact = vi.fn((_target, _options, signal) => {
+      signals.push(signal!);
+      return signals.length === 1
+        ? (first.promise as never)
+        : Promise.resolve(Ok(impactResult('src/a.ts', 3)) as never);
+    });
+    const harness = createHarness({ service });
+    harness.resolve();
+    harness.receive({
+      type: 'requestImpact',
+      requestId: 4,
+      analysisVersion: 3,
+      target: { kind: 'file', path: 'src/a.ts' },
+    });
+    harness.resolve();
+    expect(signals[0]?.aborted).toBe(true);
+    harness.receive({
+      type: 'requestImpact',
+      requestId: 4,
+      analysisVersion: 3,
+      target: { kind: 'file', path: 'src/a.ts' },
+    });
+    await harness.waitForImpactResultCount(1);
+    first.resolve(Ok(impactResult('src/a.ts', 3)) as never);
+    await Promise.resolve();
+    expect(harness.impactResults()).toHaveLength(1);
+  });
+
+  it('contains impact result delivery failures without changing query behavior', async () => {
+    const service = createService({ currentVersion: 3 });
+    service.getImpact = vi.fn(async () => Ok(impactResult('src/a.ts', 3)) as never);
+    const harness = createHarness({ service, throwOnPostTypes: ['impactResult'] });
+    harness.resolve();
+    harness.receive({
+      type: 'requestImpact',
+      requestId: 5,
+      analysisVersion: 3,
+      target: { kind: 'file', path: 'src/a.ts' },
+    });
+    await harness.waitForImpactResultCount(1);
+    expect(service.getImpact).toHaveBeenCalledOnce();
+  });
+
   it('publishes a deterministic bounded evolution comparison', async () => {
     const service = createService({ currentVersion: 4 });
     service.getDiff = vi.fn(async () =>
@@ -553,6 +725,7 @@ function createHarness(
     rootPath?: string;
     getRootPath?: () => string | undefined;
     service?: IProjectDNAService;
+    throwOnPostTypes?: string[];
   } = {},
 ) {
   const service = options.service ?? createService();
@@ -561,6 +734,7 @@ function createHarness(
   let disposeView: (() => void) | undefined;
   const postResults = [...(options.postResults ?? [])];
   const navigationPostResults = [...(options.navigationPostResults ?? [])];
+  const throwOnPostTypes = new Set(options.throwOnPostTypes ?? []);
   const provider = new SidebarProvider(
     { toString: () => 'extension-uri' } as never,
     service,
@@ -589,6 +763,15 @@ function createHarness(
             },
             postMessage: async (message: unknown) => {
               messages.push(message);
+              if (
+                typeof message === 'object' &&
+                message !== null &&
+                'type' in message &&
+                typeof message.type === 'string' &&
+                throwOnPostTypes.has(message.type)
+              ) {
+                throw new Error(`Failed to deliver ${message.type}`);
+              }
               if (
                 typeof message === 'object' &&
                 message !== null &&
@@ -647,6 +830,11 @@ function createHarness(
         .map((message) => ExtensionMessageSchema.parse(message))
         .filter((message) => message.type === 'evolutionComparison');
     },
+    impactResults() {
+      return messages
+        .map((message) => ExtensionMessageSchema.parse(message))
+        .filter((message) => message.type === 'impactResult');
+    },
     async waitForNavigationCount(count: number) {
       if (count === 0) {
         await this.waitForUnavailableCount(1);
@@ -668,6 +856,9 @@ function createHarness(
     },
     async waitForEvolutionComparisonCount(count: number) {
       await vi.waitFor(() => expect(this.evolutionComparisons()).toHaveLength(count));
+    },
+    async waitForImpactResultCount(count: number) {
+      await vi.waitFor(() => expect(this.impactResults()).toHaveLength(count));
     },
   };
 }
@@ -699,4 +890,46 @@ function createDeferred<T>() {
     resolve = resolvePromise;
   });
   return { promise, resolve };
+}
+
+function impactResult(path: string, analysisVersion: number) {
+  return {
+    repositoryId: 'repo',
+    analysisVersion,
+    target: { id: `file:${path}`, kind: 'file' as const, name: path, path, minimumDepth: 0 },
+    directImpactedEntities: [],
+    transitiveImpactedEntities: [],
+    minimumDepth: null,
+    canonicalPaths: [],
+    semanticEffects: {
+      domains: [],
+      capabilities: [],
+      criticalComponents: [],
+      risks: [],
+      architecture: { layers: [], boundaryCrossings: [] },
+    },
+    score: {
+      total: 0,
+      components: [
+        'dependency-reach',
+        'critical-component-exposure',
+        'domain-reach',
+        'risk-exposure',
+        'architecture-boundaries',
+      ].map((kind) => ({
+        kind,
+        rawInput: 0,
+        normalizedValue: 0,
+        weight: 0,
+        contribution: 0,
+        evidenceIds: [],
+        status: 'available',
+      })),
+    },
+    evidence: [],
+    warnings: [],
+    complete: true,
+    truncations: [],
+    appliedBounds: { maxDepth: 8, maxEntities: 500, maxEvidencePaths: 1 },
+  };
 }

@@ -4,6 +4,7 @@ import { isAbsolute, relative, resolve, sep } from 'node:path';
 import {
   WebviewMessageSchema,
   WorkspaceRelativePathSchema,
+  ImpactResultDataSchema,
   isErr,
   type ExtensionMessage,
   type SidebarRoute,
@@ -29,6 +30,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
   private hasAuthoritativeNavigation = false;
   private webviewReady = false;
   private disposed = false;
+  private activeImpact:
+    | {
+        readonly view: vscode.WebviewView;
+        readonly requestId: number;
+        readonly controller: AbortController;
+      }
+    | undefined;
   private readonly unsubscribeProgress: () => void;
   private readonly unsubscribeReady: () => void;
 
@@ -39,6 +47,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
   ) {
     this.unsubscribeProgress = service.onProgress((progress) => {
       if (progress.stage === 'scanning' && !this.analysisInProgress) {
+        this.cancelActiveImpact();
         const rootPath = this.getWorkspaceRoot();
         if (rootPath) {
           this.publicationEpoch++;
@@ -74,6 +83,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
   }
 
   public handleWorkspaceChanged(rootPath: string | null): void {
+    this.cancelActiveImpact();
     this.publicationEpoch++;
     this.analysisInProgress = false;
     this.activeRootPath = null;
@@ -93,12 +103,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     _context: vscode.WebviewViewResolveContext,
     _token: vscode.CancellationToken,
   ): void {
+    this.cancelActiveImpact();
     this.webviewView = webviewView;
     this.webviewReady = false;
     this.deliveredNavigationRevision = -1;
     this.lastClientRequestId = -1;
     webviewView.onDidDispose(() => {
       if (this.webviewView === webviewView) {
+        this.cancelActiveImpact();
         this.webviewView = undefined;
         this.webviewReady = false;
       }
@@ -118,6 +130,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
   public dispose(): void {
     this.disposed = true;
+    this.cancelActiveImpact();
     this.publicationEpoch++;
     this.unsubscribeProgress();
     this.unsubscribeReady();
@@ -157,6 +170,22 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
           message.fromVersion,
           message.toVersion,
         );
+        return;
+      case 'requestImpact':
+        await this.publishImpact(
+          sourceView,
+          message.requestId,
+          message.analysisVersion,
+          message.target,
+        );
+        return;
+      case 'cancelImpact':
+        if (
+          this.activeImpact?.view === sourceView &&
+          this.activeImpact.requestId === message.requestId
+        ) {
+          this.cancelActiveImpact();
+        }
         return;
       case 'requestAnalysis':
         await this.runExclusive(() => this.analyzeWorkspace());
@@ -553,6 +582,94 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     });
   }
 
+  private async publishImpact(
+    sourceView: vscode.WebviewView,
+    requestId: number,
+    analysisVersion: number,
+    target: import('@project-dna/shared').ImpactTargetData,
+  ): Promise<void> {
+    if (this.webviewView !== sourceView || this.disposed) return;
+    this.cancelActiveImpact();
+    const current = this.service.getCurrent();
+    if (isErr(current) || !current.value || current.value.version !== analysisVersion) {
+      await this.postImpact(
+        sourceView,
+        requestId,
+        analysisVersion,
+        target,
+        null,
+        'Analysis version is no longer current.',
+      );
+      return;
+    }
+
+    const controller = new AbortController();
+    const operation = { view: sourceView, requestId, controller };
+    this.activeImpact = operation;
+    const result = await this.service.getImpact(target, undefined, controller.signal);
+    if (this.activeImpact !== operation || this.webviewView !== sourceView || this.disposed) return;
+    this.activeImpact = undefined;
+    if (isErr(result)) {
+      await this.postImpact(
+        sourceView,
+        requestId,
+        analysisVersion,
+        target,
+        null,
+        result.error.message,
+      );
+      return;
+    }
+    if (result.value.analysisVersion !== analysisVersion) {
+      await this.postImpact(
+        sourceView,
+        requestId,
+        analysisVersion,
+        target,
+        null,
+        'Impact result was superseded by a newer analysis.',
+      );
+      return;
+    }
+    const serialized = ImpactResultDataSchema.safeParse(toImpactResultData(result.value));
+    if (!serialized.success) {
+      await this.postImpact(
+        sourceView,
+        requestId,
+        analysisVersion,
+        target,
+        null,
+        `Impact result could not cross the webview boundary: ${serialized.error.message}`,
+      );
+      return;
+    }
+    await this.postImpact(sourceView, requestId, analysisVersion, target, serialized.data);
+  }
+
+  private async postImpact(
+    sourceView: vscode.WebviewView,
+    requestId: number,
+    analysisVersion: number,
+    target: import('@project-dna/shared').ImpactTargetData,
+    result: import('@project-dna/shared').ImpactResultData | null,
+    error?: string,
+  ): Promise<void> {
+    if (this.webviewView !== sourceView) return;
+    await safePostMessage(sourceView, {
+      type: 'impactResult',
+      requestId,
+      analysisVersion,
+      target,
+      result,
+      error,
+    });
+  }
+
+  private cancelActiveImpact(): void {
+    this.activeImpact?.controller.abort();
+    this.activeImpact = undefined;
+  }
+
   private requestPublication(): void {
     if (this.disposed) return;
     this.publicationRequested = true;
@@ -712,6 +829,69 @@ function samePath(left: string, right: string): boolean {
   return process.platform === 'win32'
     ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
     : normalizedLeft === normalizedRight;
+}
+
+function toImpactResultData(
+  result: import('@project-dna/dna-core').ImpactResult,
+): import('@project-dna/shared').ImpactResultData {
+  return {
+    repositoryId: result.repositoryId,
+    analysisVersion: result.analysisVersion,
+    target: result.target,
+    directImpactedEntities: result.directImpactedEntities,
+    transitiveImpactedEntities: result.transitiveImpactedEntities,
+    minimumDepth: result.minimumDepth,
+    canonicalPaths: result.canonicalPaths,
+    semanticEffects: {
+      domains: result.semanticEffects.domains.map((domain) => ({
+        id: domain.id,
+        name: domain.name,
+        confidence: domain.confidence,
+        entityCount: domain.entityIds.length,
+      })),
+      capabilities: result.semanticEffects.capabilities.map((capability) => ({
+        id: capability.id,
+        name: capability.name,
+        category: capability.category,
+        description: capability.description,
+        confidence: capability.confidence,
+        implementationCount: capability.implementedBy.length,
+      })),
+      criticalComponents: result.semanticEffects.criticalComponents.map((component) => ({
+        id: component.id,
+        entityId: component.entityId,
+        name: component.name,
+        path: component.path,
+        criticality: component.criticality,
+        score: component.score,
+        reason: component.reason,
+      })),
+      risks: result.semanticEffects.risks.map((risk) => ({
+        id: risk.id,
+        type: risk.type,
+        severity: risk.severity,
+        affectedEntityCount: risk.affectedEntities.length,
+        description: risk.description,
+        measuredValue: risk.measuredValue,
+        threshold: risk.threshold,
+        suggestion: risk.suggestion,
+      })),
+      architecture: {
+        layers: result.semanticEffects.architecture.layers.map((layer) => ({
+          name: layer.name,
+          fileCount: layer.fileCount,
+          role: layer.role,
+        })),
+        boundaryCrossings: result.semanticEffects.architecture.boundaryCrossings,
+      },
+    },
+    score: result.score,
+    evidence: result.evidence,
+    warnings: result.warnings,
+    complete: result.complete,
+    truncations: result.truncations,
+    appliedBounds: result.appliedBounds,
+  };
 }
 
 export function isPathInside(workspaceRoot: string, targetPath: string): boolean {

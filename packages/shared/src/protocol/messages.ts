@@ -340,6 +340,189 @@ export const EvolutionDataSchema = z.object({
 
 export type EvolutionData = z.infer<typeof EvolutionDataSchema>;
 
+export const ImpactTargetDataSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('file'), path: WorkspaceRelativePathSchema }),
+  z.object({ kind: z.literal('entity'), id: z.string().min(1).max(512) }),
+]);
+export type ImpactTargetData = z.infer<typeof ImpactTargetDataSchema>;
+
+const ImpactRelationshipSchema = z.object({
+  dependentId: z.string().min(1),
+  dependencyId: z.string().min(1),
+  type: z.enum(['import', 're-export', 'dynamic-import', 'require', 'type-import']),
+  isTypeOnly: z.boolean(),
+  specifierCount: z.number().int().nonnegative(),
+});
+const ImpactNodeSchema = z.object({
+  id: z.string().min(1),
+  kind: z.literal('file'),
+  name: z.string().min(1),
+  path: WorkspaceRelativePathSchema.nullable(),
+  minimumDepth: z.number().int().nonnegative(),
+});
+const ImpactPathSchema = z.object({
+  impactedEntityId: z.string().min(1),
+  nodeIds: z.array(z.string().min(1)).min(2).max(33),
+  relationships: z.array(ImpactRelationshipSchema).max(32),
+});
+const ImpactEvidenceSchema = z.object({
+  id: z.string().min(1),
+  entityId: z.string().min(1),
+  reason: z.enum([
+    'direct-dependent',
+    'transitive-dependent',
+    'domain-membership',
+    'capability-implementation',
+    'critical-component',
+    'risk-reference',
+    'architecture-layer-membership',
+    'layer-boundary',
+  ]),
+  path: ImpactPathSchema.nullable(),
+  sourcePath: WorkspaceRelativePathSchema.nullable(),
+  confidence: z.number().min(0).max(1),
+});
+const ImpactDomainSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  confidence: z.number().min(0).max(1),
+  entityCount: z.number().int().nonnegative(),
+});
+const ImpactCapabilitySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  category: z.enum([
+    'api',
+    'authentication',
+    'authorization',
+    'caching',
+    'database',
+    'file-system',
+    'logging',
+    'messaging',
+    'monitoring',
+    'networking',
+    'scheduling',
+    'search',
+    'storage',
+    'testing',
+    'ui',
+    'other',
+  ]),
+  description: z.string(),
+  confidence: z.number().min(0).max(1),
+  implementationCount: z.number().int().nonnegative(),
+});
+const ImpactCriticalComponentSchema = z.object({
+  id: z.string(),
+  entityId: z.string(),
+  name: z.string(),
+  path: WorkspaceRelativePathSchema,
+  criticality: z.enum(['critical', 'high', 'medium', 'low']),
+  score: z.number().min(0).max(1),
+  reason: z.string(),
+});
+const ImpactRiskSchema = z.object({
+  id: z.string(),
+  type: z.enum([
+    'circular-dependency',
+    'god-class',
+    'high-complexity',
+    'orphan-file',
+    'unstable-module',
+    'large-file',
+    'deep-nesting',
+    'excessive-imports',
+    'missing-types',
+    'barrel-explosion',
+  ]),
+  severity: z.enum(['info', 'low', 'medium', 'high', 'critical']),
+  affectedEntityCount: z.number().int().nonnegative(),
+  description: z.string(),
+  measuredValue: z.number().optional(),
+  threshold: z.number().optional(),
+  suggestion: z.string().optional(),
+});
+const ImpactLayerSchema = z.object({
+  name: z.string(),
+  fileCount: z.number().int().nonnegative(),
+  role: z.enum([
+    'presentation',
+    'application',
+    'domain',
+    'infrastructure',
+    'shared',
+    'config',
+    'test',
+    'unknown',
+  ]),
+});
+const ImpactScoreComponentSchema = z.object({
+  kind: z.enum([
+    'dependency-reach',
+    'critical-component-exposure',
+    'domain-reach',
+    'risk-exposure',
+    'architecture-boundaries',
+  ]),
+  rawInput: z.number().nonnegative(),
+  normalizedValue: z.number().min(0).max(1),
+  weight: z.number().min(0).max(1),
+  contribution: z.number().min(0).max(100),
+  evidenceIds: z.array(z.string()).max(30000),
+  status: z.enum(['available', 'partial', 'unavailable']),
+});
+export const ImpactResultDataSchema = z.object({
+  repositoryId: z.string().min(1),
+  analysisVersion: z.number().int().nonnegative(),
+  target: ImpactNodeSchema,
+  directImpactedEntities: z.array(ImpactNodeSchema).max(5000),
+  transitiveImpactedEntities: z.array(ImpactNodeSchema).max(5000),
+  minimumDepth: z.number().int().nonnegative().nullable(),
+  canonicalPaths: z.array(ImpactPathSchema).max(3),
+  semanticEffects: z.object({
+    domains: z.array(ImpactDomainSchema).max(5000),
+    capabilities: z.array(ImpactCapabilitySchema).max(5000),
+    criticalComponents: z.array(ImpactCriticalComponentSchema).max(5000),
+    risks: z.array(ImpactRiskSchema).max(5000),
+    architecture: z.object({
+      layers: z.array(ImpactLayerSchema).max(5000),
+      boundaryCrossings: z
+        .array(
+          z.object({
+            fromLayer: z.string(),
+            toLayer: z.string(),
+            dependentId: z.string(),
+            dependencyId: z.string(),
+          }),
+        )
+        .max(5000),
+    }),
+  }),
+  score: z.object({
+    total: z.number().min(0).max(100),
+    components: z.array(ImpactScoreComponentSchema).length(5),
+  }),
+  evidence: z.array(ImpactEvidenceSchema).max(30000),
+  warnings: z.array(z.string().max(1000)).max(100),
+  complete: z.boolean(),
+  truncations: z
+    .array(
+      z.object({
+        kind: z.enum(['max-depth', 'max-entities', 'max-evidence-paths']),
+        limit: z.number().int().nonnegative(),
+        atEntityId: z.string().nullable(),
+      }),
+    )
+    .max(100),
+  appliedBounds: z.object({
+    maxDepth: z.number().int().nonnegative(),
+    maxEntities: z.number().int().positive(),
+    maxEvidencePaths: z.number().int().positive(),
+  }),
+});
+export type ImpactResultData = z.infer<typeof ImpactResultDataSchema>;
+
 export const ExtensionMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('analysisUnavailable'),
@@ -434,6 +617,14 @@ export const ExtensionMessageSchema = z.discriminatedUnion('type', [
     comparison: EvolutionComparisonDataSchema.nullable(),
     error: z.string().optional(),
   }),
+  z.object({
+    type: z.literal('impactResult'),
+    requestId: SafeNonnegativeIntegerSchema,
+    analysisVersion: SafeNonnegativeIntegerSchema,
+    target: ImpactTargetDataSchema,
+    result: ImpactResultDataSchema.nullable(),
+    error: z.string().optional(),
+  }),
 ]);
 
 export type ExtensionMessage = z.infer<typeof ExtensionMessageSchema>;
@@ -479,6 +670,16 @@ export const WebviewMessageSchema = z.discriminatedUnion('type', [
     analysisVersion: SafeNonnegativeIntegerSchema,
     fromVersion: SafeNonnegativeIntegerSchema,
     toVersion: SafeNonnegativeIntegerSchema,
+  }),
+  z.object({
+    type: z.literal('requestImpact'),
+    requestId: SafeNonnegativeIntegerSchema,
+    analysisVersion: SafeNonnegativeIntegerSchema,
+    target: ImpactTargetDataSchema,
+  }),
+  z.object({
+    type: z.literal('cancelImpact'),
+    requestId: SafeNonnegativeIntegerSchema,
   }),
 ]);
 
