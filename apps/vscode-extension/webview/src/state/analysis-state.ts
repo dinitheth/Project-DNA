@@ -113,6 +113,7 @@ export function reduceAnalysisState(
     case 'entityDetail':
     case 'evolutionComparison':
     case 'impactResult':
+    case 'workingTreeImpactResult':
       return state;
   }
 }
