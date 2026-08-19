@@ -523,6 +523,88 @@ export const ImpactResultDataSchema = z.object({
 });
 export type ImpactResultData = z.infer<typeof ImpactResultDataSchema>;
 
+const WorkingTreeChangeKindDataSchema = z.enum([
+  'added',
+  'modified',
+  'deleted',
+  'renamed',
+  'type-changed',
+]);
+const WorkingTreeContentKindDataSchema = z.enum([
+  'text',
+  'binary',
+  'symlink',
+  'submodule',
+  'unknown',
+]);
+
+export const WorkingTreeChangedPathDataSchema = z.object({
+  kind: WorkingTreeChangeKindDataSchema,
+  path: WorkspaceRelativePathSchema,
+  previousPath: WorkspaceRelativePathSchema.optional(),
+  staged: z.boolean(),
+  unstaged: z.boolean(),
+  untracked: z.boolean(),
+  contentKind: WorkingTreeContentKindDataSchema,
+});
+export type WorkingTreeChangedPathData = z.infer<typeof WorkingTreeChangedPathDataSchema>;
+
+export const WorkingTreeResolvedTargetDataSchema = z.object({
+  path: WorkspaceRelativePathSchema,
+  previousPath: WorkspaceRelativePathSchema.optional(),
+  side: z.enum(['before', 'after']),
+  entityId: z.string().min(1).max(512),
+  sourceAvailable: z.boolean(),
+});
+export type WorkingTreeResolvedTargetData = z.infer<typeof WorkingTreeResolvedTargetDataSchema>;
+
+export const WorkingTreeUnresolvedPathDataSchema = z.object({
+  path: WorkspaceRelativePathSchema,
+  previousPath: WorkspaceRelativePathSchema.optional(),
+  side: z.enum(['before', 'after']),
+  reason: z.enum([
+    'analysis-refresh-required',
+    'clean-baseline-unavailable',
+    'legacy-analysis-state-unavailable',
+    'non-analyzable',
+    'missing-entity',
+  ]),
+});
+export type WorkingTreeUnresolvedPathData = z.infer<typeof WorkingTreeUnresolvedPathDataSchema>;
+
+export const WorkingTreeImpactEntryDataSchema = z.object({
+  path: WorkspaceRelativePathSchema,
+  side: z.enum(['before', 'after']),
+  result: ImpactResultDataSchema,
+});
+export type WorkingTreeImpactEntryData = z.infer<typeof WorkingTreeImpactEntryDataSchema>;
+
+export const WorkingTreeImpactDataSchema = z
+  .object({
+    repositoryId: z.string().min(1).max(512),
+    headCommit: z.string().regex(/^[0-9a-f]{4,}$/u),
+    changedPaths: z.array(WorkingTreeChangedPathDataSchema).max(500),
+    resolvedTargets: z.array(WorkingTreeResolvedTargetDataSchema).max(500),
+    unresolvedPaths: z.array(WorkingTreeUnresolvedPathDataSchema).max(500),
+    impacts: z.array(WorkingTreeImpactEntryDataSchema).max(500),
+    changedEntityIds: z.array(z.string().min(1).max(512)).max(5000),
+    impactedEntityIds: z.array(z.string().min(1).max(512)).max(5000),
+    beforeAnalysisVersion: SafeNonnegativeIntegerSchema.nullable(),
+    afterAnalysisVersion: SafeNonnegativeIntegerSchema.nullable(),
+    warnings: z.array(z.string().max(1000)).max(100),
+    complete: z.boolean(),
+    truncations: z
+      .array(
+        z.object({
+          kind: z.enum(['max-changed-paths', 'max-targets', 'max-impacted-entities']),
+          limit: z.number().int().positive(),
+        }),
+      )
+      .max(100),
+  })
+  .strict();
+export type WorkingTreeImpactData = z.infer<typeof WorkingTreeImpactDataSchema>;
+
 export const ExtensionMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('analysisUnavailable'),
@@ -625,6 +707,13 @@ export const ExtensionMessageSchema = z.discriminatedUnion('type', [
     result: ImpactResultDataSchema.nullable(),
     error: z.string().optional(),
   }),
+  z.object({
+    type: z.literal('workingTreeImpactResult'),
+    requestId: SafeNonnegativeIntegerSchema,
+    analysisVersion: SafeNonnegativeIntegerSchema,
+    result: WorkingTreeImpactDataSchema.nullable(),
+    error: z.string().optional(),
+  }),
 ]);
 
 export type ExtensionMessage = z.infer<typeof ExtensionMessageSchema>;
@@ -679,6 +768,15 @@ export const WebviewMessageSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('cancelImpact'),
+    requestId: SafeNonnegativeIntegerSchema,
+  }),
+  z.object({
+    type: z.literal('requestWorkingTreeImpact'),
+    requestId: SafeNonnegativeIntegerSchema,
+    analysisVersion: SafeNonnegativeIntegerSchema,
+  }),
+  z.object({
+    type: z.literal('cancelWorkingTreeImpact'),
     requestId: SafeNonnegativeIntegerSchema,
   }),
 ]);

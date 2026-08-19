@@ -98,6 +98,106 @@ describe('webview message protocol', () => {
     );
   });
 
+  it('validates bounded working-tree impact requests, cancellation, and results', () => {
+    expect(
+      WebviewMessageSchema.safeParse({
+        type: 'requestWorkingTreeImpact',
+        requestId: 4,
+        analysisVersion: 3,
+      }).success,
+    ).toBe(true);
+    expect(
+      WebviewMessageSchema.safeParse({ type: 'cancelWorkingTreeImpact', requestId: 4 }).success,
+    ).toBe(true);
+    const result = {
+      type: 'workingTreeImpactResult',
+      requestId: 4,
+      analysisVersion: 3,
+      result: {
+        repositoryId: 'repo',
+        headCommit: 'a'.repeat(40),
+        changedPaths: [
+          {
+            kind: 'renamed',
+            path: 'src/new.ts',
+            previousPath: 'src/old.ts',
+            staged: true,
+            unstaged: true,
+            untracked: false,
+            contentKind: 'text',
+          },
+        ],
+        resolvedTargets: [],
+        unresolvedPaths: [
+          {
+            path: 'src/new.ts',
+            side: 'after',
+            reason: 'analysis-refresh-required',
+          },
+        ],
+        impacts: [],
+        changedEntityIds: [],
+        impactedEntityIds: [],
+        beforeAnalysisVersion: 2,
+        afterAnalysisVersion: null,
+        warnings: ['analysis-refresh-required'],
+        complete: false,
+        truncations: [],
+      },
+    };
+    expect(ExtensionMessageSchema.safeParse(result).success).toBe(true);
+    expect(
+      WebviewMessageSchema.safeParse({
+        type: 'requestWorkingTreeImpact',
+        requestId: Number.MAX_SAFE_INTEGER + 1,
+        analysisVersion: 3,
+      }).success,
+    ).toBe(false);
+    expect(
+      WebviewMessageSchema.safeParse({
+        type: 'requestWorkingTreeImpact',
+        requestId: 1,
+        analysisVersion: -1,
+      }).success,
+    ).toBe(false);
+    expect(
+      ExtensionMessageSchema.safeParse({
+        ...result,
+        result: {
+          ...result.result,
+          changedPaths: Array.from({ length: 501 }, (_, index) => ({
+            kind: 'added',
+            path: `src/${index}.ts`,
+            staged: false,
+            unstaged: true,
+            untracked: true,
+            contentKind: 'text',
+          })),
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      ExtensionMessageSchema.safeParse({
+        ...result,
+        result: {
+          ...result.result,
+          changedPaths: [
+            {
+              ...result.result.changedPaths[0],
+              path: '../outside.ts',
+            },
+          ],
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      ExtensionMessageSchema.safeParse({
+        ...result,
+        result: { ...result.result, internalGraph: {} },
+      }).success,
+    ).toBe(false);
+  });
+
   it('accepts only safe revisions and request identifiers at every navigation boundary', () => {
     const safe = Number.MAX_SAFE_INTEGER;
     const unsafe = safe + 1;

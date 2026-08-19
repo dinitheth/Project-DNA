@@ -39,6 +39,11 @@ export type {
   SidebarRoute,
   WebviewMessage,
   WorkspaceRelativePath,
+  WorkingTreeChangedPathData,
+  WorkingTreeImpactData,
+  WorkingTreeImpactEntryData,
+  WorkingTreeResolvedTargetData,
+  WorkingTreeUnresolvedPathData,
 } from './protocol/messages.js';
 export {
   ArchitectureDataSchema,
@@ -55,6 +60,11 @@ export {
   SidebarRouteSchema,
   WebviewMessageSchema,
   WorkspaceRelativePathSchema,
+  WorkingTreeChangedPathDataSchema,
+  WorkingTreeImpactDataSchema,
+  WorkingTreeImpactEntryDataSchema,
+  WorkingTreeResolvedTargetDataSchema,
+  WorkingTreeUnresolvedPathDataSchema,
 } from './protocol/messages.js';
 
 // ─── Constants ─────────────────────────────────────────────────────
