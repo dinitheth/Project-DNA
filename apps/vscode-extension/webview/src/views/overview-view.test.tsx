@@ -50,6 +50,17 @@ describe('overview health and risk intelligence', () => {
     expect(markup).toContain('aria-label="Critical components"');
   });
 
+  it('exposes working-tree impact from the existing overview surface', () => {
+    const markup = renderToStaticMarkup(
+      <OverviewView
+        {...viewProps(repositoryData())}
+        onRequestWorkingTreeImpact={() => undefined}
+      />,
+    );
+    expect(markup).toContain('Working Tree Impact');
+    expect(markup).toContain('type="button"');
+  });
+
   it('preserves explicit empty, unavailable, and error states', () => {
     expect(renderToStaticMarkup(<OverviewView {...viewProps(null)} />)).toContain(
       'Repository overview data is not available.',

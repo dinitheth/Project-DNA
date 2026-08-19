@@ -35,6 +35,18 @@ describe('architecture and dependency views', () => {
     expect(markup).toContain('5 total connections');
   });
 
+  it('exposes working-tree impact from dependencies without adding a route', () => {
+    const markup = renderToStaticMarkup(
+      <DependenciesView
+        data={dependencyData()}
+        onOpenWorkspaceTarget={() => undefined}
+        onRequestWorkingTreeImpact={() => undefined}
+      />,
+    );
+    expect(markup).toContain('Working Tree Impact');
+    expect(markup).toContain('type="button"');
+  });
+
   it('keeps explicit empty states when intelligence is unavailable', () => {
     expect(
       renderToStaticMarkup(

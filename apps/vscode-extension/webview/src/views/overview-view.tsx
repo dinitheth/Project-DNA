@@ -13,6 +13,7 @@ export function OverviewView({
   error,
   onOpenWorkspaceTarget,
   onCompareEvolution,
+  onRequestWorkingTreeImpact,
   onRefresh,
 }: {
   data: RepositoryData | null;
@@ -20,6 +21,7 @@ export function OverviewView({
   error: string | null;
   onOpenWorkspaceTarget: (path: WorkspaceRelativePath) => void;
   onCompareEvolution: (fromVersion: number, toVersion: number) => void;
+  onRequestWorkingTreeImpact?: () => void;
   onRefresh: () => void;
 }) {
   const availableVersions = [...(evolution?.history ?? [])]
@@ -95,14 +97,25 @@ export function OverviewView({
                 : 'No parsed files available for health analysis.'}
             </p>
           </div>
-          <button
-            aria-label="Refresh repository intelligence"
-            className="shrink-0 rounded border border-dna-border px-2.5 py-1.5 text-xs font-medium text-dna-foreground hover:bg-dna-surface-hover"
-            onClick={onRefresh}
-            type="button"
-          >
-            Refresh
-          </button>
+          <div className="flex shrink-0 flex-col gap-1.5">
+            <button
+              aria-label="Refresh repository intelligence"
+              className="rounded border border-dna-border px-2.5 py-1.5 text-xs font-medium text-dna-foreground hover:bg-dna-surface-hover"
+              onClick={onRefresh}
+              type="button"
+            >
+              Refresh
+            </button>
+            {onRequestWorkingTreeImpact ? (
+              <button
+                className="rounded border border-dna-border px-2.5 py-1.5 text-xs font-medium text-dna-foreground hover:bg-dna-surface-hover"
+                onClick={onRequestWorkingTreeImpact}
+                type="button"
+              >
+                Working Tree Impact
+              </button>
+            ) : null}
+          </div>
         </div>
         {healthAvailable ? (
           <ProgressBar

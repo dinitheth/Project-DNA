@@ -10,6 +10,7 @@ import { DependenciesView } from './views/dependencies-view';
 import { SettingsView } from './views/settings-view';
 import { ImpactView } from './views/impact-view';
 import type { NavigationFeedback } from './views/impact-view';
+import { WorkingTreeImpactView } from './views/working-tree-impact-view';
 import { SidebarNavigationController, type NavigationState } from './state/navigation-state';
 import {
   reduceEntityDetailState,
@@ -17,6 +18,10 @@ import {
   type EntityDetailState,
 } from './state/entity-detail-state';
 import { reduceImpactState, restoreImpactState } from './state/impact-state';
+import {
+  reduceWorkingTreeImpactState,
+  restoreWorkingTreeImpactState,
+} from './state/working-tree-impact-state';
 import {
   reduceEvolutionComparisonState,
   restoreEvolutionComparisonState,
@@ -46,12 +51,22 @@ export default function App() {
   );
   const restoredEvolutionComparison = useRef(restoreEvolutionComparisonState(vscode.getState()));
   const restoredImpact = useRef(restoreImpactState(vscode.getState()));
+  const restoredWorkingTreeImpact = useRef(restoreWorkingTreeImpactState(vscode.getState()));
   const impactRequestId = useRef(
     restoredImpact.current.requestId === Number.MAX_SAFE_INTEGER
       ? 0
       : restoredImpact.current.requestId + 1,
   );
+  const workingTreeImpactRequestId = useRef(
+    restoredWorkingTreeImpact.current.requestId === Number.MAX_SAFE_INTEGER
+      ? 0
+      : restoredWorkingTreeImpact.current.requestId + 1,
+  );
   const [impact, dispatchImpact] = useReducer(reduceImpactState, restoredImpact.current);
+  const [workingTreeImpact, dispatchWorkingTreeImpact] = useReducer(
+    reduceWorkingTreeImpactState,
+    restoredWorkingTreeImpact.current,
+  );
   const [evolutionComparison, dispatchEvolutionComparison] = useReducer(
     reduceEvolutionComparisonState,
     restoredEvolutionComparison.current,
@@ -94,6 +109,7 @@ export default function App() {
     dispatchEntityDetail({ type: 'message', message });
     dispatchEvolutionComparison({ type: 'message', message });
     dispatchImpact({ type: 'message', message });
+    dispatchWorkingTreeImpact({ type: 'message', message });
     dispatchAnalysis(message);
   }, []);
   useMessage(handleMessage);
@@ -130,6 +146,14 @@ export default function App() {
   }, [impact, vscode]);
 
   useEffect(() => {
+    const current = vscode.getState();
+    vscode.setState({
+      ...(current && typeof current === 'object' ? current : {}),
+      workingTreeImpact,
+    });
+  }, [workingTreeImpact, vscode]);
+
+  useEffect(() => {
     if (entityDetail.status !== 'loading' || !entityDetail.entityId) return;
     vscode.postMessage({
       type: 'requestEntityDetail',
@@ -146,6 +170,15 @@ export default function App() {
       requestId: impact.requestId,
       analysisVersion: impact.analysisVersion,
       target: impact.target,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (workingTreeImpact.status !== 'loading') return;
+    vscode.postMessage({
+      type: 'requestWorkingTreeImpact',
+      requestId: workingTreeImpact.requestId,
+      analysisVersion: workingTreeImpact.analysisVersion,
     });
   }, []);
 
@@ -254,6 +287,25 @@ export default function App() {
     vscode.postMessage({ type: 'cancelImpact', requestId: impact.requestId });
     dispatchImpact({ type: 'cancel', requestId: impact.requestId });
   }, [impact, vscode]);
+  const requestWorkingTreeImpact = useCallback(() => {
+    const requestId = workingTreeImpactRequestId.current;
+    workingTreeImpactRequestId.current = requestId === Number.MAX_SAFE_INTEGER ? 0 : requestId + 1;
+    dispatchWorkingTreeImpact({
+      type: 'request',
+      requestId,
+      analysisVersion: analysis.latestVersion,
+    });
+    vscode.postMessage({
+      type: 'requestWorkingTreeImpact',
+      requestId,
+      analysisVersion: analysis.latestVersion,
+    });
+  }, [analysis.latestVersion, vscode]);
+  const cancelWorkingTreeImpact = useCallback(() => {
+    if (workingTreeImpact.status !== 'loading') return;
+    vscode.postMessage({ type: 'cancelWorkingTreeImpact', requestId: workingTreeImpact.requestId });
+    dispatchWorkingTreeImpact({ type: 'cancel', requestId: workingTreeImpact.requestId });
+  }, [workingTreeImpact, vscode]);
 
   const renderView = () => {
     if (status === 'loading') {
@@ -303,6 +355,7 @@ export default function App() {
             error={error}
             onOpenWorkspaceTarget={openWorkspaceTarget}
             onCompareEvolution={compareEvolution}
+            onRequestWorkingTreeImpact={requestWorkingTreeImpact}
             onRefresh={refresh}
           />
         );
@@ -322,6 +375,7 @@ export default function App() {
           <DependenciesView
             data={dependencies}
             onAnalyzeImpact={analyzeImpact}
+            onRequestWorkingTreeImpact={requestWorkingTreeImpact}
             onOpenWorkspaceTarget={openWorkspaceTarget}
           />
         );
@@ -345,6 +399,13 @@ export default function App() {
           navigationFeedback={navigationFeedback}
           state={impact}
           onCancel={cancelImpact}
+          onSelectEntity={selectEntity}
+          onOpenWorkspaceTarget={openImpactWorkspaceTarget}
+        />
+        <WorkingTreeImpactView
+          repositoryName={repository?.name ?? workspaceLabel(workspaceRoot) ?? 'Current workspace'}
+          state={workingTreeImpact}
+          onCancel={cancelWorkingTreeImpact}
           onSelectEntity={selectEntity}
           onOpenWorkspaceTarget={openImpactWorkspaceTarget}
         />

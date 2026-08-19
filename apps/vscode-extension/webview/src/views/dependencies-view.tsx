@@ -5,10 +5,12 @@ import { EmptyCollection, MetricCard } from '../components/ui';
 export function DependenciesView({
   data,
   onAnalyzeImpact,
+  onRequestWorkingTreeImpact,
   onOpenWorkspaceTarget,
 }: {
   data: DependencyData | null;
   onAnalyzeImpact?: (target: ImpactTargetData) => void;
+  onRequestWorkingTreeImpact?: () => void;
   onOpenWorkspaceTarget: (path: WorkspaceRelativePath) => void;
 }) {
   if (!data) return <EmptyCollection>Dependency intelligence is not available.</EmptyCollection>;
@@ -46,6 +48,15 @@ export function DependenciesView({
       <p className="mt-1 text-sm text-description">
         Live structural relationships extracted from repository imports.
       </p>
+      {onRequestWorkingTreeImpact ? (
+        <button
+          className="mt-3 rounded border border-dna-border px-2.5 py-1.5 text-xs font-medium hover:bg-dna-surface-hover"
+          onClick={onRequestWorkingTreeImpact}
+          type="button"
+        >
+          Working Tree Impact
+        </button>
+      ) : null}
 
       <div className="my-5 grid grid-cols-2 gap-2">
         <MetricCard label="Graph nodes" value={data.nodeCount.toLocaleString()} />
