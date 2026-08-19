@@ -42,12 +42,14 @@ describe('working-tree impact view', () => {
     expect(markup).toContain('symlink');
     expect(markup).toContain('submodule');
     expect(markup).toContain('unknown');
-    expect(markup).toContain('Resolved');
+    expect(markup).toContain('Before not applicable; after resolved');
+    expect(markup).toContain('Before resolved; after not applicable');
+    expect(markup).toContain('Before resolved; after unresolved');
+    expect(markup).toContain('Before resolved / After resolved');
     expect(markup).toContain('Unresolved');
     expect(markup).toContain('Unresolved changes');
     expect(markup).toContain('Refresh Project DNA to resolve it.');
     expect(markup).toContain('No clean HEAD-aligned baseline is available');
-    expect(markup).toContain('saved analysis predates working-tree impact support');
     expect(markup).toContain('This file type is not analyzed as source.');
     expect(markup).toContain('no canonical file entity was found');
     expect(markup).toContain('Deleted source is unavailable');
@@ -69,6 +71,29 @@ describe('working-tree impact view', () => {
     expect(markup).toContain('After analysis');
     expect(markup).toContain('aria-expanded="true"');
     expect(markup).toContain('aria-controls="working-tree-impact-after-src-added-ts"');
+    expect(markup).toContain('hidden=""');
+  });
+
+  it('does not present unresolved-only evidence as zero or Low impact', () => {
+    const source = workingTreeData();
+    const markup = renderToStaticMarkup(
+      <WorkingTreeImpactResultView
+        data={{
+          ...source,
+          changedPaths: [source.changedPaths[5]!],
+          resolvedTargets: [],
+          impacts: [],
+          unresolvedPaths: [{ path: 'src/unknown.dat', side: 'after', reason: 'missing-entity' }],
+        }}
+        onOpenWorkspaceTarget={() => undefined}
+        onSelectEntity={() => undefined}
+        repositoryName="repo"
+      />,
+    );
+    expect(markup).toContain('No resolved impact evidence');
+    expect(markup).toContain('cannot be interpreted as zero impact');
+    expect(markup).not.toContain('role="progressbar"');
+    expect(markup).not.toContain('>Low</span>');
   });
 
   it('keeps loading, cancellation, error, and clean-tree states accessible', () => {
@@ -115,7 +140,8 @@ describe('working-tree impact view', () => {
       />,
     );
     expect(clean).toContain('Working tree is clean.');
-    expect(clean).toContain('No resolved impact');
+    expect(clean).toContain('No resolved impact evidence');
+    expect(clean).not.toContain('role="progressbar"');
   });
 });
 
@@ -182,11 +208,30 @@ function workingTreeData(): WorkingTreeImpactData {
         entityId: 'file:src/deleted.ts',
         sourceAvailable: false,
       },
+      {
+        path: 'src/modified.ts',
+        side: 'before',
+        entityId: 'file:src/modified.ts',
+        sourceAvailable: true,
+      },
+      {
+        path: 'src/new-name.ts',
+        previousPath: 'src/old-name.ts',
+        side: 'before',
+        entityId: 'file:src/old-name.ts',
+        sourceAvailable: true,
+      },
+      {
+        path: 'src/new-name.ts',
+        previousPath: 'src/old-name.ts',
+        side: 'after',
+        entityId: 'file:src/new-name.ts',
+        sourceAvailable: true,
+      },
     ],
     unresolvedPaths: [
       { path: 'src/new-name.ts', side: 'after', reason: 'analysis-refresh-required' },
       { path: 'src/modified.ts', side: 'before', reason: 'clean-baseline-unavailable' },
-      { path: 'src/old.ts', side: 'before', reason: 'legacy-analysis-state-unavailable' },
       { path: 'src/type-changed.ts', side: 'after', reason: 'non-analyzable' },
       { path: 'src/unknown.dat', side: 'after', reason: 'missing-entity' },
     ],

@@ -10,6 +10,7 @@ import {
   type ExtensionMessage,
   type SidebarRoute,
   type WebviewMessage,
+  type WorkingTreeUnresolvedPathData,
 } from '@project-dna/shared';
 import type { IProjectDNAService } from '@project-dna/dna-core';
 import { buildSidebarData } from './sidebar-data.js';
@@ -1011,12 +1012,14 @@ function toImpactResultData(
 function toWorkingTreeImpactData(
   result: import('@project-dna/dna-core').WorkingTreeImpactResult,
 ): import('@project-dna/shared').WorkingTreeImpactData {
+  const unresolvedPaths = result.unresolvedPaths.filter(isSupportedWorkingTreeUnresolvedPath);
+  const hasUnsupportedLegacyState = unresolvedPaths.length !== result.unresolvedPaths.length;
   return {
     repositoryId: result.repositoryId,
     headCommit: result.headCommit,
     changedPaths: result.changedPaths,
     resolvedTargets: result.resolvedTargets,
-    unresolvedPaths: result.unresolvedPaths,
+    unresolvedPaths,
     impacts: result.impacts.map((impact) => ({
       path: impact.path,
       side: impact.side,
@@ -1026,10 +1029,21 @@ function toWorkingTreeImpactData(
     impactedEntityIds: result.impactedEntityIds,
     beforeAnalysisVersion: result.beforeAnalysisVersion,
     afterAnalysisVersion: result.afterAnalysisVersion,
-    warnings: result.warnings,
+    warnings: hasUnsupportedLegacyState
+      ? [
+          ...result.warnings,
+          'Legacy working-tree analysis state is unsupported by this UI boundary.',
+        ]
+      : result.warnings,
     complete: result.complete,
     truncations: result.truncations,
   };
+}
+
+function isSupportedWorkingTreeUnresolvedPath(
+  path: import('@project-dna/dna-core').WorkingTreeUnresolvedPath,
+): path is WorkingTreeUnresolvedPathData {
+  return path.reason !== 'legacy-analysis-state-unavailable';
 }
 
 export function isPathInside(workspaceRoot: string, targetPath: string): boolean {

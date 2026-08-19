@@ -240,6 +240,36 @@ describe('SidebarProvider navigation', () => {
     expect(signal?.aborted).toBe(false);
   });
 
+  it('filters unsupported legacy working-tree reasons at the webview boundary', async () => {
+    const service = createService({ currentVersion: 3 });
+    service.getWorkingTreeImpact = vi.fn(async () => {
+      const result = workingTreeImpactResult(3);
+      return Ok({
+        ...result,
+        unresolvedPaths: [
+          ...result.unresolvedPaths,
+          {
+            path: 'src/legacy.ts',
+            side: 'before' as const,
+            reason: 'legacy-analysis-state-unavailable' as const,
+          },
+        ],
+      }) as never;
+    });
+    const harness = createHarness({ service });
+    harness.resolve();
+    harness.receive({ type: 'requestWorkingTreeImpact', requestId: 9, analysisVersion: 3 });
+    await harness.waitForWorkingTreeImpactResultCount(1);
+
+    const result = harness.workingTreeImpactResults()[0]?.result;
+    expect(result?.unresolvedPaths).toEqual([
+      expect.objectContaining({ reason: 'analysis-refresh-required' }),
+    ]);
+    expect(result?.warnings).toContain(
+      'Legacy working-tree analysis state is unsupported by this UI boundary.',
+    );
+  });
+
   it('cancels a superseded working-tree request and suppresses its late result', async () => {
     const first = createDeferred<ReturnType<typeof Ok<never>>>();
     const second = createDeferred<ReturnType<typeof Ok<never>>>();

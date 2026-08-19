@@ -41,6 +41,9 @@ export function restoreWorkingTreeImpactState(candidate: unknown): WorkingTreeIm
       ? null
       : WorkingTreeImpactDataSchema.safeParse(state.result);
   if (result !== null && !result.success) return initialWorkingTreeImpactState;
+  if (state.error !== null && state.error !== undefined && typeof state.error !== 'string') {
+    return initialWorkingTreeImpactState;
+  }
   if (
     (state.status === 'ready' && result === null) ||
     (state.status === 'idle' && result !== null) ||
@@ -82,6 +85,7 @@ export function reduceWorkingTreeImpactState(
   }
   const { message } = action;
   if (
+    message.type === 'analysisUnavailable' ||
     message.type === 'analysisStarted' ||
     (message.type === 'analysisSnapshot' && message.version !== state.analysisVersion)
   ) {
@@ -104,4 +108,14 @@ export function reduceWorkingTreeImpactState(
     };
   }
   return { ...state, status: 'ready', result: message.result, error: null };
+}
+
+export function shouldFocusWorkingTreeStatus(
+  previous: WorkingTreeImpactStatus,
+  current: WorkingTreeImpactStatus,
+): boolean {
+  return (
+    previous === 'loading' &&
+    (current === 'ready' || current === 'error' || current === 'cancelled')
+  );
 }

@@ -4,6 +4,7 @@ import {
   initialWorkingTreeImpactState,
   reduceWorkingTreeImpactState,
   restoreWorkingTreeImpactState,
+  shouldFocusWorkingTreeStatus,
 } from './working-tree-impact-state.js';
 
 describe('working-tree impact state', () => {
@@ -47,12 +48,30 @@ describe('working-tree impact state', () => {
     expect(refreshed).toEqual({ ...initialWorkingTreeImpactState, requestId: 7 });
   });
 
+  it('clears a visible result when the workspace becomes unavailable', () => {
+    const selected = request(7, 3);
+    const ready = reduceWorkingTreeImpactState(selected, {
+      type: 'message',
+      message: result(7, 3),
+    });
+    const unavailable = reduceWorkingTreeImpactState(ready, {
+      type: 'message',
+      message: ExtensionMessageSchema.parse({ type: 'analysisUnavailable', rootPath: null }),
+    });
+    expect(unavailable).toEqual({ ...initialWorkingTreeImpactState, requestId: 7 });
+  });
+
   it('restores pending requests and rejects malformed persisted state', () => {
     const selected = request(3, 5);
     expect(restoreWorkingTreeImpactState({ workingTreeImpact: selected })).toEqual(selected);
     expect(
       restoreWorkingTreeImpactState({
         workingTreeImpact: { ...selected, result: { internalGraph: {} } },
+      }),
+    ).toEqual(initialWorkingTreeImpactState);
+    expect(
+      restoreWorkingTreeImpactState({
+        workingTreeImpact: { ...selected, error: { invalid: true } },
       }),
     ).toEqual(initialWorkingTreeImpactState);
   });
@@ -73,6 +92,32 @@ describe('working-tree impact state', () => {
       status: 'error',
       error: 'Working tree changed during impact calculation.',
     });
+  });
+
+  it('rejects the removed legacy unresolved reason at the webview boundary', () => {
+    const valid = result(1, 3);
+    if (valid.type !== 'workingTreeImpactResult' || !valid.result) {
+      throw new Error('Expected a valid working-tree result');
+    }
+    expect(
+      ExtensionMessageSchema.safeParse({
+        ...valid,
+        result: {
+          ...valid.result,
+          unresolvedPaths: [
+            { path: 'src/old.ts', side: 'before', reason: 'legacy-analysis-state-unavailable' },
+          ],
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('focuses only on meaningful loading transitions', () => {
+    expect(shouldFocusWorkingTreeStatus('loading', 'ready')).toBe(true);
+    expect(shouldFocusWorkingTreeStatus('loading', 'error')).toBe(true);
+    expect(shouldFocusWorkingTreeStatus('loading', 'cancelled')).toBe(true);
+    expect(shouldFocusWorkingTreeStatus('ready', 'ready')).toBe(false);
+    expect(shouldFocusWorkingTreeStatus('idle', 'loading')).toBe(false);
   });
 });
 

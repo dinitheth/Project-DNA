@@ -565,7 +565,6 @@ export const WorkingTreeUnresolvedPathDataSchema = z.object({
   reason: z.enum([
     'analysis-refresh-required',
     'clean-baseline-unavailable',
-    'legacy-analysis-state-unavailable',
     'non-analyzable',
     'missing-entity',
   ]),

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import type {
   WorkingTreeChangedPathData,
   WorkingTreeImpactData,
@@ -6,7 +6,10 @@ import type {
   WorkspaceRelativePath,
 } from '@project-dna/shared';
 import { EmptyCollection, MetricCard, ProgressBar } from '../components/ui';
-import type { WorkingTreeImpactState } from '../state/working-tree-impact-state';
+import {
+  shouldFocusWorkingTreeStatus,
+  type WorkingTreeImpactState,
+} from '../state/working-tree-impact-state';
 import { ImpactResultView } from './impact-view';
 
 export function WorkingTreeImpactView({
@@ -22,6 +25,15 @@ export function WorkingTreeImpactView({
   onSelectEntity: (entityId: string) => void;
   onOpenWorkspaceTarget: (path: WorkspaceRelativePath) => void;
 }) {
+  const previousStatus = useRef(state.status);
+  const resultHeadingRef = useRef<HTMLHeadingElement>(null);
+  const statusHeadingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (shouldFocusWorkingTreeStatus(previousStatus.current, state.status)) {
+      (state.status === 'ready' ? resultHeadingRef : statusHeadingRef).current?.focus();
+    }
+    previousStatus.current = state.status;
+  }, [state.status]);
   if (state.status === 'idle') return null;
   if (state.status === 'loading') {
     return (
@@ -30,7 +42,9 @@ export function WorkingTreeImpactView({
         className="mt-4 rounded border border-dna-border bg-dna-surface p-3"
         role="status"
       >
-        <h2 className="text-sm font-semibold">Working Tree Impact</h2>
+        <h2 className="text-sm font-semibold" ref={statusHeadingRef} tabIndex={-1}>
+          Working Tree Impact
+        </h2>
         <p className="mt-2 text-xs text-dna-muted">Calculating working-tree analysis...</p>
         <button
           className="mt-3 rounded border border-dna-border px-3 py-1.5 text-xs"
@@ -44,14 +58,14 @@ export function WorkingTreeImpactView({
   }
   if (state.status === 'cancelled') {
     return (
-      <Notice role="status" title="Working Tree Impact">
+      <Notice headingRef={statusHeadingRef} role="status" title="Working Tree Impact">
         Working-tree analysis cancelled.
       </Notice>
     );
   }
   if (state.status === 'error' || !state.result) {
     return (
-      <Notice error role="alert" title="Working Tree Impact">
+      <Notice error headingRef={statusHeadingRef} role="alert" title="Working Tree Impact">
         {state.error ?? 'Working-tree impact is unavailable.'}
       </Notice>
     );
@@ -62,6 +76,7 @@ export function WorkingTreeImpactView({
       onOpenWorkspaceTarget={onOpenWorkspaceTarget}
       onSelectEntity={onSelectEntity}
       repositoryName={repositoryName}
+      headingRef={resultHeadingRef}
     />
   );
 }
@@ -71,11 +86,13 @@ export function WorkingTreeImpactResultView({
   repositoryName,
   onSelectEntity,
   onOpenWorkspaceTarget,
+  headingRef,
 }: {
   data: WorkingTreeImpactData;
   repositoryName: string;
   onSelectEntity: (entityId: string) => void;
   onOpenWorkspaceTarget: (path: WorkspaceRelativePath) => void;
+  headingRef?: RefObject<HTMLHeadingElement>;
 }) {
   const highestScore = data.impacts.reduce(
     (highest, item) => Math.max(highest, item.result.score.total),
@@ -107,7 +124,12 @@ export function WorkingTreeImpactResultView({
         <p className="text-xs font-semibold uppercase tracking-wide text-dna-muted">
           Working-tree analysis
         </p>
-        <h2 className="mt-1 text-base font-semibold" id="working-tree-impact-title">
+        <h2
+          className="mt-1 text-base font-semibold"
+          id="working-tree-impact-title"
+          ref={headingRef}
+          tabIndex={-1}
+        >
           Working Tree Impact
         </h2>
         <p className="mt-1 truncate text-xs text-dna-muted" title={repositoryName}>
@@ -175,15 +197,24 @@ export function WorkingTreeImpactResultView({
               Highest file impact
             </h4>
             <span className="text-xs font-medium">
-              {data.impacts.length > 0 ? impactSeverity(highestScore) : 'No resolved impact'}
+              {data.impacts.length > 0
+                ? impactSeverity(highestScore)
+                : 'No resolved impact evidence'}
             </span>
           </div>
-          <ProgressBar
-            fillClassName={severityClass(highestScore)}
-            label="Highest file score"
-            trackClassName="bg-dna-surface-hover"
-            value={highestScore}
-          />
+          {data.impacts.length > 0 ? (
+            <ProgressBar
+              fillClassName={severityClass(highestScore)}
+              label="Highest file score"
+              trackClassName="bg-dna-surface-hover"
+              value={highestScore}
+            />
+          ) : (
+            <p className="mt-2 text-xs text-dna-muted">
+              No resolved impact evidence is available. Unresolved paths cannot be interpreted as
+              zero impact.
+            </p>
+          )}
         </section>
         <div className="mt-2 grid grid-cols-2 gap-2">
           <MetricCard
@@ -324,15 +355,20 @@ function ImpactEntry({
         </span>
         <span aria-hidden="true">{open ? '-' : '+'}</span>
       </button>
-      {open ? (
-        <div className="border-t border-dna-border px-2" id={contentId}>
+      <div
+        aria-hidden={!open}
+        className="border-t border-dna-border px-2"
+        hidden={!open}
+        id={contentId}
+      >
+        {open ? (
           <ImpactResultView
             onOpenWorkspaceTarget={onOpenWorkspaceTarget}
             onSelectEntity={onSelectEntity}
             result={entry.result}
           />
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -344,8 +380,10 @@ function ChangedPath({
   path: WorkingTreeChangedPathData;
   data: WorkingTreeImpactData;
 }) {
+  const resolution = resolvePathState(path, data);
   const target = data.resolvedTargets.find(
-    (item) => item.path === path.path || item.previousPath === path.path,
+    (item) =>
+      item.side === 'before' && (item.path === path.path || item.previousPath === path.path),
   );
   const stage = path.untracked
     ? 'Untracked'
@@ -359,11 +397,6 @@ function ChangedPath({
   const marker = { added: '+', modified: '~', deleted: '-', renamed: 'R', 'type-changed': 'T' }[
     path.kind
   ];
-  const resolution = target
-    ? target.sourceAvailable
-      ? 'Resolved'
-      : 'Resolved; source unavailable'
-    : 'Unresolved';
   return (
     <div className="flex min-w-0 items-start gap-2 rounded border border-dna-border bg-dna-surface p-2 text-xs">
       <span
@@ -379,7 +412,7 @@ function ChangedPath({
           <p className="break-words text-dna-muted">from {path.previousPath}</p>
         ) : null}
         <p className="mt-1 text-dna-muted">
-          {stage} · {path.contentKind} · {resolution}
+          {stage} · {path.contentKind} · {resolution.label}
         </p>
         {path.kind === 'deleted' && target && !target.sourceAvailable ? (
           <p className="mt-1 text-dna-muted">
@@ -401,8 +434,6 @@ function UnresolvedPath({ item }: { item: WorkingTreeUnresolvedPathData }) {
     'analysis-refresh-required':
       'Current filesystem analysis does not include this path. Refresh Project DNA to resolve it.',
     'clean-baseline-unavailable': 'No clean HEAD-aligned baseline is available for this path.',
-    'legacy-analysis-state-unavailable':
-      'The saved analysis predates working-tree impact support. Reanalyze the repository.',
     'non-analyzable': 'This file type is not analyzed as source.',
     'missing-entity': 'The path was analyzed, but no canonical file entity was found.',
   } as Record<WorkingTreeUnresolvedPathData['reason'], string>;
@@ -421,11 +452,13 @@ function Notice({
   children,
   role,
   error = false,
+  headingRef,
 }: {
   title: string;
   children: ReactNode;
   role: 'status' | 'alert';
   error?: boolean;
+  headingRef?: RefObject<HTMLHeadingElement>;
 }) {
   return (
     <section
@@ -433,9 +466,75 @@ function Notice({
       className={`mt-4 rounded border border-dna-border p-3 text-sm ${error ? 'text-error' : ''}`}
       role={role}
     >
-      <h2 className="font-semibold">{title}</h2>
+      <h2 className="font-semibold" ref={headingRef} tabIndex={-1}>
+        {title}
+      </h2>
       <div className="mt-1 space-y-1 text-xs">{children}</div>
     </section>
+  );
+}
+
+type ResolutionState =
+  | 'fully-resolved'
+  | 'before-resolved-after-unresolved'
+  | 'before-unresolved-after-resolved'
+  | 'unresolved'
+  | 'not-applicable';
+
+function resolvePathState(
+  path: WorkingTreeChangedPathData,
+  data: WorkingTreeImpactData,
+): { state: ResolutionState; label: string } {
+  const beforeApplicable = path.kind !== 'added';
+  const afterApplicable = path.kind !== 'deleted';
+  const beforeResolved = beforeApplicable && hasResolvedSide(path, data, 'before');
+  const afterResolved = afterApplicable && hasResolvedSide(path, data, 'after');
+  if (!beforeApplicable && !afterApplicable)
+    return { state: 'not-applicable', label: 'Not applicable' };
+  if (beforeResolved && afterResolved)
+    return { state: 'fully-resolved', label: 'Before resolved / After resolved' };
+  if (beforeResolved && afterApplicable)
+    return {
+      state: 'before-resolved-after-unresolved',
+      label: 'Before resolved; after unresolved',
+    };
+  if (afterResolved && beforeApplicable)
+    return {
+      state: 'before-unresolved-after-resolved',
+      label: 'Before unresolved; after resolved',
+    };
+  if (!beforeApplicable) {
+    return afterResolved
+      ? {
+          state: 'before-unresolved-after-resolved',
+          label: 'Before not applicable; after resolved',
+        }
+      : {
+          state: 'before-unresolved-after-resolved',
+          label: 'Before not applicable; after unresolved',
+        };
+  }
+  if (!afterApplicable) {
+    return beforeResolved
+      ? {
+          state: 'before-resolved-after-unresolved',
+          label: 'Before resolved; after not applicable',
+        }
+      : {
+          state: 'before-resolved-after-unresolved',
+          label: 'Before unresolved; after not applicable',
+        };
+  }
+  return { state: 'unresolved', label: 'Before unresolved / After unresolved' };
+}
+
+function hasResolvedSide(
+  path: WorkingTreeChangedPathData,
+  data: WorkingTreeImpactData,
+  side: 'before' | 'after',
+): boolean {
+  return data.resolvedTargets.some(
+    (item) => item.side === side && (item.path === path.path || item.previousPath === path.path),
   );
 }
 
