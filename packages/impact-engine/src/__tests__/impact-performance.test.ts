@@ -62,7 +62,7 @@ describe('ImpactEngine scalability gates', () => {
       const cancelled = measureCancelled(fixture);
 
       report(gate.size, 'high-degree-hub', 'truncated', truncated);
-      console.info(
+      console.warn(
         `IMPACT_BENCHMARK size=${gate.size} scenario=high-degree-hub mode=cancelled durationMs=${cancelled.durationMs.toFixed(2)} rssGrowthMiB=${toMiB(cancelled.rssGrowthBytes).toFixed(2)}`,
       );
       assertCeilings(truncated, gate.durationMs, gate.rssGrowthBytes);
@@ -174,7 +174,7 @@ function report(
   mode: 'cold' | 'repeated' | 'truncated',
   sample: PerformanceSample,
 ): void {
-  console.info(
+  console.warn(
     `IMPACT_BENCHMARK size=${size} scenario=${scenario} mode=${mode} durationMs=${sample.durationMs.toFixed(2)} rssGrowthMiB=${toMiB(sample.rssGrowthBytes).toFixed(2)} impacted=${sample.result.directImpactedEntities.length + sample.result.transitiveImpactedEntities.length} complete=${sample.result.complete}`,
   );
 }
