@@ -1,12 +1,14 @@
-import type { DependencyData, WorkspaceRelativePath } from '@project-dna/shared';
+import type { DependencyData, ImpactTargetData, WorkspaceRelativePath } from '@project-dna/shared';
 import { Badge, Panel, TreeView, type TreeItem } from '@project-dna/ui-components';
 import { EmptyCollection, MetricCard } from '../components/ui';
 
 export function DependenciesView({
   data,
+  onAnalyzeImpact,
   onOpenWorkspaceTarget,
 }: {
   data: DependencyData | null;
+  onAnalyzeImpact?: (target: ImpactTargetData) => void;
   onOpenWorkspaceTarget: (path: WorkspaceRelativePath) => void;
 }) {
   if (!data) return <EmptyCollection>Dependency intelligence is not available.</EmptyCollection>;
@@ -67,15 +69,36 @@ export function DependenciesView({
           {hotspotItems.length === 0 ? (
             <EmptyCollection>No dependency connections were detected.</EmptyCollection>
           ) : (
-            <TreeView
-              ariaLabel="Dependency connection hotspots"
-              defaultExpandedIds={hotspotItems.map(({ id }) => id)}
-              items={hotspotItems}
-              onSelect={(item) => {
-                const path = pathsByItemId.get(item.id);
-                if (path) onOpenWorkspaceTarget(path);
-              }}
-            />
+            <>
+              <TreeView
+                ariaLabel="Dependency connection hotspots"
+                defaultExpandedIds={hotspotItems.map(({ id }) => id)}
+                items={hotspotItems}
+                onSelect={(item) => {
+                  const path = pathsByItemId.get(item.id);
+                  if (path) onOpenWorkspaceTarget(path);
+                }}
+              />
+              {onAnalyzeImpact ? (
+                <div className="mt-3 space-y-1 border-t border-dna-border pt-3">
+                  {data.hotspots
+                    .filter(
+                      (hotspot): hotspot is typeof hotspot & { path: WorkspaceRelativePath } =>
+                        hotspot.kind === 'file' && hotspot.path !== null,
+                    )
+                    .map((hotspot) => (
+                      <button
+                        className="w-full rounded border border-dna-border px-2 py-1.5 text-left text-xs hover:bg-dna-surface-hover"
+                        key={hotspot.id}
+                        onClick={() => onAnalyzeImpact({ kind: 'file', path: hotspot.path })}
+                        type="button"
+                      >
+                        Analyze impact: {hotspot.label}
+                      </button>
+                    ))}
+                </div>
+              ) : null}
+            </>
           )}
         </Panel>
       </div>

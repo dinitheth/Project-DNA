@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import type { SidebarRoute, WorkspaceRelativePath } from '@project-dna/shared';
+import type { ImpactTargetData, SidebarRoute, WorkspaceRelativePath } from '@project-dna/shared';
 import { useMessage } from './hooks/useMessage';
 import { useVSCodeApi } from './hooks/useVSCodeApi';
 import { initialAnalysisState, reduceAnalysisState } from './state/analysis-state';
@@ -8,12 +8,14 @@ import { ArchitectureView } from './views/architecture-view';
 import { KnowledgeView } from './views/knowledge-view';
 import { DependenciesView } from './views/dependencies-view';
 import { SettingsView } from './views/settings-view';
+import { ImpactView } from './views/impact-view';
 import { SidebarNavigationController, type NavigationState } from './state/navigation-state';
 import {
   reduceEntityDetailState,
   restoreEntityDetailState,
   type EntityDetailState,
 } from './state/entity-detail-state';
+import { reduceImpactState, restoreImpactState } from './state/impact-state';
 import {
   reduceEvolutionComparisonState,
   restoreEvolutionComparisonState,
@@ -40,6 +42,13 @@ export default function App() {
     restoredEntityDetail.current,
   );
   const restoredEvolutionComparison = useRef(restoreEvolutionComparisonState(vscode.getState()));
+  const restoredImpact = useRef(restoreImpactState(vscode.getState()));
+  const impactRequestId = useRef(
+    restoredImpact.current.requestId === Number.MAX_SAFE_INTEGER
+      ? 0
+      : restoredImpact.current.requestId + 1,
+  );
+  const [impact, dispatchImpact] = useReducer(reduceImpactState, restoredImpact.current);
   const [evolutionComparison, dispatchEvolutionComparison] = useReducer(
     reduceEvolutionComparisonState,
     restoredEvolutionComparison.current,
@@ -69,6 +78,7 @@ export default function App() {
     }
     dispatchEntityDetail({ type: 'message', message });
     dispatchEvolutionComparison({ type: 'message', message });
+    dispatchImpact({ type: 'message', message });
     dispatchAnalysis(message);
   }, []);
   useMessage(handleMessage);
@@ -97,12 +107,30 @@ export default function App() {
   }, [evolutionComparison, vscode]);
 
   useEffect(() => {
+    const current = vscode.getState();
+    vscode.setState({
+      ...(current && typeof current === 'object' ? current : {}),
+      impact,
+    });
+  }, [impact, vscode]);
+
+  useEffect(() => {
     if (entityDetail.status !== 'loading' || !entityDetail.entityId) return;
     vscode.postMessage({
       type: 'requestEntityDetail',
       requestId: entityDetail.requestId,
       analysisVersion: entityDetail.analysisVersion,
       entityId: entityDetail.entityId,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (impact.status !== 'loading' || !impact.target) return;
+    vscode.postMessage({
+      type: 'requestImpact',
+      requestId: impact.requestId,
+      analysisVersion: impact.analysisVersion,
+      target: impact.target,
     });
   }, []);
 
@@ -174,6 +202,30 @@ export default function App() {
     },
     [analysis.latestVersion, vscode],
   );
+  const analyzeImpact = useCallback(
+    (target: ImpactTargetData) => {
+      const requestId = impactRequestId.current;
+      impactRequestId.current = requestId === Number.MAX_SAFE_INTEGER ? 0 : requestId + 1;
+      dispatchImpact({
+        type: 'select',
+        requestId,
+        analysisVersion: analysis.latestVersion,
+        target,
+      });
+      vscode.postMessage({
+        type: 'requestImpact',
+        requestId,
+        analysisVersion: analysis.latestVersion,
+        target,
+      });
+    },
+    [analysis.latestVersion, vscode],
+  );
+  const cancelImpact = useCallback(() => {
+    if (impact.status !== 'loading') return;
+    vscode.postMessage({ type: 'cancelImpact', requestId: impact.requestId });
+    dispatchImpact({ type: 'cancel', requestId: impact.requestId });
+  }, [impact, vscode]);
 
   const renderView = () => {
     if (status === 'loading') {
@@ -238,7 +290,13 @@ export default function App() {
           />
         );
       case 'dependencies':
-        return <DependenciesView data={dependencies} onOpenWorkspaceTarget={openWorkspaceTarget} />;
+        return (
+          <DependenciesView
+            data={dependencies}
+            onAnalyzeImpact={analyzeImpact}
+            onOpenWorkspaceTarget={openWorkspaceTarget}
+          />
+        );
       case 'settings':
         return <SettingsView data={repository} onAnalyze={analyze} onRefresh={refresh} />;
     }
@@ -255,8 +313,18 @@ export default function App() {
         <SidebarNavigation activeRoute={navigation.route} onNavigate={navigate} />
       </header>
       <main className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+        <ImpactView
+          state={impact}
+          onCancel={cancelImpact}
+          onSelectEntity={selectEntity}
+          onOpenWorkspaceTarget={openWorkspaceTarget}
+        />
         {renderView()}
-        <EntityDetailPanel detail={entityDetail} onOpenWorkspaceTarget={openWorkspaceTarget} />
+        <EntityDetailPanel
+          detail={entityDetail}
+          onAnalyzeImpact={analyzeImpact}
+          onOpenWorkspaceTarget={openWorkspaceTarget}
+        />
         <EvolutionComparisonPanel comparison={evolutionComparison} />
       </main>
     </div>
@@ -320,9 +388,11 @@ function EvolutionComparisonPanel({ comparison }: { comparison: EvolutionCompari
 
 function EntityDetailPanel({
   detail,
+  onAnalyzeImpact,
   onOpenWorkspaceTarget,
 }: {
   detail: EntityDetailState;
+  onAnalyzeImpact: (target: ImpactTargetData) => void;
   onOpenWorkspaceTarget: (path: WorkspaceRelativePath) => void;
 }) {
   if (detail.status === 'idle') return null;
@@ -367,6 +437,15 @@ function EntityDetailPanel({
           >
             Open {detail.entity.path}
           </button>
+          {detail.entity.kind === 'file' ? (
+            <button
+              className="ml-2 mt-3 rounded border border-dna-border px-3 py-1 text-dna-foreground"
+              onClick={() => onAnalyzeImpact({ kind: 'entity', id: detail.entity!.id })}
+              type="button"
+            >
+              Analyze impact
+            </button>
+          ) : null}
         </>
       ) : null}
     </section>

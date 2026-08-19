@@ -112,6 +112,7 @@ export function reduceAnalysisState(
     case 'workspaceTargetResult':
     case 'entityDetail':
     case 'evolutionComparison':
+    case 'impactResult':
       return state;
   }
 }
