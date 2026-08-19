@@ -40,14 +40,22 @@ export function calculateFixture(input: ImpactFixtureInput): ImpactResult {
   const restored = input.restoreState
     ? (JSON.parse(JSON.stringify(state)) as AnalysisStateView)
     : state;
+  return calculateState(restored, input.target, input.options);
+}
+
+export function calculateState(
+  state: AnalysisStateView,
+  target: ImpactTarget,
+  options?: Partial<ImpactOptions>,
+): ImpactResult {
   const result = engine.getImpact(
     {
-      repositoryId: `repo:${input.id}`,
-      analysisVersion: input.analysisVersion ?? 1,
-      state: restored,
+      repositoryId: state.repositoryId,
+      analysisVersion: state.analysisVersion,
+      state,
     },
-    input.target,
-    { maxEvidencePaths: 3, ...input.options },
+    target,
+    { maxEvidencePaths: 3, ...options },
   );
   if (isErr(result)) throw result.error;
   return result.value;
