@@ -18,6 +18,7 @@ const HARD_MAX_CHANGED_PATHS = 10_000;
 const COMMAND_TIMEOUT_MS = 15_000;
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 const HASH_CHUNK_BYTES = 64 * 1024;
+const CLASSIFICATION_CONCURRENCY = 32;
 
 export class WorkingTreeGitError extends Error {
   constructor(
@@ -116,8 +117,8 @@ export class GitChangeSetProvider implements IWorkingTreeChangeSetProvider {
           'output-limit',
         );
       }
-      const changes = await Promise.all(
-        sortedRecords.map((record) => this.toChangedPath(canonicalGitRoot, record, signal)),
+      const changes = await mapBounded(sortedRecords, CLASSIFICATION_CONCURRENCY, (record) =>
+        this.toChangedPath(canonicalGitRoot, record, signal),
       );
       const trackedPaths = parseUntracked(
         await this.runGit(['ls-files', '-z'], canonicalGitRoot, signal),
@@ -443,6 +444,24 @@ function compareStrings(left: string, right: string): number {
 }
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+async function mapBounded<T, R>(
+  values: readonly T[],
+  concurrency: number,
+  mapper: (value: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(values.length);
+  let nextIndex = 0;
+  const worker = async (): Promise<void> => {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= values.length) return;
+      results[index] = await mapper(values[index]!);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, () => worker()));
+  return results;
 }
 
 function terminateProcessTree(child: ReturnType<typeof spawn>): void {
