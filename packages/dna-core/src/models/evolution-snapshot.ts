@@ -7,6 +7,7 @@
  */
 
 import { z } from 'zod';
+import { AnalysisSourceProvenanceSchema } from './analysis-provenance.js';
 import { createHash } from 'node:crypto';
 import type { ProjectDNA } from './project-dna.js';
 import { AnalysisStateViewSchema } from './analysis-state-view.js';
@@ -52,6 +53,9 @@ export const EvolutionSnapshotSchema = z.object({
 
   /** Canonical deterministic analysis state used by Evolution and Impact. */
   analysisState: AnalysisStateViewSchema.optional(),
+
+  /** Optional source identity for working-tree-safe historical queries. */
+  sourceProvenance: AnalysisSourceProvenanceSchema.optional(),
 });
 
 export type EvolutionSnapshot = z.infer<typeof EvolutionSnapshotSchema>;

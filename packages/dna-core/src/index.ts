@@ -41,4 +41,5 @@ export type {
 
 // Public service implementation
 export { ProjectDNAService } from './service/project-dna-service.js';
+export { GitChangeSetProvider, WorkingTreeGitError } from './service/git-change-set-provider.js';
 export type { ProjectDNAServiceDependencies } from './service/project-dna-service.js';

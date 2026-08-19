@@ -144,6 +144,34 @@ export {
 } from './analysis-change-set.js';
 export type { AnalysisChangeSet, AnalysisValueChange } from './analysis-change-set.js';
 
+export { AnalysisSourceProvenanceSchema } from './analysis-provenance.js';
+export type { AnalysisSourceProvenance } from './analysis-provenance.js';
+
+export {
+  WorkingTreeChangeKindSchema,
+  WorkingTreeContentKindSchema,
+  WorkingTreeChangedPathSchema,
+  WorkingTreeTruncationSchema,
+  WorkingTreeChangeSetSchema,
+  WorkingTreeImpactOptionsSchema,
+  WorkingTreeImpactTargetSchema,
+  WorkingTreeUnresolvedPathSchema,
+  WorkingTreeImpactEntrySchema,
+  WorkingTreeImpactResultSchema,
+} from './working-tree-impact.js';
+export type {
+  WorkingTreeChangeKind,
+  WorkingTreeContentKind,
+  WorkingTreeChangedPath,
+  WorkingTreeTruncation,
+  WorkingTreeChangeSet,
+  WorkingTreeImpactOptions,
+  WorkingTreeImpactTarget,
+  WorkingTreeUnresolvedPath,
+  WorkingTreeImpactEntry,
+  WorkingTreeImpactResult,
+} from './working-tree-impact.js';
+
 export { RepositoryStorySchema } from './repository-story.js';
 export type { RepositoryStory } from './repository-story.js';
 

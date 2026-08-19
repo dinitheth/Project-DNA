@@ -11,6 +11,7 @@ import type { ProjectDNA } from '../models/project-dna.js';
 import type { EvolutionSnapshot } from '../models/evolution-snapshot.js';
 import type { DNADiff } from '../models/dna-diff.js';
 import type { AnalysisStateView } from '../models/analysis-state-view.js';
+import type { AnalysisSourceProvenance } from '../models/analysis-provenance.js';
 
 export interface IEvolutionEngine {
   /** Replace in-memory history with previously persisted snapshots. */
@@ -29,6 +30,7 @@ export interface IEvolutionEngine {
     dna: ProjectDNA,
     signal?: AbortSignal,
     analysisState?: AnalysisStateView,
+    sourceProvenance?: AnalysisSourceProvenance,
   ): Promise<Result<EvolutionSnapshot>>;
 
   /**

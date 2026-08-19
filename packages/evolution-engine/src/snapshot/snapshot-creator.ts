@@ -14,6 +14,7 @@ import {
   type EvolutionSnapshot,
   type SnapshotTrigger,
   type AnalysisStateView,
+  type AnalysisSourceProvenance,
 } from '@project-dna/dna-core';
 
 export class SnapshotCreator {
@@ -35,6 +36,7 @@ export class SnapshotCreator {
     dna: ProjectDNA,
     trigger: SnapshotTrigger = 'manual',
     analysisState?: AnalysisStateView,
+    sourceProvenance?: AnalysisSourceProvenance,
   ): EvolutionSnapshot {
     this.logger.info(`Creating evolution snapshot v${this.nextVersion}...`);
 
@@ -54,6 +56,7 @@ export class SnapshotCreator {
       isFullSnapshot: this.shouldCreateFullSnapshot(),
       projectDnaRef: `snapshot:${snapshotId}`,
       ...(analysisState ? { analysisState } : {}),
+      ...(sourceProvenance ? { sourceProvenance } : {}),
     };
 
     this.lastSnapshotId = snapshotId;

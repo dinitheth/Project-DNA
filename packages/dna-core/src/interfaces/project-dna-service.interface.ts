@@ -30,6 +30,10 @@ import type { EvolutionSnapshot } from '../models/evolution-snapshot.js';
 import type { DNADiff } from '../models/dna-diff.js';
 import type { PipelineProgress } from '../orchestrator/pipeline.js';
 import type { ImpactOptions, ImpactResult, ImpactTarget } from '../models/impact.js';
+import type {
+  WorkingTreeImpactOptions,
+  WorkingTreeImpactResult,
+} from '../models/working-tree-impact.js';
 
 // ─── Entity Filter ──────────────────────────────────────────────────
 
@@ -123,6 +127,13 @@ export interface IProjectDNAImpact {
   ): Promise<Result<ImpactResult>>;
 }
 
+export interface IProjectDNAWorkingTreeImpact {
+  getWorkingTreeImpact(
+    options?: WorkingTreeImpactOptions,
+    signal?: AbortSignal,
+  ): Promise<Result<WorkingTreeImpactResult>>;
+}
+
 // ─── Composed Service ───────────────────────────────────────────────
 
 /**
@@ -140,4 +151,5 @@ export interface IProjectDNAService
     IProjectDNAQuery,
     IProjectDNAEvolution,
     IProjectDNAEvents,
-    IProjectDNAImpact {}
+    IProjectDNAImpact,
+    IProjectDNAWorkingTreeImpact {}
