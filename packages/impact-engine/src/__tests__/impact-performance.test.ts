@@ -13,6 +13,7 @@ import { ImpactEngine } from '../index.js';
 
 const MIB = 1024 * 1024;
 const engine = new ImpactEngine();
+const performanceFixtures = new Map<string, Promise<PerformanceFixture>>();
 
 const SIZE_GATES = [
   { size: 10_000, durationMs: 50, rssGrowthBytes: 32 * MIB },
@@ -35,10 +36,10 @@ interface PerformanceSample {
 
 describe('ImpactEngine scalability gates', () => {
   for (const gate of SIZE_GATES) {
-    it(`${formatSize(gate.size)} cold and repeated queries stay within timing and RSS ceilings`, () => {
+    it(`${formatSize(gate.size)} cold and repeated queries stay within timing and RSS ceilings`, async () => {
       const samples: PerformanceSample[] = [];
       for (const scenario of ['chain', 'high-degree-hub', 'dense-boundary'] as const) {
-        const fixture = createPerformanceFixture(gate.size, scenario);
+        const fixture = await getPerformanceFixture(gate.size, scenario);
         const cold = measure(fixture, {});
         const repeated = measure(fixture, {});
 
@@ -52,8 +53,8 @@ describe('ImpactEngine scalability gates', () => {
       }
     }, 120_000);
 
-    it(`${formatSize(gate.size)} truncated and cancelled queries stay bounded`, () => {
-      const fixture = createPerformanceFixture(gate.size, 'high-degree-hub');
+    it(`${formatSize(gate.size)} truncated and cancelled queries stay bounded`, async () => {
+      const fixture = await getPerformanceFixture(gate.size, 'high-degree-hub');
       const truncated = measure(fixture, {
         maxDepth: 2,
         maxEntities: 25,
@@ -78,26 +79,35 @@ describe('ImpactEngine scalability gates', () => {
   }
 });
 
-function createPerformanceFixture(size: number, scenario: Scenario): PerformanceFixture {
+async function createPerformanceFixture(
+  size: number,
+  scenario: Scenario,
+): Promise<PerformanceFixture> {
   const graph = new RepositoryGraph();
   for (let index = 0; index < size; index++) {
     const id = nodeId(index);
     graph.addFileNode(id, { label: id, path: id, language: 'typescript' });
+    if (index > 0 && index % 5_000 === 0) await yieldToEventLoop();
   }
   switch (scenario) {
     case 'chain':
       for (let index = 0; index < size - 1; index++) {
         connect(graph, index, index + 1, 'import');
+        if (index > 0 && index % 5_000 === 0) await yieldToEventLoop();
       }
       break;
     case 'high-degree-hub':
-      for (let index = 1; index < size; index++) connect(graph, index, 0, 'import');
+      for (let index = 1; index < size; index++) {
+        connect(graph, index, 0, 'import');
+        if (index % 5_000 === 0) await yieldToEventLoop();
+      }
       break;
     case 'dense-boundary':
       for (let index = 1; index < size; index++) {
         connect(graph, index, 0, relationshipType(index));
         if (index > 1) connect(graph, index, Math.floor(index / 2), relationshipType(index + 1));
         if (index > 2) connect(graph, index, index - 1, relationshipType(index + 2));
+        if (index % 5_000 === 0) await yieldToEventLoop();
       }
       break;
   }
@@ -115,6 +125,19 @@ function createPerformanceFixture(size: number, scenario: Scenario): Performance
     }),
     targetPath: scenario === 'chain' ? nodeId(size - 1) : nodeId(0),
   };
+}
+
+function getPerformanceFixture(size: number, scenario: Scenario): Promise<PerformanceFixture> {
+  const key = `${size}:${scenario}`;
+  const existing = performanceFixtures.get(key);
+  if (existing) return existing;
+  const created = createPerformanceFixture(size, scenario);
+  performanceFixtures.set(key, created);
+  return created;
+}
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 function measure(fixture: PerformanceFixture, options: Partial<ImpactOptions>): PerformanceSample {
