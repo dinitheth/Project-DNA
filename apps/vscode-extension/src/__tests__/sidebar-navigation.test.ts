@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { IProjectDNAService } from '@project-dna/dna-core';
-import { ExtensionMessageSchema, Ok } from '@project-dna/shared';
+import { CommitGitError, type IProjectDNAService } from '@project-dna/dna-core';
+import { Err, ExtensionMessageSchema, Ok } from '@project-dna/shared';
 
 vi.mock('vscode', () => ({
   Uri: {
@@ -288,6 +288,101 @@ describe('SidebarProvider navigation', () => {
     second.resolve(Ok(workingTreeImpactResult(3)) as never);
     await harness.waitForWorkingTreeImpactResultCount(1);
     expect(harness.workingTreeImpactResults()[0]?.requestId).toBe(2);
+  });
+
+  it('publishes historical commit impact without depending on the current analysis version', async () => {
+    const commitSha = 'a'.repeat(40);
+    const parentSha = 'b'.repeat(40);
+    const service = createService({ currentVersion: 3 });
+    service.getCommitImpact = vi.fn(
+      async () => Ok(commitImpactResult(commitSha, parentSha)) as never,
+    );
+    const harness = createHarness({ service });
+    harness.resolve();
+    harness.receive({ type: 'requestCommitImpact', requestId: 12, commitSha });
+    await harness.waitForCommitImpactResultCount(1);
+
+    expect(service.getCommitImpact).toHaveBeenCalledWith(
+      { commitSha },
+      undefined,
+      expect.any(AbortSignal),
+    );
+    expect(harness.commitImpactResults()[0]).toMatchObject({
+      requestId: 12,
+      repositoryId: 'repo',
+      commitSha,
+      selectedParentSha: parentSha,
+      parentCommits: [parentSha],
+      requiresParentSelection: false,
+      result: { commitSha, selectedParentSha: parentSha },
+    });
+  });
+
+  it('returns direct merge parents for explicit selection without starting a combined diff', async () => {
+    const commitSha = 'a'.repeat(40);
+    const parents = ['b'.repeat(40), 'c'.repeat(40)];
+    const service = createService({ currentVersion: 3 });
+    service.getCommitImpact = vi.fn(
+      async () =>
+        Err(
+          new CommitGitError(
+            'Merge commits require an explicit direct parent SHA',
+            'ambiguous-merge-parent',
+          ),
+        ) as never,
+    );
+    const commitMetadataProvider = {
+      getCommitParents: vi.fn(async () => Ok(parents)),
+    };
+    const harness = createHarness({ service, commitMetadataProvider });
+    harness.resolve();
+    harness.receive({ type: 'requestCommitImpact', requestId: 13, commitSha });
+    await harness.waitForCommitImpactResultCount(1);
+
+    expect(commitMetadataProvider.getCommitParents).toHaveBeenCalledWith(
+      'C:/repo',
+      commitSha,
+      expect.any(AbortSignal),
+    );
+    expect(harness.commitImpactResults()[0]).toMatchObject({
+      requestId: 13,
+      commitSha,
+      selectedParentSha: null,
+      parentCommits: parents,
+      requiresParentSelection: true,
+      result: null,
+      error: undefined,
+    });
+  });
+
+  it('cancels superseded commit requests and suppresses cancelled or disposed results', async () => {
+    const first = createDeferred<ReturnType<typeof Ok<never>>>();
+    const second = createDeferred<ReturnType<typeof Ok<never>>>();
+    const signals: AbortSignal[] = [];
+    const service = createService({ currentVersion: 3 });
+    service.getCommitImpact = vi.fn((_request, _options, signal) => {
+      signals.push(signal!);
+      return (signals.length === 1 ? first.promise : second.promise) as never;
+    });
+    const harness = createHarness({ service });
+    harness.resolve();
+    harness.receive({ type: 'requestCommitImpact', requestId: 1, commitSha: 'a'.repeat(40) });
+    harness.receive({ type: 'requestCommitImpact', requestId: 2, commitSha: 'b'.repeat(40) });
+    expect(signals[0]?.aborted).toBe(true);
+    first.resolve(Ok(commitImpactResult('a'.repeat(40), 'c'.repeat(40))) as never);
+    harness.receive({ type: 'cancelCommitImpact', requestId: 2 });
+    expect(signals[1]?.aborted).toBe(true);
+    second.resolve(Ok(commitImpactResult('b'.repeat(40), 'd'.repeat(40))) as never);
+    await Promise.resolve();
+    expect(harness.commitImpactResults()).toHaveLength(0);
+
+    const pending = createDeferred<ReturnType<typeof Ok<never>>>();
+    service.getCommitImpact = vi.fn(() => pending.promise as never);
+    harness.receive({ type: 'requestCommitImpact', requestId: 3, commitSha: 'e'.repeat(40) });
+    harness.disposeView();
+    pending.resolve(Ok(commitImpactResult('e'.repeat(40), 'f'.repeat(40))) as never);
+    await Promise.resolve();
+    expect(harness.commitImpactResults()).toHaveLength(0);
   });
 
   it('rejects stale impact versions and suppresses disposed or failed deliveries', async () => {
@@ -803,6 +898,9 @@ function createHarness(
     getRootPath?: () => string | undefined;
     service?: IProjectDNAService;
     throwOnPostTypes?: string[];
+    commitMetadataProvider?: {
+      getCommitParents(rootPath: string, commitSha: string, signal?: AbortSignal): Promise<unknown>;
+    };
   } = {},
 ) {
   const service = options.service ?? createService();
@@ -816,6 +914,7 @@ function createHarness(
     { toString: () => 'extension-uri' } as never,
     service,
     options.getRootPath ?? (() => options.rootPath ?? 'C:/repo'),
+    options.commitMetadataProvider as never,
   );
 
   return {
@@ -917,6 +1016,11 @@ function createHarness(
         .map((message) => ExtensionMessageSchema.parse(message))
         .filter((message) => message.type === 'workingTreeImpactResult');
     },
+    commitImpactResults() {
+      return messages
+        .map((message) => ExtensionMessageSchema.parse(message))
+        .filter((message) => message.type === 'commitImpactResult');
+    },
     async waitForNavigationCount(count: number) {
       if (count === 0) {
         await this.waitForUnavailableCount(1);
@@ -945,6 +1049,9 @@ function createHarness(
     async waitForWorkingTreeImpactResultCount(count: number) {
       await vi.waitFor(() => expect(this.workingTreeImpactResults()).toHaveLength(count));
     },
+    async waitForCommitImpactResultCount(count: number) {
+      await vi.waitFor(() => expect(this.commitImpactResults()).toHaveLength(count));
+    },
   };
 }
 
@@ -957,7 +1064,7 @@ function createService(options: { currentVersion?: number; entity?: unknown } = 
       return () => undefined;
     },
     getCurrent() {
-      return Ok(options.currentVersion ? { version: options.currentVersion } : null);
+      return Ok(options.currentVersion ? { id: 'repo', version: options.currentVersion } : null);
     },
     async getEntity() {
       return Ok(options.entity ?? null);
@@ -966,6 +1073,96 @@ function createService(options: { currentVersion?: number; entity?: unknown } = 
       return Ok(workingTreeImpactResult(options.currentVersion ?? 3));
     },
   } as unknown as IProjectDNAService;
+}
+
+function commitImpactResult(commitSha: string, parentSha: string | null) {
+  const digest = 'd'.repeat(64);
+  const emptyTree = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+  const before = {
+    kind: 'git-commit' as const,
+    repositoryId: 'repo',
+    commitSha: parentSha,
+    treeSha: parentSha ?? emptyTree,
+    parentCommitSha: null,
+    parentTreeSha: null,
+    analysisConfigFingerprint: digest,
+    contentFingerprint: digest,
+    source: 'materialized' as const,
+  };
+  const after = {
+    ...before,
+    commitSha,
+    treeSha: commitSha,
+    parentCommitSha: parentSha,
+    parentTreeSha: parentSha,
+  };
+  return {
+    repositoryId: 'repo',
+    commitSha,
+    parentCommits: parentSha ? [parentSha] : [],
+    parentCommitSha: parentSha,
+    changedFiles: [
+      {
+        kind: 'modified' as const,
+        path: 'src/changed.ts',
+        oldBlobSha: parentSha,
+        newBlobSha: commitSha,
+        oldMode: '100644',
+        newMode: '100644',
+        contentKind: 'text' as const,
+        binary: false,
+        gitlink: false,
+      },
+    ],
+    before,
+    after,
+    changeSet: {
+      fromVersion: 0,
+      toVersion: 1,
+      addedEntityIds: [],
+      removedEntityIds: [],
+      modifiedEntities: [],
+      addedRelationships: [],
+      removedRelationships: [],
+      modifiedRelationships: [],
+      addedDomainIds: [],
+      removedDomainIds: [],
+      modifiedDomains: [],
+      addedRiskIds: [],
+      resolvedRiskIds: [],
+      modifiedRisks: [],
+      domainMembershipChanges: [],
+      architectureMembershipChanges: [],
+      unavailableCollections: [],
+    },
+    impacts: [
+      {
+        side: 'after' as const,
+        path: 'src/changed.ts',
+        entityId: 'file:src/changed.ts',
+        sourceAvailable: true,
+        provenance: after,
+        result: impactResult('src/changed.ts', 1),
+      },
+    ],
+    summary: {
+      changedEntityIds: ['file:src/changed.ts'],
+      impactedEntityIds: [],
+      directDependentIds: [],
+      transitiveDependentIds: [],
+      domainIds: [],
+      capabilityIds: [],
+      criticalComponentIds: [],
+      riskIds: [],
+      architectureLayers: [],
+      boundaryEvidence: [],
+      highestScore: 0,
+    },
+    unresolved: [],
+    warnings: [],
+    complete: true,
+    truncations: [],
+  };
 }
 
 async function createTemporaryWorkspace(): Promise<string> {

@@ -5,6 +5,7 @@ import {
   WebviewMessageSchema,
   WorkspaceRelativePathSchema,
   ImpactResultDataSchema,
+  CommitImpactDataSchema,
   WorkingTreeImpactDataSchema,
   isErr,
   type ExtensionMessage,
@@ -12,7 +13,11 @@ import {
   type WebviewMessage,
   type WorkingTreeUnresolvedPathData,
 } from '@project-dna/shared';
-import type { IProjectDNAService } from '@project-dna/dna-core';
+import {
+  CommitGitError,
+  GitCommitMetadataProvider,
+  type IProjectDNAService,
+} from '@project-dna/dna-core';
 import { buildSidebarData } from './sidebar-data.js';
 
 export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -46,6 +51,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         readonly controller: AbortController;
       }
     | undefined;
+  private activeCommitImpact:
+    | {
+        readonly view: vscode.WebviewView;
+        readonly requestId: number;
+        readonly commitSha: string;
+        readonly selectedParentSha: string | null;
+        readonly controller: AbortController;
+      }
+    | undefined;
   private readonly unsubscribeProgress: () => void;
   private readonly unsubscribeReady: () => void;
 
@@ -53,6 +67,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     private readonly extensionUri: vscode.Uri,
     private readonly service: IProjectDNAService,
     private readonly getWorkspaceRoot: () => string | undefined,
+    private readonly commitMetadataProvider: Pick<
+      GitCommitMetadataProvider,
+      'getCommitParents'
+    > = new GitCommitMetadataProvider(),
   ) {
     this.unsubscribeProgress = service.onProgress((progress) => {
       if (progress.stage === 'scanning' && !this.analysisInProgress) {
@@ -95,6 +113,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
   public handleWorkspaceChanged(rootPath: string | null): void {
     this.cancelActiveImpact();
     this.cancelActiveWorkingTreeImpact();
+    this.cancelActiveCommitImpact();
     this.publicationEpoch++;
     this.analysisInProgress = false;
     this.activeRootPath = null;
@@ -116,6 +135,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
   ): void {
     this.cancelActiveImpact();
     this.cancelActiveWorkingTreeImpact();
+    this.cancelActiveCommitImpact();
     this.webviewView = webviewView;
     this.webviewReady = false;
     this.deliveredNavigationRevision = -1;
@@ -124,6 +144,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
       if (this.webviewView === webviewView) {
         this.cancelActiveImpact();
         this.cancelActiveWorkingTreeImpact();
+        this.cancelActiveCommitImpact();
         this.webviewView = undefined;
         this.webviewReady = false;
       }
@@ -145,6 +166,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     this.disposed = true;
     this.cancelActiveImpact();
     this.cancelActiveWorkingTreeImpact();
+    this.cancelActiveCommitImpact();
     this.publicationEpoch++;
     this.unsubscribeProgress();
     this.unsubscribeReady();
@@ -196,6 +218,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
       case 'requestWorkingTreeImpact':
         await this.publishWorkingTreeImpact(sourceView, message.requestId, message.analysisVersion);
         return;
+      case 'requestCommitImpact':
+        await this.publishCommitImpact(
+          sourceView,
+          message.requestId,
+          message.commitSha,
+          message.selectedParentSha ?? null,
+        );
+        return;
       case 'cancelImpact':
         if (
           this.activeImpact?.view === sourceView &&
@@ -210,6 +240,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
           this.activeWorkingTreeImpact.requestId === message.requestId
         ) {
           this.cancelActiveWorkingTreeImpact();
+        }
+        return;
+      case 'cancelCommitImpact':
+        if (
+          this.activeCommitImpact?.view === sourceView &&
+          this.activeCommitImpact.requestId === message.requestId
+        ) {
+          this.cancelActiveCommitImpact();
         }
         return;
       case 'requestAnalysis':
@@ -775,6 +813,162 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     });
   }
 
+  private async publishCommitImpact(
+    sourceView: vscode.WebviewView,
+    requestId: number,
+    commitSha: string,
+    selectedParentSha: string | null,
+  ): Promise<void> {
+    if (this.webviewView !== sourceView || this.disposed) return;
+    this.cancelActiveCommitImpact();
+    const current = this.service.getCurrent();
+    const repositoryId = !isErr(current) && current.value ? current.value.id : null;
+    const repositoryRoot = this.getWorkspaceRoot();
+    if (!repositoryId || !repositoryRoot) {
+      await this.postCommitImpact(
+        sourceView,
+        requestId,
+        repositoryId,
+        commitSha,
+        selectedParentSha,
+        [],
+        false,
+        null,
+        'No Project DNA repository is currently loaded.',
+      );
+      return;
+    }
+
+    const controller = new AbortController();
+    const operation = {
+      view: sourceView,
+      requestId,
+      commitSha,
+      selectedParentSha,
+      controller,
+    };
+    this.activeCommitImpact = operation;
+    const result = await this.service.getCommitImpact(
+      {
+        commitSha,
+        ...(selectedParentSha ? { parentSha: selectedParentSha } : {}),
+      },
+      undefined,
+      controller.signal,
+    );
+    if (!this.isActiveCommitOperation(operation)) return;
+    if (isErr(result)) {
+      if (
+        result.error instanceof CommitGitError &&
+        result.error.code === 'ambiguous-merge-parent'
+      ) {
+        const parents = await this.commitMetadataProvider.getCommitParents(
+          repositoryRoot,
+          commitSha,
+          controller.signal,
+        );
+        if (!this.isActiveCommitOperation(operation)) return;
+        this.activeCommitImpact = undefined;
+        if (isErr(parents)) {
+          await this.postCommitImpact(
+            sourceView,
+            requestId,
+            repositoryId,
+            commitSha,
+            selectedParentSha,
+            [],
+            false,
+            null,
+            parents.error.message,
+          );
+          return;
+        }
+        await this.postCommitImpact(
+          sourceView,
+          requestId,
+          repositoryId,
+          commitSha,
+          null,
+          [...parents.value],
+          true,
+          null,
+        );
+        return;
+      }
+      this.activeCommitImpact = undefined;
+      await this.postCommitImpact(
+        sourceView,
+        requestId,
+        repositoryId,
+        commitSha,
+        selectedParentSha,
+        [],
+        false,
+        null,
+        result.error.message,
+      );
+      return;
+    }
+    this.activeCommitImpact = undefined;
+    const candidate = toCommitImpactData(result.value);
+    const serialized = CommitImpactDataSchema.safeParse(candidate);
+    if (!serialized.success) {
+      await this.postCommitImpact(
+        sourceView,
+        requestId,
+        repositoryId,
+        commitSha,
+        result.value.parentCommitSha,
+        result.value.parentCommits,
+        false,
+        null,
+        `Commit impact could not cross the webview boundary: ${serialized.error.message}`,
+      );
+      return;
+    }
+    await this.postCommitImpact(
+      sourceView,
+      requestId,
+      repositoryId,
+      commitSha,
+      result.value.parentCommitSha,
+      result.value.parentCommits,
+      false,
+      serialized.data,
+    );
+  }
+
+  private isActiveCommitOperation(operation: NonNullable<SidebarProvider['activeCommitImpact']>) {
+    return (
+      this.activeCommitImpact === operation && this.webviewView === operation.view && !this.disposed
+    );
+  }
+
+  private async postCommitImpact(
+    sourceView: vscode.WebviewView,
+    requestId: number,
+    repositoryId: string | null,
+    commitSha: string,
+    selectedParentSha: string | null,
+    parentCommits: readonly string[],
+    requiresParentSelection: boolean,
+    result: import('@project-dna/shared').CommitImpactData | null,
+    error?: string,
+  ): Promise<void> {
+    if (this.webviewView !== sourceView) return;
+    await safePostMessage(sourceView, {
+      type: 'commitImpactResult',
+      requestId,
+      repositoryId,
+      commitSha,
+      selectedParentSha,
+      parentCommits: [...parentCommits],
+      requiresParentSelection,
+      result,
+      error,
+    });
+  }
+
   private cancelActiveImpact(): void {
     this.activeImpact?.controller.abort();
     this.activeImpact = undefined;
@@ -783,6 +977,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
   private cancelActiveWorkingTreeImpact(): void {
     this.activeWorkingTreeImpact?.controller.abort();
     this.activeWorkingTreeImpact = undefined;
+  }
+
+  private cancelActiveCommitImpact(): void {
+    this.activeCommitImpact?.controller.abort();
+    this.activeCommitImpact = undefined;
   }
 
   private requestPublication(): void {
@@ -1038,6 +1237,110 @@ function toWorkingTreeImpactData(
     complete: result.complete,
     truncations: result.truncations,
   };
+}
+
+function toCommitImpactData(
+  result: import('@project-dna/dna-core').CommitImpactResult,
+): import('@project-dna/shared').CommitImpactData {
+  return {
+    repositoryId: result.repositoryId,
+    commitSha: result.commitSha,
+    parentCommits: [...result.parentCommits],
+    selectedParentSha: result.parentCommitSha,
+    changedFiles: [...result.changedFiles],
+    before: toCommitProvenanceData(result.before),
+    after: toCommitProvenanceData(result.after),
+    changeSet: result.changeSet
+      ? {
+          addedEntityIds: result.changeSet.addedEntityIds,
+          removedEntityIds: result.changeSet.removedEntityIds,
+          modifiedEntities: result.changeSet.modifiedEntities.map(toIdentifiedChangeData),
+          addedRelationships: result.changeSet.addedRelationships.map((relationship) => ({
+            sourceId: relationship.sourceId,
+            targetId: relationship.targetId,
+            type: relationship.attributes.type,
+          })),
+          removedRelationships: result.changeSet.removedRelationships.map((relationship) => ({
+            sourceId: relationship.sourceId,
+            targetId: relationship.targetId,
+            type: relationship.attributes.type,
+          })),
+          modifiedRelationships: result.changeSet.modifiedRelationships.map((relationship) => ({
+            sourceId: relationship.sourceId,
+            targetId: relationship.targetId,
+            changes: relationship.changes.map(toFieldChangeData),
+          })),
+          addedDomainIds: result.changeSet.addedDomainIds,
+          removedDomainIds: result.changeSet.removedDomainIds,
+          modifiedDomains: result.changeSet.modifiedDomains.map(toIdentifiedChangeData),
+          addedRiskIds: result.changeSet.addedRiskIds,
+          resolvedRiskIds: result.changeSet.resolvedRiskIds,
+          modifiedRisks: result.changeSet.modifiedRisks.map(toIdentifiedChangeData),
+          domainMembershipChanges: result.changeSet.domainMembershipChanges,
+          architectureMembershipChanges: result.changeSet.architectureMembershipChanges,
+          unavailableCollections: result.changeSet.unavailableCollections,
+        }
+      : null,
+    impacts: result.impacts.map((impact) => ({
+      side: impact.side,
+      path: impact.path,
+      ...(impact.previousPath ? { previousPath: impact.previousPath } : {}),
+      entityId: impact.entityId,
+      sourceAvailable: impact.sourceAvailable,
+      provenance: toCommitProvenanceData(impact.provenance),
+      result: toImpactResultData(impact.result),
+    })),
+    summary: result.summary,
+    unresolved: result.unresolved,
+    warnings: result.warnings,
+    complete: result.complete,
+    truncations: result.truncations,
+  };
+}
+
+function toCommitProvenanceData(
+  provenance: import('@project-dna/dna-core').CommitAnalysisProvenance,
+): import('@project-dna/shared').CommitImpactData['before'] {
+  return {
+    repositoryId: provenance.repositoryId,
+    commitSha: provenance.commitSha,
+    treeSha: provenance.treeSha,
+    parentCommitSha: provenance.parentCommitSha,
+    parentTreeSha: provenance.parentTreeSha,
+    analysisConfigFingerprint: provenance.analysisConfigFingerprint,
+    contentFingerprint: provenance.contentFingerprint,
+    source: provenance.source,
+  };
+}
+
+function toIdentifiedChangeData(change: {
+  readonly id: string;
+  readonly changes: readonly {
+    readonly field: string;
+    readonly from?: unknown;
+    readonly to?: unknown;
+  }[];
+}) {
+  return { id: change.id, changes: change.changes.map(toFieldChangeData) };
+}
+
+function toFieldChangeData(change: {
+  readonly field: string;
+  readonly from?: unknown;
+  readonly to?: unknown;
+}) {
+  return {
+    field: change.field,
+    from: presentCommitValue(change.from),
+    to: presentCommitValue(change.to),
+  };
+}
+
+function presentCommitValue(value: unknown): string {
+  if (value === undefined) return 'Unavailable';
+  if (value === null) return 'None';
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value);
 }
 
 function isSupportedWorkingTreeUnresolvedPath(

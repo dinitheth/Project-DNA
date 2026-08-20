@@ -117,6 +117,8 @@ describe('GitCommitMetadataProvider', () => {
       expect(ambiguous.ok).toBe(false);
       if (!ambiguous.ok)
         expect((ambiguous.error as CommitGitError).code).toBe('ambiguous-merge-parent');
+      const parents = await provider.getCommitParents(root, mergeSha);
+      expect(parents).toEqual({ ok: true, value: [main, feature] });
       const selected = await provider.getCommitMetadata(root, {
         commitSha: mergeSha,
         parentSha: main,

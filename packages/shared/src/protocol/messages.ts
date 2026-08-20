@@ -744,7 +744,7 @@ export const CommitImpactDataSchema = z
           ]),
         }),
       )
-      .max(500),
+      .max(1_000),
     warnings: z.array(z.string().max(1_000)).max(100),
     complete: z.boolean(),
     truncations: z

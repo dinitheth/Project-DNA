@@ -53,6 +53,23 @@ interface RawChangedFile {
 }
 
 export class GitCommitMetadataProvider implements ICommitMetadataProvider {
+  async getCommitParents(
+    rootPath: string,
+    commitSha: string,
+    signal?: AbortSignal,
+  ): Promise<Result<readonly string[]>> {
+    try {
+      const parsedRequest = CommitImpactRequestSchema.safeParse({ commitSha });
+      if (!parsedRequest.success)
+        throw new CommitGitError(parsedRequest.error.message, 'invalid-request');
+      const canonicalRoot = await resolveGitRoot(rootPath, signal);
+      const commit = await inspectCommit(canonicalRoot, parsedRequest.data.commitSha, signal);
+      return Ok(commit.parentCommits);
+    } catch (error) {
+      return Err(error instanceof Error ? error : new CommitGitError(String(error), 'unavailable'));
+    }
+  }
+
   async getCommitMetadata(
     rootPath: string,
     request: unknown,
@@ -72,26 +89,7 @@ export class GitCommitMetadataProvider implements ICommitMetadataProvider {
         throw new CommitGitError('Invalid changed-file bound', 'invalid-request');
       if (signal?.aborted) throw new CommitGitError('Commit query cancelled', 'cancelled');
 
-      const requestedRoot = await realpath(rootPath).catch(() => {
-        throw new CommitGitError('Repository root does not exist', 'path-security');
-      });
-      const gitRoot = normalizeAbsolute(
-        await runGit(['rev-parse', '--show-toplevel'], requestedRoot, signal),
-      );
-      const canonicalRoot = await realpath(gitRoot).catch(() => gitRoot);
-      if (comparisonPath(requestedRoot) !== comparisonPath(canonicalRoot))
-        throw new CommitGitError(
-          'Git root does not match the Project DNA analysis root',
-          'path-security',
-        );
-      const objectFormat = normalizeOutput(
-        await runGit(['rev-parse', '--show-object-format'], canonicalRoot, signal),
-      );
-      if (objectFormat !== 'sha1')
-        throw new CommitGitError(
-          `Unsupported Git object format: ${objectFormat}`,
-          'unsupported-object-format',
-        );
+      const canonicalRoot = await resolveGitRoot(rootPath, signal);
 
       const commit = await inspectCommit(canonicalRoot, parsedRequest.data.commitSha, signal);
       const selectedParent = selectParent(commit.parentCommits, parsedRequest.data.parentSha);
@@ -152,6 +150,30 @@ export class GitCommitMetadataProvider implements ICommitMetadataProvider {
       return Err(error instanceof Error ? error : new CommitGitError(String(error), 'unavailable'));
     }
   }
+}
+
+async function resolveGitRoot(rootPath: string, signal?: AbortSignal): Promise<string> {
+  const requestedRoot = await realpath(rootPath).catch(() => {
+    throw new CommitGitError('Repository root does not exist', 'path-security');
+  });
+  const gitRoot = normalizeAbsolute(
+    await runGit(['rev-parse', '--show-toplevel'], requestedRoot, signal),
+  );
+  const canonicalRoot = await realpath(gitRoot).catch(() => gitRoot);
+  if (comparisonPath(requestedRoot) !== comparisonPath(canonicalRoot))
+    throw new CommitGitError(
+      'Git root does not match the Project DNA analysis root',
+      'path-security',
+    );
+  const objectFormat = normalizeOutput(
+    await runGit(['rev-parse', '--show-object-format'], canonicalRoot, signal),
+  );
+  if (objectFormat !== 'sha1')
+    throw new CommitGitError(
+      `Unsupported Git object format: ${objectFormat}`,
+      'unsupported-object-format',
+    );
+  return canonicalRoot;
 }
 
 async function inspectCommit(

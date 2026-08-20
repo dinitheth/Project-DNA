@@ -114,6 +114,7 @@ export function reduceAnalysisState(
     case 'evolutionComparison':
     case 'impactResult':
     case 'workingTreeImpactResult':
+    case 'commitImpactResult':
       return state;
   }
 }
