@@ -42,7 +42,7 @@ export type {
 // Public service implementation
 export { ProjectDNAService } from './service/project-dna-service.js';
 export { GitChangeSetProvider, WorkingTreeGitError } from './service/git-change-set-provider.js';
-export { GitCommitMetadataProvider, CommitGitError } from './service/commit-metadata-provider.js';
+export { GitCommitMetadataProvider, CommitGitError, PullRequestGitError } from './service/commit-metadata-provider.js';
 export {
   HistoricalTreeMaterializer,
   HistoricalTreeError,

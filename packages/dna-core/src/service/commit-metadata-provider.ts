@@ -1,4 +1,5 @@
 import { realpath } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { Err, Ok, type Result } from '@project-dna/shared';
@@ -12,6 +13,12 @@ import {
   type CommitChangedFile,
   type CommitFileContentKind,
 } from '../models/commit-impact.js';
+import type { IPullRequestTreeRangeProvider } from '../interfaces/pull-request-range.interface.js';
+import {
+  PullRequestImpactRequestSchema,
+  pullRequestRequestFingerprint,
+  type PullRequestTreeRangeMetadata,
+} from '../models/pull-request-impact.js';
 
 const EMPTY_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 const RENAME_SIMILARITY = '50%';
@@ -42,6 +49,26 @@ export class CommitGitError extends Error {
   }
 }
 
+export class PullRequestGitError extends Error {
+  constructor(
+    message: string,
+    readonly code:
+      | 'invalid-request'
+      | 'missing-base'
+      | 'missing-head'
+      | 'missing-merge-base'
+      | 'ambiguous-merge-base'
+      | 'missing-tree'
+      | 'cancelled'
+      | 'output-limit'
+      | 'path-security'
+      | 'unavailable',
+  ) {
+    super(message);
+    this.name = 'PullRequestGitError';
+  }
+}
+
 interface RawChangedFile {
   readonly oldMode: string;
   readonly newMode: string;
@@ -52,7 +79,67 @@ interface RawChangedFile {
   readonly previousPath?: string;
 }
 
-export class GitCommitMetadataProvider implements ICommitMetadataProvider {
+export class GitCommitMetadataProvider
+  implements ICommitMetadataProvider, IPullRequestTreeRangeProvider
+{
+  async getPullRequestTreeRange(
+    rootPath: string,
+    request: unknown,
+    options: { readonly maxChangedFiles?: number } = {},
+    signal?: AbortSignal,
+  ): Promise<Result<PullRequestTreeRangeMetadata>> {
+    try {
+      const parsed = PullRequestImpactRequestSchema.safeParse(request);
+      if (!parsed.success) throw new PullRequestGitError(parsed.error.message, 'invalid-request');
+      const maxChangedFiles = options.maxChangedFiles ?? 500;
+      if (
+        !Number.isInteger(maxChangedFiles) ||
+        maxChangedFiles <= 0 ||
+        maxChangedFiles > HARD_MAX_CHANGED_FILES
+      )
+        throw new PullRequestGitError('Invalid changed-file bound', 'invalid-request');
+      if (signal?.aborted)
+        throw new PullRequestGitError('Pull request query cancelled', 'cancelled');
+      const root = await resolveGitRoot(rootPath, signal);
+      const base = await inspectRangeCommit(root, parsed.data.baseSha, 'base', signal);
+      const head = await inspectRangeCommit(root, parsed.data.headSha, 'head', signal);
+      const mergeBases = await resolveMergeBases(root, base.commitSha, head.commitSha, signal);
+      if (mergeBases.length === 0)
+        throw new PullRequestGitError(
+          'Base and head have no available merge base',
+          'missing-merge-base',
+        );
+      if (mergeBases.length > 1)
+        throw new PullRequestGitError(
+          'Base and head have multiple merge bases',
+          'ambiguous-merge-base',
+        );
+      const changedFiles = await diffTrees(root, base.treeSha, head.treeSha, signal);
+      const complete = changedFiles.length <= maxChangedFiles;
+      const bounded = changedFiles.slice(0, maxChangedFiles);
+      const gitVersion = normalizeOutput(await runGit(['--version'], root, signal));
+      const renameDetectionPolicy = `find-renames=${RENAME_SIMILARITY}`;
+      const changedFileFingerprint = sha256(JSON.stringify(changedFiles));
+      return Ok({
+        baseCommitSha: base.commitSha,
+        headCommitSha: head.commitSha,
+        baseTreeSha: base.treeSha,
+        headTreeSha: head.treeSha,
+        mergeBaseSha: mergeBases[0]!,
+        changedFiles: bounded,
+        gitVersion,
+        renameDetectionPolicy,
+        changedFileFingerprint,
+        requestFingerprint: pullRequestRequestFingerprint(parsed.data),
+        complete,
+        truncatedAt: complete ? null : maxChangedFiles,
+      });
+    } catch (error) {
+      return Err(
+        error instanceof Error ? error : new PullRequestGitError(String(error), 'unavailable'),
+      );
+    }
+  }
   async getCommitParents(
     rootPath: string,
     commitSha: string,
@@ -149,6 +236,79 @@ export class GitCommitMetadataProvider implements ICommitMetadataProvider {
     } catch (error) {
       return Err(error instanceof Error ? error : new CommitGitError(String(error), 'unavailable'));
     }
+  }
+}
+
+async function inspectRangeCommit(
+  root: string,
+  sha: string,
+  side: 'base' | 'head',
+  signal?: AbortSignal,
+): Promise<{ commitSha: string; treeSha: string; parentCommits: string[] }> {
+  try {
+    return await inspectCommit(root, sha, signal);
+  } catch (error) {
+    if (error instanceof CommitGitError && error.code === 'missing-commit')
+      throw new PullRequestGitError(
+        `Pull request ${side} commit is unavailable: ${sha}`,
+        side === 'base' ? 'missing-base' : 'missing-head',
+      );
+    throw error;
+  }
+}
+
+async function resolveMergeBases(
+  root: string,
+  base: string,
+  head: string,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  try {
+    const output = normalizeOutput(
+      await runGit(['merge-base', '--all', '--end-of-options', base, head], root, signal),
+    );
+    if (!output) return [];
+    const values = output.split(/\r?\n/u).filter(Boolean).sort(compareStrings);
+    if (!values.every(isFullSha))
+      throw new PullRequestGitError('Git returned malformed merge-base metadata', 'unavailable');
+    return values;
+  } catch (error) {
+    if (error instanceof CommitGitError) {
+      if (error.code === 'cancelled') throw new PullRequestGitError(error.message, 'cancelled');
+      if (error.code === 'output-limit')
+        throw new PullRequestGitError(error.message, 'output-limit');
+      return [];
+    }
+    throw error;
+  }
+}
+
+async function diffTrees(
+  root: string,
+  baseTree: string,
+  headTree: string,
+  signal?: AbortSignal,
+): Promise<CommitChangedFile[]> {
+  try {
+    const common = [
+      '-c',
+      'core.quotepath=false',
+      'diff-tree',
+      '-r',
+      '--no-commit-id',
+      '-z',
+      `--find-renames=${RENAME_SIMILARITY}`,
+    ];
+    const raw = await runGit([...common, '--raw', baseTree, headTree], root, signal);
+    const numstat = await runGit([...common, '--numstat', baseTree, headTree], root, signal);
+    const binaryPaths = parseBinaryPaths(numstat);
+    return parseRawDiff(raw)
+      .map((file) => toChangedFile(file, binaryPaths))
+      .sort(compareChangedFiles);
+  } catch (error) {
+    if (error instanceof CommitGitError && error.code === 'unavailable')
+      throw new PullRequestGitError('Pull request tree objects are unavailable', 'missing-tree');
+    throw error;
   }
 }
 
@@ -447,4 +607,7 @@ function isZeroSha(value: string): boolean {
 }
 function compareStrings(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
 }
