@@ -25,6 +25,10 @@ export type { Logger } from './logger/logger.js';
 // ─── Protocol ──────────────────────────────────────────────────────
 export type {
   ArchitectureData,
+  CommitAnalysisChangeSetData,
+  CommitChangedFileData,
+  CommitImpactData,
+  CommitImpactEntryData,
   DependencyData,
   EntityDetailData,
   EvolutionComparisonData,
@@ -47,6 +51,10 @@ export type {
 } from './protocol/messages.js';
 export {
   ArchitectureDataSchema,
+  CommitAnalysisChangeSetDataSchema,
+  CommitChangedFileDataSchema,
+  CommitImpactDataSchema,
+  CommitImpactEntryDataSchema,
   DependencyDataSchema,
   EntityDetailDataSchema,
   EvolutionComparisonDataSchema,

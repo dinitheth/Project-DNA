@@ -604,6 +604,166 @@ export const WorkingTreeImpactDataSchema = z
   .strict();
 export type WorkingTreeImpactData = z.infer<typeof WorkingTreeImpactDataSchema>;
 
+const FullCommitShaDataSchema = z
+  .string()
+  .regex(/^[0-9a-f]{40}$/u, 'Expected a full lowercase commit SHA');
+
+const CommitFileContentKindDataSchema = z.enum([
+  'text',
+  'binary',
+  'symlink',
+  'submodule',
+  'unknown',
+]);
+
+export const CommitChangedFileDataSchema = z.object({
+  kind: z.enum(['added', 'modified', 'deleted', 'renamed', 'type-changed']),
+  path: WorkspaceRelativePathSchema,
+  previousPath: WorkspaceRelativePathSchema.optional(),
+  oldBlobSha: FullCommitShaDataSchema.nullable(),
+  newBlobSha: FullCommitShaDataSchema.nullable(),
+  oldMode: z
+    .string()
+    .regex(/^[0-7]{6}$/u)
+    .nullable(),
+  newMode: z
+    .string()
+    .regex(/^[0-7]{6}$/u)
+    .nullable(),
+  contentKind: CommitFileContentKindDataSchema,
+  binary: z.boolean(),
+  gitlink: z.boolean(),
+});
+export type CommitChangedFileData = z.infer<typeof CommitChangedFileDataSchema>;
+
+const CommitProvenanceDataSchema = z.object({
+  repositoryId: z.string().min(1).max(512),
+  commitSha: FullCommitShaDataSchema.nullable(),
+  treeSha: FullCommitShaDataSchema,
+  parentCommitSha: FullCommitShaDataSchema.nullable(),
+  parentTreeSha: FullCommitShaDataSchema.nullable(),
+  analysisConfigFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
+  contentFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
+  source: z.enum(['persisted', 'materialized']),
+});
+
+const CommitFieldChangeDataSchema = z.object({
+  field: z.string().min(1).max(256),
+  from: z.string().max(2_000),
+  to: z.string().max(2_000),
+});
+
+const CommitIdentifiedChangeDataSchema = z.object({
+  id: z.string().min(1).max(512),
+  changes: z.array(CommitFieldChangeDataSchema).max(100),
+});
+
+const CommitRelationshipDataSchema = z.object({
+  sourceId: z.string().min(1).max(512),
+  targetId: z.string().min(1).max(512),
+  type: z.string().min(1).max(100),
+});
+
+const CommitModifiedRelationshipDataSchema = z.object({
+  sourceId: z.string().min(1).max(512),
+  targetId: z.string().min(1).max(512),
+  changes: z.array(CommitFieldChangeDataSchema).max(100),
+});
+
+const CommitMembershipChangeDataSchema = z.object({
+  entityId: z.string().min(1).max(512),
+  from: z.string().max(512).nullable(),
+  to: z.string().max(512).nullable(),
+});
+
+export const CommitAnalysisChangeSetDataSchema = z.object({
+  addedEntityIds: z.array(z.string().min(1).max(512)).max(5_000),
+  removedEntityIds: z.array(z.string().min(1).max(512)).max(5_000),
+  modifiedEntities: z.array(CommitIdentifiedChangeDataSchema).max(5_000),
+  addedRelationships: z.array(CommitRelationshipDataSchema).max(5_000),
+  removedRelationships: z.array(CommitRelationshipDataSchema).max(5_000),
+  modifiedRelationships: z.array(CommitModifiedRelationshipDataSchema).max(5_000),
+  addedDomainIds: z.array(z.string().min(1).max(512)).max(5_000),
+  removedDomainIds: z.array(z.string().min(1).max(512)).max(5_000),
+  modifiedDomains: z.array(CommitIdentifiedChangeDataSchema).max(5_000),
+  addedRiskIds: z.array(z.string().min(1).max(512)).max(5_000),
+  resolvedRiskIds: z.array(z.string().min(1).max(512)).max(5_000),
+  modifiedRisks: z.array(CommitIdentifiedChangeDataSchema).max(5_000),
+  domainMembershipChanges: z.array(CommitMembershipChangeDataSchema).max(5_000),
+  architectureMembershipChanges: z.array(CommitMembershipChangeDataSchema).max(5_000),
+  unavailableCollections: z.array(z.enum(['domains', 'risks', 'architecture'])).max(3),
+});
+export type CommitAnalysisChangeSetData = z.infer<typeof CommitAnalysisChangeSetDataSchema>;
+
+export const CommitImpactEntryDataSchema = z.object({
+  side: z.enum(['before', 'after']),
+  path: WorkspaceRelativePathSchema,
+  previousPath: WorkspaceRelativePathSchema.optional(),
+  entityId: z.string().min(1).max(512),
+  sourceAvailable: z.boolean(),
+  provenance: CommitProvenanceDataSchema,
+  result: ImpactResultDataSchema,
+});
+export type CommitImpactEntryData = z.infer<typeof CommitImpactEntryDataSchema>;
+
+export const CommitImpactDataSchema = z
+  .object({
+    repositoryId: z.string().min(1).max(512),
+    commitSha: FullCommitShaDataSchema,
+    parentCommits: z.array(FullCommitShaDataSchema).max(64),
+    selectedParentSha: FullCommitShaDataSchema.nullable(),
+    changedFiles: z.array(CommitChangedFileDataSchema).max(500),
+    before: CommitProvenanceDataSchema,
+    after: CommitProvenanceDataSchema,
+    changeSet: CommitAnalysisChangeSetDataSchema.nullable(),
+    impacts: z.array(CommitImpactEntryDataSchema).max(500),
+    summary: z.object({
+      changedEntityIds: z.array(z.string().min(1).max(512)).max(5_000),
+      impactedEntityIds: z.array(z.string().min(1).max(512)).max(5_000),
+      directDependentIds: z.array(z.string().min(1).max(512)).max(5_000),
+      transitiveDependentIds: z.array(z.string().min(1).max(512)).max(5_000),
+      domainIds: z.array(z.string().min(1).max(512)).max(5_000),
+      capabilityIds: z.array(z.string().min(1).max(512)).max(5_000),
+      criticalComponentIds: z.array(z.string().min(1).max(512)).max(5_000),
+      riskIds: z.array(z.string().min(1).max(512)).max(5_000),
+      architectureLayers: z.array(z.string().min(1).max(512)).max(5_000),
+      boundaryEvidence: z.array(z.string().min(1).max(2_000)).max(5_000),
+      highestScore: z.number().min(0).max(100).nullable(),
+    }),
+    unresolved: z
+      .array(
+        z.object({
+          side: z.enum(['before', 'after']),
+          path: WorkspaceRelativePathSchema,
+          reason: z.enum([
+            'analysis-unavailable',
+            'binary-not-analyzable',
+            'symlink-not-analyzable',
+            'submodule-not-analyzable',
+            'missing-entity',
+          ]),
+        }),
+      )
+      .max(500),
+    warnings: z.array(z.string().max(1_000)).max(100),
+    complete: z.boolean(),
+    truncations: z
+      .array(
+        z.object({
+          kind: z.enum([
+            'max-changed-files',
+            'max-targets',
+            'max-impacted-entities',
+            'archive-limit',
+          ]),
+          limit: z.number().int().positive(),
+        }),
+      )
+      .max(20),
+  })
+  .strict();
+export type CommitImpactData = z.infer<typeof CommitImpactDataSchema>;
+
 export const ExtensionMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('analysisUnavailable'),
@@ -713,6 +873,17 @@ export const ExtensionMessageSchema = z.discriminatedUnion('type', [
     result: WorkingTreeImpactDataSchema.nullable(),
     error: z.string().optional(),
   }),
+  z.object({
+    type: z.literal('commitImpactResult'),
+    requestId: SafeNonnegativeIntegerSchema,
+    repositoryId: z.string().min(1).max(512).nullable(),
+    commitSha: FullCommitShaDataSchema,
+    selectedParentSha: FullCommitShaDataSchema.nullable(),
+    parentCommits: z.array(FullCommitShaDataSchema).max(64),
+    requiresParentSelection: z.boolean(),
+    result: CommitImpactDataSchema.nullable(),
+    error: z.string().max(2_000).optional(),
+  }),
 ]);
 
 export type ExtensionMessage = z.infer<typeof ExtensionMessageSchema>;
@@ -776,6 +947,16 @@ export const WebviewMessageSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('cancelWorkingTreeImpact'),
+    requestId: SafeNonnegativeIntegerSchema,
+  }),
+  z.object({
+    type: z.literal('requestCommitImpact'),
+    requestId: SafeNonnegativeIntegerSchema,
+    commitSha: FullCommitShaDataSchema,
+    selectedParentSha: FullCommitShaDataSchema.optional(),
+  }),
+  z.object({
+    type: z.literal('cancelCommitImpact'),
     requestId: SafeNonnegativeIntegerSchema,
   }),
 ]);

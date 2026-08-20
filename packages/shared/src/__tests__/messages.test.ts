@@ -198,6 +198,45 @@ describe('webview message protocol', () => {
     ).toBe(false);
   });
 
+  it('validates bounded historical commit impact requests and parent selection', () => {
+    const commitSha = 'a'.repeat(40);
+    const parentSha = 'b'.repeat(40);
+    expect(
+      WebviewMessageSchema.safeParse({ type: 'requestCommitImpact', requestId: 5, commitSha })
+        .success,
+    ).toBe(true);
+    expect(
+      WebviewMessageSchema.safeParse({
+        type: 'requestCommitImpact',
+        requestId: 6,
+        commitSha,
+        selectedParentSha: parentSha,
+      }).success,
+    ).toBe(true);
+    expect(
+      WebviewMessageSchema.safeParse({ type: 'cancelCommitImpact', requestId: 6 }).success,
+    ).toBe(true);
+    expect(
+      WebviewMessageSchema.safeParse({
+        type: 'requestCommitImpact',
+        requestId: 7,
+        commitSha: 'HEAD',
+      }).success,
+    ).toBe(false);
+    expect(
+      ExtensionMessageSchema.safeParse({
+        type: 'commitImpactResult',
+        requestId: 5,
+        repositoryId: 'repo',
+        commitSha,
+        selectedParentSha: null,
+        parentCommits: [parentSha, 'c'.repeat(40)],
+        requiresParentSelection: true,
+        result: null,
+      }).success,
+    ).toBe(true);
+  });
+
   it('accepts only safe revisions and request identifiers at every navigation boundary', () => {
     const safe = Number.MAX_SAFE_INTEGER;
     const unsafe = safe + 1;
