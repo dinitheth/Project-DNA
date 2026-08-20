@@ -43,4 +43,8 @@ export type {
 export { ProjectDNAService } from './service/project-dna-service.js';
 export { GitChangeSetProvider, WorkingTreeGitError } from './service/git-change-set-provider.js';
 export { GitCommitMetadataProvider, CommitGitError } from './service/commit-metadata-provider.js';
+export {
+  HistoricalTreeMaterializer,
+  HistoricalTreeError,
+} from './service/historical-tree-materializer.js';
 export type { ProjectDNAServiceDependencies } from './service/project-dna-service.js';

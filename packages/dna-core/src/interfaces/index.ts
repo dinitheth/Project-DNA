@@ -46,6 +46,11 @@ export type { IWorkingTreeChangeSetProvider } from './working-tree-impact.interf
 export type { IProjectDNACommitImpact } from './commit-impact.interface.js';
 export type { CommitMetadata, ICommitMetadataProvider } from './commit-metadata.interface.js';
 export type {
+  HistoricalTreeMaterializationOptions,
+  MaterializedHistoricalTree,
+  IHistoricalTreeMaterializer,
+} from './historical-tree.interface.js';
+export type {
   IImpactEngine,
   ImpactEngineInput,
   ImpactSemanticInput,
