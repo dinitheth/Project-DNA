@@ -49,7 +49,7 @@ describe('pull request impact performance corpus', () => {
         await rm(root, { recursive: true, force: true });
       }
     }
-    console.info('M7 PR performance equivalent-history measurements', measurements);
+    console.warn('M7 PR performance equivalent-history measurements', measurements);
     expect(measurements).toHaveLength(3);
     expect(
       measurements.every((item) => item.metadataMs < 30_000 && item.materializationMs < 30_000),
@@ -76,7 +76,7 @@ describe('pull request impact performance corpus', () => {
         { maxChangedFiles: 100 },
       );
       const elapsed = Number((performance.now() - start).toFixed(2));
-      console.info('M7 PR performance large-change measurement', {
+      console.warn('M7 PR performance large-change measurement', {
         elapsedMs: elapsed,
         changedFiles: result.ok ? result.value.changedFiles.length : null,
         complete: result.ok ? result.value.complete : false,
