@@ -71,6 +71,10 @@ export class HistoricalTreeMaterializer implements IHistoricalTreeMaterializer {
         treeSha === EMPTY_TREE_SHA
           ? 0
           : await archiveTree(repositoryRoot, treeSha, archivePath, limits.maxArchiveBytes, signal);
+      if (treeSha !== EMPTY_TREE_SHA) {
+        const archiveEntries = await listArchive(archivePath, signal);
+        validateEntries(archiveEntries, limits.maxFiles);
+      }
       if (treeSha !== EMPTY_TREE_SHA) await extractArchive(archivePath, extractedRoot, signal);
       const measured = await measureExtractedTree(extractedRoot, limits, signal);
       const contentFingerprint = await hashExtractedTree(extractedRoot, signal);
@@ -217,6 +221,11 @@ async function listTree(
     repositoryRoot,
   );
   return output.split('\0').filter(Boolean).map(normalizeArchiveEntry);
+}
+
+async function listArchive(archivePath: string, signal?: AbortSignal): Promise<string[]> {
+  const output = await runProcess('tar', ['-tf', archivePath], signal);
+  return output.split(/\r?\n/u).filter(Boolean).map(normalizeArchiveEntry);
 }
 
 async function extractArchive(

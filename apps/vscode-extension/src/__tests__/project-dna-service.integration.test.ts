@@ -1,7 +1,9 @@
+import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, rename, rm, unlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   AnalysisPerformanceStages,
@@ -55,6 +57,7 @@ const Database = createRequire(path.resolve('package.json'))(
 ) as TestDatabaseConstructor;
 
 const roots: string[] = [];
+const run = promisify(execFile);
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -307,6 +310,62 @@ describe('ProjectDNAService integration', () => {
     });
     await service.dispose();
   }, 30_000);
+
+  it('analyzes immutable historical commits independently of the dirty working tree', async () => {
+    const root = await fixtureRepository();
+    await runGit(root, ['init', '-q']);
+    await runGit(root, ['config', 'user.email', 'project-dna@example.invalid']);
+    await runGit(root, ['config', 'user.name', 'Project DNA']);
+    await runGit(root, ['add', '.']);
+    await runGit(root, ['commit', '-qm', 'base']);
+    await writeFile(
+      path.join(root, 'src/domain/entities/order.ts'),
+      'export interface Order { id: string; total: number; currency: string }',
+      'utf8',
+    );
+    await runGit(root, ['add', '.']);
+    await runGit(root, ['commit', '-qm', 'change order']);
+    const commitSha = await gitOutput(root, ['rev-parse', 'HEAD']);
+    const service = createContainer(createSilentLogger()).resolve<IProjectDNAService>(
+      TOKENS.ProjectDNAService,
+    );
+    const analyzed = await service.analyze(root);
+    if (isErr(analyzed)) throw analyzed.error;
+
+    const first = await service.getCommitImpact({ commitSha });
+    if (isErr(first)) throw first.error;
+    expect(first.value.commitSha).toBe(commitSha);
+    expect(first.value.parentCommitSha).toMatch(/^[0-9a-f]{40}$/u);
+    expect(first.value.changedFiles).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'modified',
+          path: 'src/domain/entities/order.ts',
+        }),
+      ]),
+    );
+    expect(first.value.impacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          side: 'after',
+          path: 'src/domain/entities/order.ts',
+        }),
+      ]),
+    );
+    expect(first.value.before.repositoryId).toBe(analyzed.value.id);
+    expect(first.value.after.repositoryId).toBe(analyzed.value.id);
+
+    await writeFile(
+      path.join(root, 'src/domain/entities/order.ts'),
+      'export interface Order { dirty: true }',
+      'utf8',
+    );
+    await writeFile(path.join(root, 'dirty-untracked.ts'), 'export const dirty = true;', 'utf8');
+    const second = await service.getCommitImpact({ commitSha });
+    if (isErr(second)) throw second.error;
+    expect(JSON.stringify(second.value)).toBe(JSON.stringify(first.value));
+    await service.dispose();
+  }, 60_000);
 
   it('rejects an impact query when a newer analysis starts during calculation', async () => {
     const root = await fixtureRepository();
@@ -1940,6 +1999,15 @@ async function fixtureRepository(): Promise<string> {
     await writeFile(absolute, content, 'utf8');
   }
   return root;
+}
+
+async function runGit(root: string, args: readonly string[]): Promise<void> {
+  await run('git', args, { cwd: root, windowsHide: true });
+}
+
+async function gitOutput(root: string, args: readonly string[]): Promise<string> {
+  const result = await run('git', args, { cwd: root, windowsHide: true });
+  return result.stdout.trim();
 }
 
 class MutableWorkingTreeProvider implements IWorkingTreeChangeSetProvider {

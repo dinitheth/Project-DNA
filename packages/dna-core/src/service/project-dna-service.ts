@@ -13,6 +13,7 @@ import {
   type Result,
 } from '@project-dna/shared';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import type { AnalysisResult, DNAOrchestrator } from '../orchestrator/dna-orchestrator.js';
 import {
   PipelineStage,
@@ -33,6 +34,13 @@ import type {
   IProjectDNAService,
 } from '../interfaces/project-dna-service.interface.js';
 import type { IWorkingTreeChangeSetProvider } from '../interfaces/working-tree-impact.interface.js';
+import type {
+  CommitMetadata,
+  ICommitMetadataProvider,
+} from '../interfaces/commit-metadata.interface.js';
+import type { IHistoricalTreeMaterializer } from '../interfaces/historical-tree.interface.js';
+import { GitCommitMetadataProvider } from './commit-metadata-provider.js';
+import { HistoricalTreeMaterializer } from './historical-tree-materializer.js';
 import { ProjectDNASchema, type AnalysisConfig, type ProjectDNA } from '../models/project-dna.js';
 import { createRepositoryId } from '../models/repository-dna.js';
 import type { ArchitectureDNA } from '../models/architecture-dna.js';
@@ -50,7 +58,11 @@ import type { RepositoryProfile } from '../models/repository-profile.js';
 import type { RepositoryStory } from '../models/repository-story.js';
 import type { RiskAssessment } from '../models/risk-assessment.js';
 import type { RiskNode } from '../models/risk-node.js';
-import { createAnalysisStateView, type AnalysisStateView } from '../models/analysis-state-view.js';
+import {
+  createAnalysisStateView,
+  createRepositoryGraphFromAnalysisState,
+  type AnalysisStateView,
+} from '../models/analysis-state-view.js';
 import {
   WorkingTreeImpactOptionsSchema,
   WorkingTreeImpactResultSchema,
@@ -65,6 +77,16 @@ import {
   type ImpactResult,
   type ImpactTarget,
 } from '../models/impact.js';
+import {
+  CommitAnalysisProvenanceSchema,
+  CommitImpactOptionsSchema,
+  CommitImpactRequestSchema,
+  CommitImpactResultSchema,
+  type CommitChangedFile,
+  type CommitImpactOptions,
+  type CommitImpactRequest,
+  type CommitImpactResult,
+} from '../models/commit-impact.js';
 import {
   AnalysisPerformanceStages,
   measureAnalysisPerformance,
@@ -94,6 +116,8 @@ export interface ProjectDNAServiceDependencies {
   readonly analysisConfig?: Partial<AnalysisConfig>;
   readonly performanceRecorder?: AnalysisPerformanceRecorder;
   readonly workingTreeProvider?: IWorkingTreeChangeSetProvider;
+  readonly commitMetadataProvider?: ICommitMetadataProvider;
+  readonly historicalTreeMaterializer?: IHistoricalTreeMaterializer;
 }
 
 type LoadedCollections = PersistedCollections;
@@ -123,6 +147,11 @@ interface CapturedImpactState {
   readonly state: AnalysisStateView;
 }
 
+interface HistoricalAnalyzedState {
+  readonly state: AnalysisStateView;
+  readonly provenance: CommitImpactResult['before'];
+}
+
 class SupersededAnalysisError extends Error {
   constructor() {
     super('Analysis superseded by newer repository changes');
@@ -133,6 +162,7 @@ class SupersededAnalysisError extends Error {
 const CHANGE_DEBOUNCE_MS = 250;
 const CHANGE_MAX_LATENCY_MS = 2_000;
 const MAX_PENDING_PATHS = 10_000;
+const EMPTY_GIT_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 
 export class ProjectDNAService implements IProjectDNAService {
   private current: ProjectDNA | null = null;
@@ -156,9 +186,15 @@ export class ProjectDNAService implements IProjectDNAService {
   private impactStateEpoch = 0;
   private readonly unsubscribeRepositoryChanges: () => void;
   private readonly unsubscribeWatcherInvalidation: () => void;
+  private readonly commitMetadataProvider: ICommitMetadataProvider;
+  private readonly historicalTreeMaterializer: IHistoricalTreeMaterializer;
 
   constructor(private readonly dependencies: ProjectDNAServiceDependencies) {
     this.analysisConfig = mergeAnalysisConfig(dependencies.analysisConfig);
+    this.commitMetadataProvider =
+      dependencies.commitMetadataProvider ?? new GitCommitMetadataProvider();
+    this.historicalTreeMaterializer =
+      dependencies.historicalTreeMaterializer ?? new HistoricalTreeMaterializer();
     this.unsubscribeRepositoryChanges = dependencies.eventBus.on(
       DNAEventNames.RepositoryFilesChanged,
       (payload) => this.handleRepositoryFilesChanged(payload),
@@ -733,18 +769,22 @@ export class ProjectDNAService implements IProjectDNAService {
     if (isErr(history)) return history;
     const beforeSnapshot = history.value
       .filter((snapshot) => snapshot.analysisState?.repositoryId === captured.value.repositoryId)
-      .filter((snapshot) => snapshot.sourceProvenance?.kind === 'git-working-tree')
-      .filter((snapshot) => snapshot.sourceProvenance?.clean === true)
-      .filter((snapshot) => snapshot.sourceProvenance?.headCommit === initial.value.headCommit)
+      .filter(
+        (snapshot) =>
+          snapshot.sourceProvenance?.kind === 'git-working-tree' &&
+          snapshot.sourceProvenance.clean === true &&
+          snapshot.sourceProvenance.headCommit === initial.value.headCommit,
+      )
       .find((snapshot) => snapshot.analysisState !== undefined);
     const afterSnapshot = history.value
       .filter((snapshot) => snapshot.analysisState?.repositoryId === captured.value.repositoryId)
       .filter((snapshot) => snapshot.analysisState !== undefined)
       .filter(
         (snapshot) =>
-          snapshot.sourceProvenance?.contentFingerprint === initial.value.contentFingerprint,
+          snapshot.sourceProvenance?.kind === 'git-working-tree' &&
+          snapshot.sourceProvenance.contentFingerprint === initial.value.contentFingerprint &&
+          snapshot.sourceProvenance.headCommit === initial.value.headCommit,
       )
-      .filter((snapshot) => snapshot.sourceProvenance?.headCommit === initial.value.headCommit)
       .find((snapshot) => snapshot.version === captured.value.analysisVersion);
     const beforeState = beforeSnapshot?.analysisState;
     const afterState = afterSnapshot?.analysisState;
@@ -906,6 +946,294 @@ export class ProjectDNAService implements IProjectDNAService {
       truncations,
     });
     return Ok(cloneDto(result));
+  }
+
+  async getCommitImpact(
+    request: CommitImpactRequest,
+    options?: CommitImpactOptions,
+    signal?: AbortSignal,
+  ): Promise<Result<CommitImpactResult>> {
+    if (signal?.aborted) return Err(new Error('Commit impact cancelled'));
+    const parsedRequest = CommitImpactRequestSchema.safeParse(request);
+    if (!parsedRequest.success) return Err(new Error(parsedRequest.error.message));
+    const parsedOptions = CommitImpactOptionsSchema.safeParse(options ?? {});
+    if (!parsedOptions.success) return Err(new Error(parsedOptions.error.message));
+    const current = this.current;
+    const repositoryRoot = this.rootPath ?? current?.rootPath;
+    if (!current || !repositoryRoot)
+      return Err(new Error('No Project DNA repository is currently loaded'));
+
+    const metadata = await this.commitMetadataProvider.getCommitMetadata(
+      repositoryRoot,
+      parsedRequest.data,
+      { maxChangedFiles: parsedOptions.data.maxChangedFiles },
+      signal,
+    );
+    if (isErr(metadata)) return metadata;
+    const materializationOptions = {
+      maxArchiveBytes: parsedOptions.data.maxArchiveBytes,
+      maxFiles: parsedOptions.data.maxFiles,
+      maxExtractedBytes: parsedOptions.data.maxExtractedBytes,
+      maxFileBytes: parsedOptions.data.maxFileBytes,
+    };
+    const beforeTreeSha = metadata.value.parentTreeSha ?? EMPTY_GIT_TREE_SHA;
+    const beforeTree = await this.historicalTreeMaterializer.materialize(
+      repositoryRoot,
+      beforeTreeSha,
+      materializationOptions,
+      signal,
+    );
+    if (isErr(beforeTree)) return beforeTree;
+    try {
+      const afterTree = await this.historicalTreeMaterializer.materialize(
+        repositoryRoot,
+        metadata.value.treeSha,
+        materializationOptions,
+        signal,
+      );
+      if (isErr(afterTree)) return afterTree;
+      try {
+        const history = await this.dependencies.evolutionEngine.getHistory();
+        if (isErr(history)) return history;
+        const parentMetadata = metadata.value.parentCommitSha
+          ? await this.commitMetadataProvider.getCommitMetadata(
+              repositoryRoot,
+              { commitSha: metadata.value.parentCommitSha },
+              { maxChangedFiles: 1 },
+              signal,
+            )
+          : null;
+        if (parentMetadata && isErr(parentMetadata)) return parentMetadata;
+        const analysisConfigFingerprint = sha256(stableStringify(this.analysisConfig));
+        const beforeProvenance = CommitAnalysisProvenanceSchema.parse({
+          kind: 'git-commit',
+          repositoryId: current.id,
+          commitSha: metadata.value.parentCommitSha,
+          treeSha: beforeTreeSha,
+          parentCommitSha: parentMetadata?.value.parentCommitSha ?? null,
+          parentTreeSha: parentMetadata?.value.parentTreeSha ?? null,
+          analysisConfigFingerprint,
+          contentFingerprint: beforeTree.value.contentFingerprint,
+          source: 'materialized',
+        });
+        const afterProvenance = CommitAnalysisProvenanceSchema.parse({
+          kind: 'git-commit',
+          repositoryId: current.id,
+          commitSha: metadata.value.commitSha,
+          treeSha: metadata.value.treeSha,
+          parentCommitSha: metadata.value.parentCommitSha,
+          parentTreeSha: metadata.value.parentTreeSha,
+          analysisConfigFingerprint,
+          contentFingerprint: afterTree.value.contentFingerprint,
+          source: 'materialized',
+        });
+        const before = await this.analyzeHistoricalTree(
+          beforeTree.value.rootPath,
+          current.id,
+          0,
+          beforeProvenance,
+          history.value,
+          signal,
+        );
+        if (isErr(before)) return before;
+        const after = await this.analyzeHistoricalTree(
+          afterTree.value.rootPath,
+          current.id,
+          1,
+          afterProvenance,
+          history.value,
+          signal,
+        );
+        if (isErr(after)) return after;
+        if (signal?.aborted) return Err(new Error('Commit impact cancelled'));
+        return this.composeCommitImpact(
+          metadata.value,
+          before.value,
+          after.value,
+          parsedOptions.data,
+          signal,
+        );
+      } finally {
+        await afterTree.value.cleanup();
+      }
+    } finally {
+      await beforeTree.value.cleanup();
+    }
+  }
+
+  private async analyzeHistoricalTree(
+    materializedRoot: string,
+    repositoryId: string,
+    analysisVersion: number,
+    provenance: CommitImpactResult['before'],
+    history: readonly EvolutionSnapshot[],
+    signal?: AbortSignal,
+  ): Promise<Result<HistoricalAnalyzedState>> {
+    const persisted = history.find(
+      (snapshot) =>
+        snapshot.analysisState !== undefined &&
+        snapshot.sourceProvenance?.kind === 'git-commit' &&
+        equivalentCommitProvenance(snapshot.sourceProvenance, provenance),
+    );
+    if (persisted?.analysisState) {
+      return Ok({
+        state: normalizeHistoricalState(persisted.analysisState, repositoryId, analysisVersion),
+        provenance: { ...provenance, source: 'persisted' },
+      });
+    }
+    const analysis = await this.dependencies.orchestrator.analyzeRepository(
+      materializedRoot,
+      signal,
+    );
+    if (isErr(analysis))
+      return Err(
+        new Error(`Historical analysis unavailable for ${historicalSide(analysisVersion)}`),
+      );
+    const synthesis = await this.dependencies.dnaEngine.synthesize(
+      {
+        repository: analysis.value.repository,
+        files: analysis.value.files,
+        dependencyGraph: analysis.value.graph,
+        architecture: analysis.value.architecture,
+        knowledgeNodes: analysis.value.knowledge.nodes,
+        risks: analysis.value.knowledge.risks,
+      },
+      signal,
+    );
+    if (isErr(synthesis))
+      return Err(
+        new Error(`Historical synthesis unavailable for ${historicalSide(analysisVersion)}`),
+      );
+    const intelligence = await this.dependencies.intelligenceEngine.computeIntelligence(
+      {
+        entities: synthesis.value.entities,
+        dnaGraph: synthesis.value.dnaGraph,
+        profile: synthesis.value.profile,
+        architecture: analysis.value.architecture,
+        knowledgeNodes: analysis.value.knowledge.nodes,
+        risks: analysis.value.knowledge.risks,
+      },
+      signal,
+    );
+    if (isErr(intelligence))
+      return Err(
+        new Error(`Historical intelligence unavailable for ${historicalSide(analysisVersion)}`),
+      );
+    if (signal?.aborted) return Err(new Error('Commit impact cancelled'));
+    return Ok({
+      state: createAnalysisStateView({
+        repositoryId,
+        analysisVersion,
+        entities: normalizeRuntimeTimestamps(synthesis.value.entities),
+        graph: analysis.value.graph,
+        domains: normalizeRuntimeTimestamps(synthesis.value.domains),
+        capabilities: normalizeRuntimeTimestamps(synthesis.value.capabilities),
+        criticalComponents: normalizeRuntimeTimestamps(intelligence.value.criticalComponents),
+        risks: normalizeRuntimeTimestamps(analysis.value.knowledge.risks),
+        architecture: normalizeRuntimeTimestamps(analysis.value.architecture),
+      }),
+      provenance,
+    });
+  }
+
+  private composeCommitImpact(
+    metadata: CommitMetadata,
+    before: HistoricalAnalyzedState,
+    after: HistoricalAnalyzedState,
+    options: ReturnType<typeof CommitImpactOptionsSchema.parse>,
+    signal?: AbortSignal,
+  ): Result<CommitImpactResult> {
+    const beforeIndex = createFilePathIndex(before.state);
+    const afterIndex = createFilePathIndex(after.state);
+    const candidates: CommitTargetCandidate[] = [];
+    const unresolved: CommitImpactResult['unresolved'][number][] = [];
+    for (const changedFile of metadata.changedFiles) {
+      const sides = commitFileSides(changedFile);
+      if (changedFile.contentKind !== 'text') {
+        for (const side of sides)
+          unresolved.push({
+            side,
+            path: commitSidePath(changedFile, side),
+            reason: unresolvedCommitReason(changedFile.contentKind),
+          });
+        continue;
+      }
+      for (const side of sides)
+        candidates.push({
+          side,
+          path: commitSidePath(changedFile, side),
+          changedFile,
+          state: side === 'before' ? before : after,
+          index: side === 'before' ? beforeIndex : afterIndex,
+        });
+    }
+    const uniqueCandidates = dedupeCommitTargets(candidates);
+    const truncations: CommitImpactResult['truncations'][number][] = [];
+    if (!metadata.complete)
+      truncations.push({ kind: 'max-changed-files', limit: options.maxChangedFiles });
+    if (uniqueCandidates.length > options.maxTargets)
+      truncations.push({ kind: 'max-targets', limit: options.maxTargets });
+    const impacts: CommitImpactResult['impacts'][number][] = [];
+    for (const candidate of uniqueCandidates.slice(0, options.maxTargets)) {
+      if (signal?.aborted) return Err(new Error('Commit impact cancelled'));
+      const entity = candidate.index.get(normalizeRelativePath(candidate.path));
+      if (!entity || entity.kind !== 'file') {
+        unresolved.push({ side: candidate.side, path: candidate.path, reason: 'missing-entity' });
+        continue;
+      }
+      const impact = this.dependencies.impactEngine.getImpact(
+        {
+          repositoryId: candidate.state.state.repositoryId,
+          analysisVersion: candidate.state.state.analysisVersion,
+          expectedAnalysisVersion: candidate.state.state.analysisVersion,
+          state: candidate.state.state,
+        },
+        { kind: 'entity', id: entity.id },
+        undefined,
+        signal,
+      );
+      if (isErr(impact)) return impact;
+      impacts.push({
+        side: candidate.side,
+        path: candidate.path,
+        ...(candidate.changedFile.previousPath
+          ? { previousPath: candidate.changedFile.previousPath }
+          : {}),
+        entityId: entity.id,
+        sourceAvailable: true,
+        provenance: candidate.state.provenance,
+        result: cloneDto(impact.value),
+      });
+    }
+    impacts.sort(compareCommitImpacts);
+    const summary = summarizeCommitImpact(impacts, options.maxImpactedEntities, truncations);
+    const changeSet = createAnalysisChangeSet(before.state, after.state);
+    const warnings = [
+      ...new Set([
+        ...unresolved.map((item) => item.reason),
+        ...impacts.flatMap((entry) => entry.result.warnings),
+      ]),
+    ].sort();
+    return Ok(
+      cloneDto(
+        CommitImpactResultSchema.parse({
+          repositoryId: before.state.repositoryId,
+          commitSha: metadata.commitSha,
+          parentCommits: metadata.parentCommits,
+          parentCommitSha: metadata.parentCommitSha,
+          changedFiles: metadata.changedFiles,
+          before: before.provenance,
+          after: after.provenance,
+          changeSet,
+          impacts,
+          summary,
+          unresolved: unresolved.sort(compareCommitUnresolved),
+          warnings,
+          complete: unresolved.length === 0 && truncations.length === 0,
+          truncations,
+        }),
+      ),
+    );
   }
 
   getArchitecture(): ArchitectureDNA {
@@ -1432,6 +1760,7 @@ const VOLATILE_COMPARISON_KEYS = new Set([
   'detectedAt',
   'analyzedAt',
   'lastAnalyzedAt',
+  'identifiedAt',
   'durationMs',
 ]);
 
@@ -1473,4 +1802,191 @@ function normalizeComparisonValue(value: unknown): unknown {
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, nested]) => [key, normalizeComparisonValue(nested)]),
   );
+}
+
+type CommitTargetCandidate = {
+  readonly side: 'before' | 'after';
+  readonly path: string;
+  readonly changedFile: CommitChangedFile;
+  readonly state: HistoricalAnalyzedState;
+  readonly index: ReadonlyMap<string, DNAObject>;
+};
+
+function commitFileSides(change: CommitChangedFile): Array<'before' | 'after'> {
+  if (change.kind === 'added') return ['after'];
+  if (change.kind === 'deleted') return ['before'];
+  return ['before', 'after'];
+}
+
+function commitSidePath(change: CommitChangedFile, side: 'before' | 'after'): string {
+  return side === 'before' ? (change.previousPath ?? change.path) : change.path;
+}
+
+function unresolvedCommitReason(
+  contentKind: CommitChangedFile['contentKind'],
+): CommitImpactResult['unresolved'][number]['reason'] {
+  if (contentKind === 'binary') return 'binary-not-analyzable';
+  if (contentKind === 'symlink') return 'symlink-not-analyzable';
+  if (contentKind === 'submodule') return 'submodule-not-analyzable';
+  return 'analysis-unavailable';
+}
+
+function dedupeCommitTargets(
+  candidates: readonly CommitTargetCandidate[],
+): CommitTargetCandidate[] {
+  const seen = new Set<string>();
+  return [...candidates]
+    .sort(
+      (left, right) =>
+        left.path.localeCompare(right.path) ||
+        left.side.localeCompare(right.side) ||
+        left.changedFile.kind.localeCompare(right.changedFile.kind),
+    )
+    .filter((candidate) => {
+      const key = `${candidate.side}\u0000${normalizeRelativePath(candidate.path)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function compareCommitImpacts(
+  left: CommitImpactResult['impacts'][number],
+  right: CommitImpactResult['impacts'][number],
+): number {
+  return (
+    left.path.localeCompare(right.path) ||
+    left.side.localeCompare(right.side) ||
+    left.entityId.localeCompare(right.entityId)
+  );
+}
+
+function compareCommitUnresolved(
+  left: CommitImpactResult['unresolved'][number],
+  right: CommitImpactResult['unresolved'][number],
+): number {
+  return (
+    left.path.localeCompare(right.path) ||
+    left.side.localeCompare(right.side) ||
+    left.reason.localeCompare(right.reason)
+  );
+}
+
+function summarizeCommitImpact(
+  impacts: readonly CommitImpactResult['impacts'][number][],
+  maxImpactedEntities: number,
+  truncations: CommitImpactResult['truncations'],
+): CommitImpactResult['summary'] {
+  const changed = new Set<string>();
+  const impacted = new Set<string>();
+  const direct = new Set<string>();
+  const transitive = new Set<string>();
+  const domains = new Set<string>();
+  const capabilities = new Set<string>();
+  const critical = new Set<string>();
+  const risks = new Set<string>();
+  const layers = new Set<string>();
+  const boundaryEvidence = new Set<string>();
+  let highestScore: number | null = null;
+  for (const impact of impacts) {
+    changed.add(impact.entityId);
+    for (const entity of impact.result.directImpactedEntities) {
+      impacted.add(entity.id);
+      direct.add(entity.id);
+    }
+    for (const entity of impact.result.transitiveImpactedEntities) {
+      impacted.add(entity.id);
+      transitive.add(entity.id);
+    }
+    for (const domain of impact.result.semanticEffects.domains) domains.add(domain.id);
+    for (const capability of impact.result.semanticEffects.capabilities)
+      capabilities.add(capability.id);
+    for (const component of impact.result.semanticEffects.criticalComponents)
+      critical.add(component.id);
+    for (const risk of impact.result.semanticEffects.risks) risks.add(risk.id);
+    for (const layer of impact.result.semanticEffects.architecture.layers) layers.add(layer.name);
+    for (const evidence of impact.result.evidence) {
+      if (evidence.reason === 'layer-boundary') boundaryEvidence.add(evidence.id);
+    }
+    highestScore =
+      highestScore === null
+        ? impact.result.score.total
+        : Math.max(highestScore, impact.result.score.total);
+  }
+  const boundedImpacted = [...impacted].sort().slice(0, maxImpactedEntities);
+  if (impacted.size > boundedImpacted.length)
+    truncations.push({ kind: 'max-impacted-entities', limit: maxImpactedEntities });
+  return {
+    changedEntityIds: [...changed].sort(),
+    impactedEntityIds: boundedImpacted,
+    directDependentIds: [...direct].sort().slice(0, maxImpactedEntities),
+    transitiveDependentIds: [...transitive].sort().slice(0, maxImpactedEntities),
+    domainIds: [...domains].sort(),
+    capabilityIds: [...capabilities].sort(),
+    criticalComponentIds: [...critical].sort(),
+    riskIds: [...risks].sort(),
+    architectureLayers: [...layers].sort(),
+    boundaryEvidence: [...boundaryEvidence].sort(),
+    highestScore,
+  };
+}
+
+function historicalSide(analysisVersion: number): 'before' | 'after' {
+  return analysisVersion === 0 ? 'before' : 'after';
+}
+
+function equivalentCommitProvenance(
+  left: CommitImpactResult['before'],
+  right: CommitImpactResult['before'],
+): boolean {
+  return (
+    left.kind === right.kind &&
+    left.repositoryId === right.repositoryId &&
+    left.commitSha === right.commitSha &&
+    left.treeSha === right.treeSha &&
+    left.parentCommitSha === right.parentCommitSha &&
+    left.parentTreeSha === right.parentTreeSha &&
+    left.analysisConfigFingerprint === right.analysisConfigFingerprint &&
+    left.contentFingerprint === right.contentFingerprint
+  );
+}
+
+function normalizeHistoricalState(
+  state: AnalysisStateView,
+  repositoryId: string,
+  analysisVersion: number,
+): AnalysisStateView {
+  return createAnalysisStateView({
+    repositoryId,
+    analysisVersion,
+    entities: state.entities,
+    graph: createRepositoryGraphFromState(state),
+    domains: state.domains,
+    capabilities: state.capabilities,
+    criticalComponents: state.criticalComponents,
+    risks: state.risks,
+    architecture: state.architecture,
+  });
+}
+
+function createRepositoryGraphFromState(state: AnalysisStateView): RepositoryGraph {
+  return createRepositoryGraphFromAnalysisState(state);
+}
+
+function normalizeRuntimeTimestamps<T>(value: T): T {
+  if (Array.isArray(value)) return value.map((item) => normalizeRuntimeTimestamps(item)) as T;
+  if (!value || typeof value !== 'object') return value;
+  const record = value as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.entries(record).map(([key, nested]) => [
+      key,
+      VOLATILE_COMPARISON_KEYS.has(key) && typeof nested === 'number'
+        ? 0
+        : normalizeRuntimeTimestamps(nested),
+    ]),
+  ) as T;
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
 }
