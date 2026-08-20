@@ -100,10 +100,12 @@ export function ImpactResultView({
   result,
   onSelectEntity,
   onOpenWorkspaceTarget,
+  historical = false,
 }: {
   result: ImpactResultData;
   onSelectEntity: (entityId: string) => void;
   onOpenWorkspaceTarget: (path: WorkspaceRelativePath) => void;
+  historical?: boolean;
 }) {
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const severity = scoreSeverity(result.score.total);
@@ -170,13 +172,23 @@ export function ImpactResultView({
           />
         </div>
       </section>
+      {historical ? (
+        <NoticeSection title="Historical source">
+          <p className="text-xs text-dna-muted">
+            Historical source was available for analysis; current workspace navigation is
+            unavailable.
+          </p>
+        </NoticeSection>
+      ) : null}
       <ListSection
+        allowNavigation={!historical}
         title="Direct dependents"
         items={result.directImpactedEntities}
         onSelectEntity={onSelectEntity}
         onOpenWorkspaceTarget={onOpenWorkspaceTarget}
       />
       <ListSection
+        allowNavigation={!historical}
         title="Transitive dependents"
         items={result.transitiveImpactedEntities}
         onSelectEntity={onSelectEntity}
@@ -248,7 +260,7 @@ export function ImpactResultView({
             title={item.name}
             detail={`${format(item.criticality)} · ${item.reason}`}
             path={item.path}
-            onOpenWorkspaceTarget={onOpenWorkspaceTarget}
+            onOpenWorkspaceTarget={historical ? undefined : onOpenWorkspaceTarget}
           />
         ))}
       </EffectSection>
@@ -328,10 +340,16 @@ export function ImpactResultView({
                   {item.sourcePath ?? item.entityId}
                 </p>
                 {item.sourcePath ? (
-                  <SourceNavigationButton
-                    onOpenWorkspaceTarget={onOpenWorkspaceTarget}
-                    path={item.sourcePath}
-                  />
+                  historical ? (
+                    <p className="mt-1 text-xs text-dna-muted">
+                      Historical path; current workspace navigation unavailable.
+                    </p>
+                  ) : (
+                    <SourceNavigationButton
+                      onOpenWorkspaceTarget={onOpenWorkspaceTarget}
+                      path={item.sourcePath}
+                    />
+                  )
                 ) : null}
                 {item.path ? (
                   <p
@@ -394,11 +412,13 @@ function ListSection({
   items,
   onSelectEntity,
   onOpenWorkspaceTarget,
+  allowNavigation = true,
 }: {
   title: string;
   items: ImpactResultData['directImpactedEntities'];
   onSelectEntity: (entityId: string) => void;
   onOpenWorkspaceTarget: (path: WorkspaceRelativePath) => void;
+  allowNavigation?: boolean;
 }) {
   return (
     <Section title={title}>
@@ -417,24 +437,30 @@ function ListSection({
               >
                 {item.path ?? item.id} · depth {item.minimumDepth}
               </span>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  className="rounded border border-dna-border px-2 py-1 text-xs hover:bg-dna-surface-hover"
-                  onClick={() => onSelectEntity(item.id)}
-                  type="button"
-                >
-                  Details
-                </button>
-                {item.path ? (
+              {allowNavigation ? (
+                <div className="mt-2 flex flex-wrap gap-2">
                   <button
                     className="rounded border border-dna-border px-2 py-1 text-xs hover:bg-dna-surface-hover"
-                    onClick={() => onOpenWorkspaceTarget(item.path!)}
+                    onClick={() => onSelectEntity(item.id)}
                     type="button"
                   >
-                    Open source
+                    Details
                   </button>
-                ) : null}
-              </div>
+                  {item.path ? (
+                    <button
+                      className="rounded border border-dna-border px-2 py-1 text-xs hover:bg-dna-surface-hover"
+                      onClick={() => onOpenWorkspaceTarget(item.path!)}
+                      type="button"
+                    >
+                      Open source
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-dna-muted">
+                  Historical entity; current workspace actions unavailable.
+                </p>
+              )}
             </div>
           ))}
         </div>

@@ -14,6 +14,7 @@ export function OverviewView({
   onOpenWorkspaceTarget,
   onCompareEvolution,
   onRequestWorkingTreeImpact,
+  onRequestCommitImpact,
   onRefresh,
 }: {
   data: RepositoryData | null;
@@ -22,6 +23,7 @@ export function OverviewView({
   onOpenWorkspaceTarget: (path: WorkspaceRelativePath) => void;
   onCompareEvolution: (fromVersion: number, toVersion: number) => void;
   onRequestWorkingTreeImpact?: () => void;
+  onRequestCommitImpact?: () => void;
   onRefresh: () => void;
 }) {
   const availableVersions = [...(evolution?.history ?? [])]
@@ -113,6 +115,15 @@ export function OverviewView({
                 type="button"
               >
                 Working Tree Impact
+              </button>
+            ) : null}
+            {onRequestCommitImpact ? (
+              <button
+                className="rounded border border-dna-border px-2.5 py-1.5 text-xs font-medium text-dna-foreground hover:bg-dna-surface-hover"
+                onClick={onRequestCommitImpact}
+                type="button"
+              >
+                Commit Impact
               </button>
             ) : null}
           </div>

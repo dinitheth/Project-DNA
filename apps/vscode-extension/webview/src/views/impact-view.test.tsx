@@ -178,6 +178,21 @@ describe('impact view', () => {
     expect(markup).toContain('Open source');
     expect(markup).toContain('title="Payment service"');
   });
+
+  it('suppresses current-workspace actions for historical results', () => {
+    const markup = renderToStaticMarkup(
+      <ImpactResultView
+        historical
+        result={result()}
+        onOpenWorkspaceTarget={() => undefined}
+        onSelectEntity={() => undefined}
+      />,
+    );
+    expect(markup).toContain('Historical source');
+    expect(markup).toContain('current workspace navigation is unavailable');
+    expect(markup).not.toContain('Open source');
+    expect(markup).not.toContain('>Details<');
+  });
 });
 
 function result(): ImpactResultData {
