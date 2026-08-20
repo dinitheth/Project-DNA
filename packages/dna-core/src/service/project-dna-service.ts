@@ -1229,7 +1229,10 @@ export class ProjectDNAService implements IProjectDNAService {
           summary,
           unresolved: unresolved.sort(compareCommitUnresolved),
           warnings,
-          complete: unresolved.length === 0 && truncations.length === 0,
+          complete:
+            unresolved.length === 0 &&
+            truncations.length === 0 &&
+            impacts.every((entry) => entry.result.complete),
           truncations,
         }),
       ),

@@ -367,6 +367,29 @@ describe('ProjectDNAService integration', () => {
     await service.dispose();
   }, 60_000);
 
+  it('compares a root commit against the canonical empty tree', async () => {
+    const root = await fixtureRepository();
+    await runGit(root, ['init', '-q']);
+    await runGit(root, ['config', 'user.email', 'project-dna@example.invalid']);
+    await runGit(root, ['config', 'user.name', 'Project DNA']);
+    await runGit(root, ['add', '.']);
+    await runGit(root, ['commit', '-qm', 'root']);
+    const commitSha = await gitOutput(root, ['rev-parse', 'HEAD']);
+    const service = createContainer(createSilentLogger()).resolve<IProjectDNAService>(
+      TOKENS.ProjectDNAService,
+    );
+    const analyzed = await service.analyze(root);
+    if (isErr(analyzed)) throw analyzed.error;
+    const result = await service.getCommitImpact({ commitSha });
+    if (isErr(result)) throw result.error;
+    expect(result.value.parentCommits).toEqual([]);
+    expect(result.value.parentCommitSha).toBeNull();
+    expect(result.value.before.treeSha).toBe('4b825dc642cb6eb9a060e54bf8d69288fbee4904');
+    expect(result.value.changeSet?.addedEntityIds.length).toBeGreaterThan(0);
+    expect(result.value.changedFiles.every((file) => file.kind === 'added')).toBe(true);
+    await service.dispose();
+  }, 60_000);
+
   it('rejects an impact query when a newer analysis starts during calculation', async () => {
     const root = await fixtureRepository();
     const serviceHolder: { value?: IProjectDNAService } = {};
