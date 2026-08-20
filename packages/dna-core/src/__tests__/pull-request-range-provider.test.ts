@@ -107,6 +107,13 @@ describe('pull request tree range provider', () => {
       });
       expect(missing.ok).toBe(false);
       if (!missing.ok) expect((missing.error as PullRequestGitError).code).toBe('missing-base');
+      const missingHead = await provider.getPullRequestTreeRange(root, {
+        baseSha,
+        headSha: 'e'.repeat(40),
+      });
+      expect(missingHead.ok).toBe(false);
+      if (!missingHead.ok)
+        expect((missingHead.error as PullRequestGitError).code).toBe('missing-head');
       const invalidBound = await provider.getPullRequestTreeRange(
         root,
         { baseSha, headSha },
@@ -125,6 +132,73 @@ describe('pull request tree range provider', () => {
       if (!cancelled.ok) expect((cancelled.error as PullRequestGitError).code).toBe('cancelled');
     } finally {
       await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('reports an explicit ambiguous merge base for criss-cross history', async () => {
+    const root = await repository();
+    try {
+      await writeFile(path.join(root, 'base.ts'), 'base\n');
+      await git(root, ['add', '.']);
+      const ancestor = await commit(root, 'ancestor');
+      const tree = await output(root, ['rev-parse', `${ancestor}^{tree}`]);
+      const left = await output(root, ['commit-tree', tree, '-p', ancestor, '-m', 'left']);
+      const right = await output(root, ['commit-tree', tree, '-p', ancestor, '-m', 'right']);
+      const leftMerge = await output(root, [
+        'commit-tree',
+        tree,
+        '-p',
+        left,
+        '-p',
+        right,
+        '-m',
+        'left merge',
+      ]);
+      const rightMerge = await output(root, [
+        'commit-tree',
+        tree,
+        '-p',
+        right,
+        '-p',
+        left,
+        '-m',
+        'right merge',
+      ]);
+      const result = await provider.getPullRequestTreeRange(root, {
+        baseSha: leftMerge,
+        headSha: rightMerge,
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok)
+        expect((result.error as PullRequestGitError).code).toBe('ambiguous-merge-base');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('reports missing history in a shallow clone without fetching remotely', async () => {
+    const origin = await repository();
+    const clone = await mkdtemp(path.join(os.tmpdir(), 'project-dna-pr-shallow-'));
+    try {
+      await writeFile(path.join(origin, 'value.ts'), 'one\n');
+      await git(origin, ['add', '.']);
+      const baseSha = await commit(origin, 'base');
+      await writeFile(path.join(origin, 'value.ts'), 'two\n');
+      await git(origin, ['add', '.']);
+      const headSha = await commit(origin, 'head');
+      await run(
+        'git',
+        ['clone', '-q', '--depth', '1', `file:///${origin.replaceAll('\\', '/')}`, clone],
+        {
+          windowsHide: true,
+        },
+      );
+      const result = await provider.getPullRequestTreeRange(clone, { baseSha, headSha });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect((result.error as PullRequestGitError).code).toBe('missing-base');
+    } finally {
+      await rm(origin, { recursive: true, force: true });
+      await rm(clone, { recursive: true, force: true });
     }
   }, 30_000);
 });

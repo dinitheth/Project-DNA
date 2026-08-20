@@ -59,6 +59,7 @@ export class PullRequestGitError extends Error {
       | 'missing-merge-base'
       | 'ambiguous-merge-base'
       | 'missing-tree'
+      | 'timeout'
       | 'cancelled'
       | 'output-limit'
       | 'path-security'
@@ -277,7 +278,12 @@ async function resolveMergeBases(
       if (error.code === 'cancelled') throw new PullRequestGitError(error.message, 'cancelled');
       if (error.code === 'output-limit')
         throw new PullRequestGitError(error.message, 'output-limit');
-      return [];
+      if (error.code === 'timeout') throw new PullRequestGitError(error.message, 'timeout');
+      if (error.message === 'Git exited with code 1') return [];
+      throw new PullRequestGitError(
+        `Merge-base resolution failed: ${error.message}`,
+        'unavailable',
+      );
     }
     throw error;
   }
@@ -344,7 +350,7 @@ async function inspectCommit(
   let output: string;
   try {
     output = await runGit(
-      ['show', '--no-patch', '--format=%H%x00%T%x00%P', requestedSha],
+      ['show', '--no-patch', '--format=%H%x00%T%x00%P', '--end-of-options', requestedSha],
       root,
       signal,
     );
