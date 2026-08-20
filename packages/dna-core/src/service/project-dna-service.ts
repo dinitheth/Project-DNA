@@ -1036,7 +1036,7 @@ export class ProjectDNAService implements IProjectDNAService {
           contentFingerprint: afterTree.value.contentFingerprint,
           source: 'materialized',
         });
-        const before = await this.analyzeHistoricalTree(
+        const before = await this.analyzePullRequestHistoricalTree(
           beforeTree.value.rootPath,
           current.id,
           0,
@@ -1045,7 +1045,7 @@ export class ProjectDNAService implements IProjectDNAService {
           signal,
         );
         if (isErr(before)) return before;
-        const after = await this.analyzeHistoricalTree(
+        const after = await this.analyzePullRequestHistoricalTree(
           afterTree.value.rootPath,
           current.id,
           1,
@@ -1277,6 +1277,41 @@ export class ProjectDNAService implements IProjectDNAService {
     });
   }
 
+  private async analyzePullRequestHistoricalTree(
+    materializedRoot: string,
+    repositoryId: string,
+    analysisVersion: number,
+    provenance: CommitImpactResult['before'],
+    history: readonly EvolutionSnapshot[],
+    signal?: AbortSignal,
+  ): Promise<Result<HistoricalAnalyzedState>> {
+    const persisted = history.find(
+      (snapshot) =>
+        snapshot.analysisState !== undefined &&
+        snapshot.sourceProvenance?.kind === 'git-commit' &&
+        snapshot.sourceProvenance.repositoryId === provenance.repositoryId &&
+        snapshot.sourceProvenance.commitSha === provenance.commitSha &&
+        snapshot.sourceProvenance.treeSha === provenance.treeSha &&
+        snapshot.sourceProvenance.analysisConfigFingerprint ===
+          provenance.analysisConfigFingerprint &&
+        snapshot.sourceProvenance.contentFingerprint === provenance.contentFingerprint,
+    );
+    if (persisted?.analysisState) {
+      return Ok({
+        state: normalizeHistoricalState(persisted.analysisState, repositoryId, analysisVersion),
+        provenance: { ...provenance, source: 'persisted' },
+      });
+    }
+    return this.analyzeHistoricalTree(
+      materializedRoot,
+      repositoryId,
+      analysisVersion,
+      provenance,
+      [],
+      signal,
+    );
+  }
+
   private composeCommitImpact(
     metadata: CommitMetadata,
     before: HistoricalAnalyzedState,
@@ -1388,6 +1423,7 @@ export class ProjectDNAService implements IProjectDNAService {
     options: ReturnType<typeof PullRequestImpactOptionsSchema.parse>,
     signal?: AbortSignal,
   ): Result<PullRequestImpactResult> {
+    if (signal?.aborted) return Err(new Error('Pull request impact cancelled'));
     const beforeIndex = createFilePathIndex(before.state);
     const afterIndex = createFilePathIndex(after.state);
     const unresolved: PullRequestImpactResult['unresolved'][number][] = [];
@@ -1500,6 +1536,9 @@ export class ProjectDNAService implements IProjectDNAService {
         ...impacts.flatMap((entry) => entry.result.warnings),
       ]),
     ].sort();
+    if (signal?.aborted) return Err(new Error('Pull request impact cancelled'));
+    const changeSet = createAnalysisChangeSet(before.state, after.state);
+    if (signal?.aborted) return Err(new Error('Pull request impact cancelled'));
     const result = PullRequestImpactResultSchema.parse({
       repositoryId: before.state.repositoryId,
       baseCommitSha: range.baseCommitSha,
@@ -1510,7 +1549,7 @@ export class ProjectDNAService implements IProjectDNAService {
       changedFiles: range.changedFiles,
       beforeProvenance: provenance,
       afterProvenance: provenance,
-      changeSet: createAnalysisChangeSet(before.state, after.state),
+      changeSet,
       impacts,
       summary,
       unresolved: unresolved.sort(
