@@ -196,6 +196,31 @@ export {
   DEFAULT_IMPACT_BOUNDS,
   HARD_IMPACT_BOUNDS,
 } from './impact.js';
+
+export {
+  CommitImpactRequestSchema,
+  CommitImpactOptionsSchema,
+  CommitChangeKindSchema,
+  CommitFileContentKindSchema,
+  CommitChangedFileSchema,
+  CommitAnalysisProvenanceSchema,
+  CommitImpactEntrySchema,
+  CommitImpactSummarySchema,
+  CommitImpactTruncationSchema,
+  CommitImpactResultSchema,
+} from './commit-impact.js';
+export type {
+  CommitImpactRequest,
+  CommitImpactOptions,
+  CommitChangeKind,
+  CommitFileContentKind,
+  CommitChangedFile,
+  CommitAnalysisProvenance,
+  CommitImpactEntry,
+  CommitImpactSummary,
+  CommitImpactTruncation,
+  CommitImpactResult,
+} from './commit-impact.js';
 export type {
   ImpactTarget,
   ImpactOptions,

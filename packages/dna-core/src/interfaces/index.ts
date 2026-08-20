@@ -43,6 +43,7 @@ export type {
 } from './intelligence-engine.interface.js';
 export type { IEvolutionEngine } from './evolution-engine.interface.js';
 export type { IWorkingTreeChangeSetProvider } from './working-tree-impact.interface.js';
+export type { IProjectDNACommitImpact } from './commit-impact.interface.js';
 export type {
   IImpactEngine,
   ImpactEngineInput,
