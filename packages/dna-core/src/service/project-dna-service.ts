@@ -39,6 +39,7 @@ import type {
   ICommitMetadataProvider,
 } from '../interfaces/commit-metadata.interface.js';
 import type { IHistoricalTreeMaterializer } from '../interfaces/historical-tree.interface.js';
+import type { IPullRequestTreeRangeProvider } from '../interfaces/pull-request-range.interface.js';
 import { GitCommitMetadataProvider } from './commit-metadata-provider.js';
 import { HistoricalTreeMaterializer } from './historical-tree-materializer.js';
 import { ProjectDNASchema, type AnalysisConfig, type ProjectDNA } from '../models/project-dna.js';
@@ -88,6 +89,16 @@ import {
   type CommitImpactResult,
 } from '../models/commit-impact.js';
 import {
+  PullRequestImpactOptionsSchema,
+  PullRequestImpactRequestSchema,
+  PullRequestImpactResultSchema,
+  PullRequestAnalysisProvenanceSchema,
+  type PullRequestImpactOptions,
+  type PullRequestImpactRequest,
+  type PullRequestImpactResult,
+  type PullRequestTreeRangeMetadata,
+} from '../models/pull-request-impact.js';
+import {
   AnalysisPerformanceStages,
   measureAnalysisPerformance,
   type AnalysisPerformanceRecorder,
@@ -118,6 +129,7 @@ export interface ProjectDNAServiceDependencies {
   readonly workingTreeProvider?: IWorkingTreeChangeSetProvider;
   readonly commitMetadataProvider?: ICommitMetadataProvider;
   readonly historicalTreeMaterializer?: IHistoricalTreeMaterializer;
+  readonly pullRequestTreeRangeProvider?: IPullRequestTreeRangeProvider;
 }
 
 type LoadedCollections = PersistedCollections;
@@ -188,11 +200,17 @@ export class ProjectDNAService implements IProjectDNAService {
   private readonly unsubscribeWatcherInvalidation: () => void;
   private readonly commitMetadataProvider: ICommitMetadataProvider;
   private readonly historicalTreeMaterializer: IHistoricalTreeMaterializer;
+  private readonly pullRequestTreeRangeProvider: IPullRequestTreeRangeProvider | null;
 
   constructor(private readonly dependencies: ProjectDNAServiceDependencies) {
     this.analysisConfig = mergeAnalysisConfig(dependencies.analysisConfig);
     this.commitMetadataProvider =
       dependencies.commitMetadataProvider ?? new GitCommitMetadataProvider();
+    this.pullRequestTreeRangeProvider =
+      dependencies.pullRequestTreeRangeProvider ??
+      (isPullRequestTreeRangeProvider(this.commitMetadataProvider)
+        ? this.commitMetadataProvider
+        : null);
     this.historicalTreeMaterializer =
       dependencies.historicalTreeMaterializer ?? new HistoricalTreeMaterializer();
     this.unsubscribeRepositoryChanges = dependencies.eventBus.on(
@@ -948,6 +966,129 @@ export class ProjectDNAService implements IProjectDNAService {
     return Ok(cloneDto(result));
   }
 
+  async getPullRequestImpact(
+    request: PullRequestImpactRequest,
+    options?: PullRequestImpactOptions,
+    signal?: AbortSignal,
+  ): Promise<Result<PullRequestImpactResult>> {
+    if (signal?.aborted) return Err(new Error('Pull request impact cancelled'));
+    const parsedRequest = PullRequestImpactRequestSchema.safeParse(request);
+    if (!parsedRequest.success) return Err(new Error(parsedRequest.error.message));
+    const parsedOptions = PullRequestImpactOptionsSchema.safeParse(options ?? {});
+    if (!parsedOptions.success) return Err(new Error(parsedOptions.error.message));
+    const current = this.current;
+    const repositoryRoot = this.rootPath ?? current?.rootPath;
+    if (!current || !repositoryRoot)
+      return Err(new Error('No Project DNA repository is currently loaded'));
+    if (!this.pullRequestTreeRangeProvider)
+      return Err(new Error('Pull request impact is unavailable without a Git range provider'));
+    const range = await this.pullRequestTreeRangeProvider.getPullRequestTreeRange(
+      repositoryRoot,
+      parsedRequest.data,
+      { maxChangedFiles: parsedOptions.data.maxChangedFiles },
+      signal,
+    );
+    if (isErr(range)) return range;
+    const materializationOptions = {
+      maxArchiveBytes: parsedOptions.data.maxArchiveBytes,
+      maxFiles: parsedOptions.data.maxFiles,
+      maxExtractedBytes: parsedOptions.data.maxExtractedBytes,
+      maxFileBytes: parsedOptions.data.maxFileBytes,
+    };
+    const beforeTree = await this.historicalTreeMaterializer.materialize(
+      repositoryRoot,
+      range.value.baseTreeSha,
+      materializationOptions,
+      signal,
+    );
+    if (isErr(beforeTree)) return beforeTree;
+    try {
+      const afterTree = await this.historicalTreeMaterializer.materialize(
+        repositoryRoot,
+        range.value.headTreeSha,
+        materializationOptions,
+        signal,
+      );
+      if (isErr(afterTree)) return afterTree;
+      try {
+        const history = await this.dependencies.evolutionEngine.getHistory();
+        if (isErr(history)) return history;
+        const analysisConfigFingerprint = sha256(stableStringify(this.analysisConfig));
+        const beforeCommitProvenance = CommitAnalysisProvenanceSchema.parse({
+          kind: 'git-commit',
+          repositoryId: current.id,
+          commitSha: range.value.baseCommitSha,
+          treeSha: range.value.baseTreeSha,
+          parentCommitSha: null,
+          parentTreeSha: null,
+          analysisConfigFingerprint,
+          contentFingerprint: beforeTree.value.contentFingerprint,
+          source: 'materialized',
+        });
+        const afterCommitProvenance = CommitAnalysisProvenanceSchema.parse({
+          kind: 'git-commit',
+          repositoryId: current.id,
+          commitSha: range.value.headCommitSha,
+          treeSha: range.value.headTreeSha,
+          parentCommitSha: null,
+          parentTreeSha: null,
+          analysisConfigFingerprint,
+          contentFingerprint: afterTree.value.contentFingerprint,
+          source: 'materialized',
+        });
+        const before = await this.analyzeHistoricalTree(
+          beforeTree.value.rootPath,
+          current.id,
+          0,
+          beforeCommitProvenance,
+          history.value,
+          signal,
+        );
+        if (isErr(before)) return before;
+        const after = await this.analyzeHistoricalTree(
+          afterTree.value.rootPath,
+          current.id,
+          1,
+          afterCommitProvenance,
+          history.value,
+          signal,
+        );
+        if (isErr(after)) return after;
+        if (signal?.aborted) return Err(new Error('Pull request impact cancelled'));
+        const baseProvenance = PullRequestAnalysisProvenanceSchema.parse({
+          kind: 'git-pull-request',
+          repositoryId: current.id,
+          baseCommitSha: range.value.baseCommitSha,
+          headCommitSha: range.value.headCommitSha,
+          baseTreeSha: range.value.baseTreeSha,
+          headTreeSha: range.value.headTreeSha,
+          mergeBaseSha: range.value.mergeBaseSha,
+          analysisConfigFingerprint,
+          baseContentFingerprint: beforeTree.value.contentFingerprint,
+          headContentFingerprint: afterTree.value.contentFingerprint,
+          gitVersion: range.value.gitVersion,
+          renameDetectionPolicy: range.value.renameDetectionPolicy,
+          beforeSource: before.value.provenance.source,
+          afterSource: after.value.provenance.source,
+          changedFileFingerprint: range.value.changedFileFingerprint,
+          requestFingerprint: range.value.requestFingerprint,
+        });
+        return this.composePullRequestImpact(
+          range.value,
+          before.value,
+          after.value,
+          baseProvenance,
+          parsedOptions.data,
+          signal,
+        );
+      } finally {
+        await afterTree.value.cleanup();
+      }
+    } finally {
+      await beforeTree.value.cleanup();
+    }
+  }
+
   async getCommitImpact(
     request: CommitImpactRequest,
     options?: CommitImpactOptions,
@@ -1237,6 +1378,155 @@ export class ProjectDNAService implements IProjectDNAService {
         }),
       ),
     );
+  }
+
+  private composePullRequestImpact(
+    range: PullRequestTreeRangeMetadata,
+    before: HistoricalAnalyzedState,
+    after: HistoricalAnalyzedState,
+    provenance: PullRequestImpactResult['beforeProvenance'],
+    options: ReturnType<typeof PullRequestImpactOptionsSchema.parse>,
+    signal?: AbortSignal,
+  ): Result<PullRequestImpactResult> {
+    const beforeIndex = createFilePathIndex(before.state);
+    const afterIndex = createFilePathIndex(after.state);
+    const unresolved: PullRequestImpactResult['unresolved'][number][] = [];
+    const candidates: Array<{
+      readonly side: 'before' | 'after';
+      readonly path: string;
+      readonly previousPath?: string;
+      readonly entity: DNAObject;
+      readonly state: HistoricalAnalyzedState;
+    }> = [];
+    for (const file of range.changedFiles) {
+      const sides = commitFileSides(file);
+      if (file.contentKind !== 'text') {
+        for (const side of sides)
+          unresolved.push({
+            side,
+            path: commitSidePath(file, side),
+            ...(file.previousPath ? { previousPath: file.previousPath } : {}),
+            reason: unresolvedCommitReason(file.contentKind),
+          });
+        continue;
+      }
+      for (const side of sides) {
+        const path = commitSidePath(file, side);
+        const state = side === 'before' ? before : after;
+        const index = side === 'before' ? beforeIndex : afterIndex;
+        const entity = index.get(normalizeRelativePath(path));
+        if (!entity || entity.kind !== 'file') {
+          unresolved.push({
+            side,
+            path,
+            ...(file.previousPath ? { previousPath: file.previousPath } : {}),
+            reason: 'missing-entity',
+          });
+          continue;
+        }
+        candidates.push({
+          side,
+          path,
+          ...(file.previousPath ? { previousPath: file.previousPath } : {}),
+          entity,
+          state,
+        });
+      }
+    }
+    const seen = new Set<string>();
+    const unique = candidates
+      .sort(
+        (left, right) =>
+          left.entity.id.localeCompare(right.entity.id) ||
+          left.side.localeCompare(right.side) ||
+          left.path.localeCompare(right.path),
+      )
+      .filter((candidate) => {
+        const key = `${candidate.side}\u0000${candidate.entity.id}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    const truncations: PullRequestImpactResult['truncations'][number][] = [];
+    if (!range.complete)
+      truncations.push({ kind: 'max-changed-files', limit: options.maxChangedFiles });
+    if (unique.length > options.maxTargets)
+      truncations.push({ kind: 'max-targets', limit: options.maxTargets });
+    const impacts: PullRequestImpactResult['impacts'][number][] = [];
+    for (const candidate of unique.slice(0, options.maxTargets)) {
+      if (signal?.aborted) return Err(new Error('Pull request impact cancelled'));
+      const impact = this.dependencies.impactEngine.getImpact(
+        {
+          repositoryId: candidate.state.state.repositoryId,
+          analysisVersion: candidate.state.state.analysisVersion,
+          expectedAnalysisVersion: candidate.state.state.analysisVersion,
+          state: candidate.state.state,
+        },
+        { kind: 'entity', id: candidate.entity.id },
+        undefined,
+        signal,
+      );
+      if (isErr(impact)) return impact;
+      impacts.push({
+        side: candidate.side,
+        path: candidate.path,
+        ...(candidate.previousPath ? { previousPath: candidate.previousPath } : {}),
+        entityId: candidate.entity.id,
+        sourceAvailable: true,
+        result: cloneDto(impact.value),
+      });
+    }
+    impacts.sort(
+      (left, right) =>
+        left.entityId.localeCompare(right.entityId) ||
+        left.side.localeCompare(right.side) ||
+        left.path.localeCompare(right.path),
+    );
+    const summaryTruncations: CommitImpactResult['truncations'][number][] = [];
+    const commitLikeImpacts = impacts.map((entry) => ({
+      ...entry,
+      provenance: before.provenance,
+    }));
+    const summary = summarizeCommitImpact(
+      commitLikeImpacts,
+      options.maxImpactedEntities,
+      summaryTruncations,
+    );
+    if (summaryTruncations.some((item) => item.kind === 'max-impacted-entities'))
+      truncations.push({ kind: 'max-impacted-entities', limit: options.maxImpactedEntities });
+    const warnings = [
+      ...new Set([
+        ...unresolved.map((item) => item.reason),
+        ...impacts.flatMap((entry) => entry.result.warnings),
+      ]),
+    ].sort();
+    const result = PullRequestImpactResultSchema.parse({
+      repositoryId: before.state.repositoryId,
+      baseCommitSha: range.baseCommitSha,
+      headCommitSha: range.headCommitSha,
+      baseTreeSha: range.baseTreeSha,
+      headTreeSha: range.headTreeSha,
+      mergeBaseSha: range.mergeBaseSha,
+      changedFiles: range.changedFiles,
+      beforeProvenance: provenance,
+      afterProvenance: provenance,
+      changeSet: createAnalysisChangeSet(before.state, after.state),
+      impacts,
+      summary,
+      unresolved: unresolved.sort(
+        (left, right) =>
+          left.path.localeCompare(right.path) ||
+          left.side.localeCompare(right.side) ||
+          left.reason.localeCompare(right.reason),
+      ),
+      warnings,
+      complete:
+        unresolved.length === 0 &&
+        truncations.length === 0 &&
+        impacts.every((entry) => entry.result.complete),
+      truncations,
+    });
+    return Ok(cloneDto(result));
   }
 
   getArchitecture(): ArchitectureDNA {
@@ -1682,6 +1972,15 @@ function createFilePathIndex(state: AnalysisStateView): Map<string, DNAObject> {
     state.entities
       .filter((entity) => entity.kind === 'file')
       .map((entity) => [normalizeRelativePath(entity.path), entity]),
+  );
+}
+
+function isPullRequestTreeRangeProvider(value: unknown): value is IPullRequestTreeRangeProvider {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'getPullRequestTreeRange' in value &&
+    typeof value.getPullRequestTreeRange === 'function'
   );
 }
 

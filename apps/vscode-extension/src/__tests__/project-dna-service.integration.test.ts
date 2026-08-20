@@ -390,6 +390,57 @@ describe('ProjectDNAService integration', () => {
     await service.dispose();
   }, 60_000);
 
+  it('calculates cumulative pull request impact from immutable base and head trees', async () => {
+    const root = await fixtureRepository();
+    await runGit(root, ['init', '-q']);
+    await runGit(root, ['config', 'user.email', 'project-dna@example.invalid']);
+    await runGit(root, ['config', 'user.name', 'Project DNA']);
+    await runGit(root, ['add', '.']);
+    await runGit(root, ['commit', '-qm', 'base']);
+    const baseSha = await gitOutput(root, ['rev-parse', 'HEAD']);
+    await writeFile(
+      path.join(root, 'src/domain/entities/order.ts'),
+      'export interface Order { id: string; total: number; currency: string; locale: string }',
+      'utf8',
+    );
+    await runGit(root, ['add', '.']);
+    await runGit(root, ['commit', '-qm', 'middle']);
+    await writeFile(
+      path.join(root, 'src/domain/entities/order.ts'),
+      'export interface Order { id: string; total: number; currency: string }',
+      'utf8',
+    );
+    await runGit(root, ['add', '.']);
+    await runGit(root, ['commit', '-qm', 'head']);
+    const headSha = await gitOutput(root, ['rev-parse', 'HEAD']);
+    const service = createContainer(createSilentLogger()).resolve<IProjectDNAService>(
+      TOKENS.ProjectDNAService,
+    );
+    const analyzed = await service.analyze(root);
+    if (isErr(analyzed)) throw analyzed.error;
+    const result = await service.getPullRequestImpact({ baseSha, headSha });
+    if (isErr(result)) throw result.error;
+    expect(result.value.baseCommitSha).toBe(baseSha);
+    expect(result.value.headCommitSha).toBe(headSha);
+    expect(result.value.changedFiles).toEqual([
+      expect.objectContaining({ kind: 'modified', path: 'src/domain/entities/order.ts' }),
+    ]);
+    expect(result.value.summary.highestScore).toBe(
+      Math.max(...result.value.impacts.map((entry) => entry.result.score.total)),
+    );
+    expect(result.value.beforeProvenance.kind).toBe('git-pull-request');
+    await writeFile(
+      path.join(root, 'src/domain/entities/order.ts'),
+      'export interface Order { dirty: true }',
+      'utf8',
+    );
+    await writeFile(path.join(root, 'dirty-untracked.ts'), 'export const dirty = true;', 'utf8');
+    const repeat = await service.getPullRequestImpact({ baseSha, headSha });
+    if (isErr(repeat)) throw repeat.error;
+    expect(JSON.stringify(repeat.value)).toBe(JSON.stringify(result.value));
+    await service.dispose();
+  }, 90_000);
+
   it('rejects an impact query when a newer analysis starts during calculation', async () => {
     const root = await fixtureRepository();
     const serviceHolder: { value?: IProjectDNAService } = {};
