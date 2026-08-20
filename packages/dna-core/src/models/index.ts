@@ -209,6 +209,25 @@ export {
   CommitImpactTruncationSchema,
   CommitImpactResultSchema,
 } from './commit-impact.js';
+export {
+  PullRequestImpactRequestSchema,
+  PullRequestImpactOptionsSchema,
+  PullRequestAnalysisProvenanceSchema,
+  PullRequestImpactEntrySchema,
+  PullRequestImpactSummarySchema,
+  PullRequestImpactTruncationSchema,
+  PullRequestImpactResultSchema,
+  pullRequestRequestFingerprint,
+} from './pull-request-impact.js';
+export type {
+  PullRequestImpactRequest,
+  PullRequestImpactOptions,
+  PullRequestAnalysisProvenance,
+  PullRequestImpactEntry,
+  PullRequestImpactSummary,
+  PullRequestImpactResult,
+  PullRequestTreeRangeMetadata,
+} from './pull-request-impact.js';
 export type {
   CommitImpactRequest,
   CommitImpactOptions,

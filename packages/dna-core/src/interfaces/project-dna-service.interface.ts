@@ -35,6 +35,7 @@ import type {
   WorkingTreeImpactResult,
 } from '../models/working-tree-impact.js';
 import type { IProjectDNACommitImpact } from './commit-impact.interface.js';
+import type { IProjectDNAPullRequestImpact } from './pull-request-impact.interface.js';
 
 // ─── Entity Filter ──────────────────────────────────────────────────
 
@@ -154,4 +155,5 @@ export interface IProjectDNAService
     IProjectDNAEvents,
     IProjectDNAImpact,
     IProjectDNAWorkingTreeImpact,
-    IProjectDNACommitImpact {}
+    IProjectDNACommitImpact,
+    IProjectDNAPullRequestImpact {}
