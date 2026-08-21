@@ -5,7 +5,9 @@ import type {
   WorkingTreeUnresolvedPathData,
   WorkspaceRelativePath,
 } from '@project-dna/shared';
-import { EmptyCollection, MetricCard, ProgressBar } from '../components/ui';
+import { EmptyCollection, MetricCard } from '../components/ui';
+import { AnalysisChangeSetView } from '../components/analysis-change-set-view';
+import { impactSeverity, ImpactSeverityIndicator } from '../components/impact-severity';
 import {
   shouldFocusWorkingTreeStatus,
   type WorkingTreeImpactState,
@@ -138,7 +140,11 @@ export function WorkingTreeImpactResultView({
         <dl className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
           <div>
             <dt className="text-dna-muted">HEAD</dt>
-            <dd className="break-all font-medium">{data.headCommit.slice(0, 8)}</dd>
+            <dd className="break-all font-medium">{data.provenance.headCommit.slice(0, 8)}</dd>
+          </div>
+          <div>
+            <dt className="text-dna-muted">Git</dt>
+            <dd className="break-all font-medium">{data.provenance.gitVersion}</dd>
           </div>
           <div>
             <dt className="text-dna-muted">Analysis</dt>
@@ -151,6 +157,24 @@ export function WorkingTreeImpactResultView({
           <div>
             <dt className="text-dna-muted">Git state</dt>
             <dd className="font-medium">Staging metadata only</dd>
+          </div>
+          <div>
+            <dt className="text-dna-muted">Change fingerprint</dt>
+            <dd
+              className="break-all font-mono font-medium"
+              title={data.provenance.changeSetFingerprint}
+            >
+              {data.provenance.changeSetFingerprint.slice(0, 12)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-dna-muted">Content fingerprint</dt>
+            <dd
+              className="break-all font-mono font-medium"
+              title={data.provenance.contentFingerprint}
+            >
+              {data.provenance.contentFingerprint.slice(0, 12)}
+            </dd>
           </div>
         </dl>
         <p className="mt-3 text-xs leading-relaxed text-dna-muted">
@@ -203,12 +227,7 @@ export function WorkingTreeImpactResultView({
             </span>
           </div>
           {data.impacts.length > 0 ? (
-            <ProgressBar
-              fillClassName={severityClass(highestScore)}
-              label="Highest file score"
-              trackClassName="bg-dna-surface-hover"
-              value={highestScore}
-            />
+            <ImpactSeverityIndicator label="Highest file impact" score={highestScore} />
           ) : (
             <p className="mt-2 text-xs text-dna-muted">
               No resolved impact evidence is available. Unresolved paths cannot be interpreted as
@@ -246,6 +265,10 @@ export function WorkingTreeImpactResultView({
       </section>
 
       <section>
+        <AnalysisChangeSetView changeSet={data.changeSet} title="Semantic change set" />
+      </section>
+
+      <section>
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-dna-muted">
           Changed files
         </h3>
@@ -274,6 +297,7 @@ export function WorkingTreeImpactResultView({
               <ImpactEntry
                 entry={entry}
                 key={`${entry.side}:${entry.path}`}
+                canNavigate={canNavigateEntry(entry, data)}
                 onOpenWorkspaceTarget={onOpenWorkspaceTarget}
                 onSelectEntity={onSelectEntity}
               />
@@ -332,10 +356,12 @@ export function WorkingTreeImpactResultView({
 
 function ImpactEntry({
   entry,
+  canNavigate,
   onSelectEntity,
   onOpenWorkspaceTarget,
 }: {
   entry: WorkingTreeImpactData['impacts'][number];
+  canNavigate: boolean;
   onSelectEntity: (entityId: string) => void;
   onOpenWorkspaceTarget: (path: WorkspaceRelativePath) => void;
 }) {
@@ -363,6 +389,7 @@ function ImpactEntry({
       >
         {open ? (
           <ImpactResultView
+            historical={!canNavigate}
             onOpenWorkspaceTarget={onOpenWorkspaceTarget}
             onSelectEntity={onSelectEntity}
             result={entry.result}
@@ -370,6 +397,16 @@ function ImpactEntry({
         ) : null}
       </div>
     </div>
+  );
+}
+
+function canNavigateEntry(
+  entry: WorkingTreeImpactData['impacts'][number],
+  data: WorkingTreeImpactData,
+): boolean {
+  if (entry.side === 'before') return false;
+  return data.resolvedTargets.some(
+    (target) => target.side === 'after' && target.path === entry.path && target.sourceAvailable,
   );
 }
 
@@ -536,18 +573,4 @@ function hasResolvedSide(
   return data.resolvedTargets.some(
     (item) => item.side === side && (item.path === path.path || item.previousPath === path.path),
   );
-}
-
-function impactSeverity(score: number): string {
-  return score >= 75 ? 'Critical' : score >= 50 ? 'High' : score >= 25 ? 'Medium' : 'Low';
-}
-
-function severityClass(score: number): string {
-  return score >= 75
-    ? 'bg-[var(--vscode-editorError-foreground)]'
-    : score >= 50
-      ? 'bg-[var(--vscode-charts-orange,#f59e0b)]'
-      : score >= 25
-        ? 'bg-[var(--vscode-editorWarning-foreground)]'
-        : 'bg-[var(--vscode-testing-iconPassed)]';
 }

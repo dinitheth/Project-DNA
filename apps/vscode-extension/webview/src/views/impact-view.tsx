@@ -1,10 +1,11 @@
-import { useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import type {
   ImpactResultData,
   ImpactTargetData,
   WorkspaceRelativePath,
 } from '@project-dna/shared';
 import { EmptyCollection, MetricCard, Section } from '../components/ui';
+import { ImpactSeverityIndicator } from '../components/impact-severity';
 import { Panel } from '@project-dna/ui-components';
 
 export interface NavigationFeedback {
@@ -108,7 +109,7 @@ export function ImpactResultView({
   historical?: boolean;
 }) {
   const [evidenceOpen, setEvidenceOpen] = useState(false);
-  const severity = scoreSeverity(result.score.total);
+  const evidenceId = useId();
   const targetLabel = result.target.path ?? result.target.name;
   const allEntities = [...result.directImpactedEntities, ...result.transitiveImpactedEntities];
   const semanticUnavailable = semanticUnavailableMessages(result.warnings);
@@ -137,7 +138,7 @@ export function ImpactResultView({
               <span className="text-sm text-dna-muted"> / 100</span>
             </p>
           </div>
-          <Severity score={result.score.total} severity={severity} />
+          <ImpactSeverityIndicator compact score={result.score.total} />
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <MetricCard
@@ -310,6 +311,7 @@ export function ImpactResultView({
       </EffectSection>
       <Panel title="Evidence and paths">
         <button
+          aria-controls={evidenceId}
           aria-expanded={evidenceOpen}
           className="mb-2 rounded border border-dna-border px-2 py-1 text-xs"
           onClick={() => setEvidenceOpen((open) => !open)}
@@ -317,52 +319,50 @@ export function ImpactResultView({
         >
           {evidenceOpen ? 'Hide evidence' : `Show evidence (${result.evidence.length})`}
         </button>
-        {evidenceOpen ? (
-          <div className="space-y-2">
-            {result.canonicalPaths.map((path) => (
-              <div
-                className="rounded border border-dna-border p-2 text-xs"
-                key={`path:${path.impactedEntityId}`}
+        <div className="space-y-2" hidden={!evidenceOpen} id={evidenceId}>
+          {result.canonicalPaths.map((path) => (
+            <div
+              className="rounded border border-dna-border p-2 text-xs"
+              key={`path:${path.impactedEntityId}`}
+            >
+              <p className="font-medium">Canonical shortest path</p>
+              <p className="mt-1 break-words text-dna-muted" title={path.nodeIds.join(' → ')}>
+                {path.nodeIds.join(' → ')}
+              </p>
+            </div>
+          ))}
+          {result.evidence.map((item) => (
+            <div className="rounded border border-dna-border p-2 text-xs" key={item.id}>
+              <p className="font-medium">{format(item.reason)}</p>
+              <p
+                className="mt-1 break-words text-dna-muted"
+                title={item.sourcePath ?? item.entityId}
               >
-                <p className="font-medium">Canonical shortest path</p>
-                <p className="mt-1 break-words text-dna-muted" title={path.nodeIds.join(' → ')}>
-                  {path.nodeIds.join(' → ')}
-                </p>
-              </div>
-            ))}
-            {result.evidence.map((item) => (
-              <div className="rounded border border-dna-border p-2 text-xs" key={item.id}>
-                <p className="font-medium">{format(item.reason)}</p>
+                {item.sourcePath ?? item.entityId}
+              </p>
+              {item.sourcePath ? (
+                historical ? (
+                  <p className="mt-1 text-xs text-dna-muted">
+                    Historical path; current workspace navigation unavailable.
+                  </p>
+                ) : (
+                  <SourceNavigationButton
+                    onOpenWorkspaceTarget={onOpenWorkspaceTarget}
+                    path={item.sourcePath}
+                  />
+                )
+              ) : null}
+              {item.path ? (
                 <p
                   className="mt-1 break-words text-dna-muted"
-                  title={item.sourcePath ?? item.entityId}
+                  title={item.path.nodeIds.join(' → ')}
                 >
-                  {item.sourcePath ?? item.entityId}
+                  {item.path.nodeIds.join(' → ')}
                 </p>
-                {item.sourcePath ? (
-                  historical ? (
-                    <p className="mt-1 text-xs text-dna-muted">
-                      Historical path; current workspace navigation unavailable.
-                    </p>
-                  ) : (
-                    <SourceNavigationButton
-                      onOpenWorkspaceTarget={onOpenWorkspaceTarget}
-                      path={item.sourcePath}
-                    />
-                  )
-                ) : null}
-                {item.path ? (
-                  <p
-                    className="mt-1 break-words text-dna-muted"
-                    title={item.path.nodeIds.join(' → ')}
-                  >
-                    {item.path.nodeIds.join(' → ')}
-                  </p>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ) : null}
+              ) : null}
+            </div>
+          ))}
+        </div>
       </Panel>
       {result.truncations.length > 0 ? (
         <NoticeSection title="Traversal limited">
@@ -513,38 +513,6 @@ function Effect({
       ) : null}
     </div>
   );
-}
-function Severity({ severity, score }: { severity: string; score: number }) {
-  const colors: Record<string, string> = {
-    Low: 'bg-[var(--vscode-testing-iconPassed)]',
-    Medium: 'bg-[var(--vscode-editorWarning-foreground)]',
-    High: 'bg-[var(--vscode-charts-orange,#f59e0b)]',
-    Critical: 'bg-[var(--vscode-editorError-foreground)]',
-  };
-  return (
-    <div className="w-24 shrink-0">
-      <span className="text-xs font-medium">{severity}</span>
-      <div
-        aria-label={`Impact severity: ${severity}, ${Math.round(score)} out of 100`}
-        aria-valuemax={100}
-        aria-valuemin={0}
-        aria-valuenow={score}
-        className="mt-1 h-1.5 overflow-hidden rounded bg-dna-surface-hover"
-        role="progressbar"
-      >
-        <div
-          className={`h-full ${colors[severity]}`}
-          style={{ width: `${Math.min(100, Math.max(0, score))}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-function scoreSeverity(score: number): string {
-  if (score >= 75) return 'Critical';
-  if (score >= 50) return 'High';
-  if (score >= 25) return 'Medium';
-  return 'Low';
 }
 function format(value: string): string {
   return value.replaceAll('-', ' ').replace(/\b\w/gu, (character) => character.toUpperCase());

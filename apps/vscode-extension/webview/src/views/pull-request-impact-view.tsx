@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import type { PullRequestImpactData } from '@project-dna/shared';
-import { EmptyCollection, MetricCard, ProgressBar } from '../components/ui';
+import { EmptyCollection, MetricCard } from '../components/ui';
+import { ImpactSeverityIndicator } from '../components/impact-severity';
 import { ImpactResultView } from './impact-view';
 import type { PullRequestImpactState } from '../state/pull-request-impact-state';
 
@@ -157,11 +158,9 @@ export function PullRequestImpactResultView({ data }: { data: PullRequestImpactD
               No resolved score is available. Incomplete evidence is not treated as zero impact.
             </p>
           ) : (
-            <ProgressBar
+            <ImpactSeverityIndicator
               label="Highest affected-target score"
-              value={data.summary.highestScore}
-              fillClassName={severityClass(data.summary.highestScore)}
-              trackClassName="bg-dna-surface-hover"
+              score={data.summary.highestScore}
             />
           )}
         </div>
@@ -432,15 +431,6 @@ function Notice({
       <div className="mt-1 space-y-1">{children}</div>
     </section>
   );
-}
-function severityClass(score: number) {
-  return score >= 75
-    ? 'bg-[var(--vscode-editorError-foreground)]'
-    : score >= 50
-      ? 'bg-[var(--vscode-charts-orange,#f59e0b)]'
-      : score >= 25
-        ? 'bg-[var(--vscode-editorWarning-foreground)]'
-        : 'bg-[var(--vscode-testing-iconPassed)]';
 }
 function formatLabel(value: string) {
   return value.replaceAll('-', ' ').replace(/\b\w/gu, (letter) => letter.toUpperCase());

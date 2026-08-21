@@ -1,10 +1,8 @@
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
-import type {
-  CommitAnalysisChangeSetData,
-  CommitChangedFileData,
-  CommitImpactData,
-} from '@project-dna/shared';
-import { EmptyCollection, MetricCard, ProgressBar } from '../components/ui';
+import type { CommitChangedFileData, CommitImpactData } from '@project-dna/shared';
+import { EmptyCollection, MetricCard } from '../components/ui';
+import { AnalysisChangeSetView } from '../components/analysis-change-set-view';
+import { impactSeverity, ImpactSeverityIndicator } from '../components/impact-severity';
 import {
   shouldFocusCommitImpactStatus,
   type CommitImpactState,
@@ -224,7 +222,6 @@ export function CommitImpactView({
 }
 
 export function CommitImpactResultView({ data }: { data: CommitImpactData }) {
-  const [selectedFile, setSelectedFile] = useState(fileKey(data.changedFiles[0]));
   const incomplete = !data.complete || data.unresolved.length > 0 || data.truncations.length > 0;
 
   return (
@@ -279,27 +276,20 @@ export function CommitImpactResultView({ data }: { data: CommitImpactData }) {
         {data.changedFiles.length === 0 ? (
           <EmptyCollection>No changed files were reported for this comparison.</EmptyCollection>
         ) : (
-          <div className="space-y-1.5" role="listbox" aria-label="Changed files">
+          <ul className="space-y-1.5">
             {data.changedFiles.map((file) => {
               const key = fileKey(file);
               return (
-                <button
-                  aria-selected={selectedFile === key}
-                  className="w-full rounded border border-dna-border bg-dna-surface p-2 text-left hover:bg-dna-surface-hover aria-selected:border-dna-active"
-                  key={key}
-                  onClick={() => setSelectedFile(key)}
-                  role="option"
-                  type="button"
-                >
+                <li className="rounded border border-dna-border bg-dna-surface p-2" key={key}>
                   <ChangedFile data={data} file={file} />
-                </button>
+                </li>
               );
             })}
-          </div>
+          </ul>
         )}
       </section>
 
-      <ChangeSetView changeSet={data.changeSet} />
+      <AnalysisChangeSetView changeSet={data.changeSet} />
 
       {data.impacts.length > 0 ? (
         <section aria-labelledby="commit-impact-entries-title">
@@ -386,12 +376,7 @@ function ImpactSummary({ data }: { data: CommitImpactData }) {
             impact.
           </p>
         ) : (
-          <ProgressBar
-            fillClassName={severityClass(score)}
-            label="Highest commit target impact"
-            trackClassName="bg-dna-surface-hover"
-            value={score}
-          />
+          <ImpactSeverityIndicator label="Highest commit target impact" score={score} />
         )}
       </section>
       <div className="mt-2 grid grid-cols-2 gap-2">
@@ -479,124 +464,6 @@ function HistoricalImpactEntry({ entry }: { entry: CommitImpactData['impacts'][n
   );
 }
 
-function ChangeSetView({ changeSet }: { changeSet: CommitAnalysisChangeSetData | null }) {
-  if (!changeSet) {
-    return (
-      <Notice role="status" title="Semantic change set unavailable">
-        Before/after historical analysis was not available for deterministic comparison.
-      </Notice>
-    );
-  }
-  const domainsUnavailable = changeSet.unavailableCollections.includes('domains');
-  const risksUnavailable = changeSet.unavailableCollections.includes('risks');
-  const architectureUnavailable = changeSet.unavailableCollections.includes('architecture');
-  return (
-    <section aria-labelledby="commit-change-set-title">
-      <h3
-        className="mb-2 text-xs font-semibold uppercase text-dna-muted"
-        id="commit-change-set-title"
-      >
-        Semantic change set
-      </h3>
-      <div className="space-y-2">
-        <ChangeSection title="Entities added" items={changeSet.addedEntityIds} />
-        <ChangeSection title="Entities removed" items={changeSet.removedEntityIds} />
-        <ChangeSection
-          title="Entities modified"
-          items={changeSet.modifiedEntities.map(
-            (item) => `${item.id}: ${changeFields(item.changes)}`,
-          )}
-        />
-        <ChangeSection
-          title="Relationships added"
-          items={changeSet.addedRelationships.map(relationshipLabel)}
-        />
-        <ChangeSection
-          title="Relationships removed"
-          items={changeSet.removedRelationships.map(relationshipLabel)}
-        />
-        <ChangeSection
-          title="Domain changes"
-          unavailable={domainsUnavailable}
-          items={[
-            ...changeSet.addedDomainIds.map((id) => `Added: ${id}`),
-            ...changeSet.removedDomainIds.map((id) => `Removed: ${id}`),
-            ...changeSet.modifiedDomains.map((item) => `Modified: ${item.id}`),
-            ...changeSet.domainMembershipChanges.map(
-              (item) => `${item.entityId}: ${item.from ?? 'none'} -> ${item.to ?? 'none'}`,
-            ),
-          ]}
-        />
-        <ChangeSection
-          title="Risk changes"
-          unavailable={risksUnavailable}
-          items={[
-            ...changeSet.addedRiskIds.map((id) => `Added: ${id}`),
-            ...changeSet.resolvedRiskIds.map((id) => `Resolved: ${id}`),
-            ...changeSet.modifiedRisks.map(
-              (item) => `Modified: ${item.id}: ${changeFields(item.changes)}`,
-            ),
-          ]}
-        />
-        <ChangeSection
-          title="Architecture membership changes"
-          unavailable={architectureUnavailable}
-          items={changeSet.architectureMembershipChanges.map(
-            (item) => `${item.entityId}: ${item.from ?? 'none'} -> ${item.to ?? 'none'}`,
-          )}
-        />
-      </div>
-    </section>
-  );
-}
-
-function ChangeSection({
-  title,
-  items,
-  unavailable = false,
-}: {
-  title: string;
-  items: readonly string[];
-  unavailable?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const contentId = useId();
-  const status = unavailable
-    ? 'Unavailable'
-    : items.length === 0
-      ? 'No changes detected'
-      : items.length;
-  return (
-    <section className="rounded border border-dna-border bg-dna-surface p-2">
-      <button
-        aria-controls={contentId}
-        aria-expanded={open}
-        className="flex w-full items-center justify-between gap-2 text-left text-xs"
-        onClick={() => setOpen((value) => !value)}
-        type="button"
-      >
-        <span className="font-medium">{title}</span>
-        <span className="text-dna-muted">{status}</span>
-      </button>
-      <div hidden={!open} id={contentId}>
-        {unavailable ? (
-          <p className="mt-2 text-xs text-dna-muted">Unavailable for this historical comparison.</p>
-        ) : items.length === 0 ? (
-          <p className="mt-2 text-xs text-dna-muted">No changes detected.</p>
-        ) : (
-          <ul className="mt-2 space-y-1 text-xs text-dna-muted">
-            {items.map((item, index) => (
-              <li className="break-all" key={`${index}:${item}`}>
-                {item}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </section>
-  );
-}
-
 function ProvenanceItem({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
     <div className="min-w-0">
@@ -640,14 +507,6 @@ function sideState(data: CommitImpactData, path: string, side: 'before' | 'after
   return 'Not applicable';
 }
 
-function relationshipLabel(item: { sourceId: string; targetId: string; type: string }): string {
-  return `${item.sourceId} -> ${item.targetId} (${formatLabel(item.type)})`;
-}
-
-function changeFields(changes: readonly { field: string; from: string; to: string }[]): string {
-  return changes.map((change) => `${change.field}: ${change.from} -> ${change.to}`).join(', ');
-}
-
 function unresolvedMessage(reason: CommitImpactData['unresolved'][number]['reason']): string {
   return {
     'analysis-unavailable': 'Historical analysis unavailable.',
@@ -674,18 +533,4 @@ function shortSha(sha: string): string {
 
 function formatLabel(value: string): string {
   return value.replaceAll('-', ' ').replace(/\b\w/gu, (letter) => letter.toUpperCase());
-}
-
-function impactSeverity(score: number): string {
-  if (score >= 75) return 'Critical';
-  if (score >= 50) return 'High';
-  if (score >= 25) return 'Medium';
-  return 'Low';
-}
-
-function severityClass(score: number): string {
-  if (score >= 75) return 'bg-[var(--vscode-editorError-foreground)]';
-  if (score >= 50) return 'bg-[var(--vscode-charts-orange,#f59e0b)]';
-  if (score >= 25) return 'bg-[var(--vscode-editorWarning-foreground)]';
-  return 'bg-[var(--vscode-testing-iconPassed)]';
 }

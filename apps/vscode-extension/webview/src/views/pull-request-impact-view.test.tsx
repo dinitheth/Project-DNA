@@ -25,8 +25,15 @@ describe('PR Impact UI', () => {
   });
 
   it('shows highest affected-target score, historical provenance, and meaningful expandable files', () => {
-    const markup = renderToStaticMarkup(<PullRequestImpactResultView data={data()} />);
+    const source = data();
+    const markup = renderToStaticMarkup(
+      <PullRequestImpactResultView
+        data={{ ...source, summary: { ...source.summary, highestScore: 80 } }}
+      />,
+    );
     expect(markup).toContain('Highest affected-target score');
+    expect(markup).toContain('Critical');
+    expect(markup).toContain('Highest affected-target score: Critical');
     expect(markup).not.toContain('PR score');
     expect(markup).not.toContain('Total PR impact');
     expect(markup).toContain('Merge base');

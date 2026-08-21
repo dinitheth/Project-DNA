@@ -59,6 +59,10 @@ describe('Commit Impact UI', () => {
     expect(markup).toContain('Binary file; source analysis unavailable.');
     expect(markup).toContain('Before: Resolved');
     expect(markup).toContain('After: Not applicable');
+    expect(markup).toContain('<ul');
+    expect(markup).not.toContain('role="listbox"');
+    expect(markup).not.toContain('role="option"');
+    expect(markup).not.toContain('aria-selected');
   });
 
   it('distinguishes unavailable semantic collections from empty change sets', () => {

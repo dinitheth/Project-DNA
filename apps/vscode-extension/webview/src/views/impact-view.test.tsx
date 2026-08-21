@@ -4,6 +4,19 @@ import type { ImpactResultData } from '@project-dna/shared';
 import { ImpactResultView, ImpactView, SourceNavigationButton } from './impact-view.js';
 
 describe('impact view', () => {
+  it('connects the evidence disclosure to a stable controlled region', () => {
+    const markup = renderToStaticMarkup(
+      <ImpactResultView
+        onOpenWorkspaceTarget={() => undefined}
+        onSelectEntity={() => undefined}
+        result={result()}
+      />,
+    );
+    const controls = markup.match(/aria-controls="([^"]+)"/u)?.[1];
+    expect(controls).toBeTruthy();
+    expect(markup).toContain(`id="${controls}"`);
+    expect(markup).toContain('aria-expanded="false"');
+  });
   it('renders explainable impact result sections with textual severity', () => {
     const markup = renderToStaticMarkup(
       <ImpactResultView

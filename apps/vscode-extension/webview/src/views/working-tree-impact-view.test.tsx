@@ -74,6 +74,53 @@ describe('working-tree impact view', () => {
     expect(markup).toContain('hidden=""');
   });
 
+  it('disables baseline navigation and permits only safe current after-side navigation', () => {
+    const beforeMarkup = renderToStaticMarkup(
+      <WorkingTreeImpactResultView
+        data={{ ...workingTreeData(), impacts: [workingTreeData().impacts[1]!] }}
+        onOpenWorkspaceTarget={() => undefined}
+        onSelectEntity={() => undefined}
+        repositoryName="repo"
+      />,
+    );
+    const afterMarkup = renderToStaticMarkup(
+      <WorkingTreeImpactResultView
+        data={{ ...workingTreeData(), impacts: [workingTreeData().impacts[0]!] }}
+        onOpenWorkspaceTarget={() => undefined}
+        onSelectEntity={() => undefined}
+        repositoryName="repo"
+      />,
+    );
+    expect(beforeMarkup).not.toContain('Open source');
+    expect(beforeMarkup).not.toContain('&gt;Details&lt;');
+    expect(afterMarkup).toContain('Open source');
+    expect(afterMarkup).toContain('>Details</button>');
+  });
+
+  it('renders immutable provenance and the retained semantic change set', () => {
+    const source = workingTreeData();
+    const markup = renderToStaticMarkup(
+      <WorkingTreeImpactResultView
+        data={{
+          ...source,
+          changeSet: changeSet(),
+        }}
+        onOpenWorkspaceTarget={() => undefined}
+        onSelectEntity={() => undefined}
+        repositoryName="repo"
+      />,
+    );
+    expect(markup).toContain('2.50.0');
+    expect(markup).toContain('aaaaaaaaaaaa');
+    expect(markup).toContain('bbbbbbbbbbbb');
+    expect(markup).toContain('Entities added');
+    expect(markup).toContain('Relationships added');
+    expect(markup).toContain('Domain changes');
+    expect(markup).toContain('Risk changes');
+    expect(markup).toContain('Architecture membership changes');
+    expect(markup).toContain('Semantic collection unavailable; this is not an empty result.');
+  });
+
   it('does not present unresolved-only evidence as zero or Low impact', () => {
     const source = workingTreeData();
     const markup = renderToStaticMarkup(
@@ -241,6 +288,13 @@ function workingTreeData(): WorkingTreeImpactData {
     ],
     changedEntityIds: ['file:src/added.ts'],
     impactedEntityIds: ['file:src/api.ts'],
+    provenance: {
+      headCommit: 'abcdef0123456789',
+      gitVersion: '2.50.0',
+      changeSetFingerprint: 'a'.repeat(64),
+      contentFingerprint: 'b'.repeat(64),
+    },
+    changeSet: null,
     beforeAnalysisVersion: 3,
     afterAnalysisVersion: 4,
     warnings: ['Working-tree result uses current filesystem state.'],
@@ -290,5 +344,31 @@ function impactResult(id: string): ImpactResultData {
     complete: true,
     truncations: [],
     appliedBounds: { maxDepth: 8, maxEntities: 500, maxEvidencePaths: 1 },
+  };
+}
+
+function changeSet(): NonNullable<WorkingTreeImpactData['changeSet']> {
+  return {
+    addedEntityIds: ['file:src/added.ts'],
+    removedEntityIds: ['file:src/removed.ts'],
+    modifiedEntities: [
+      { id: 'file:src/changed.ts', changes: [{ field: 'name', from: 'Old', to: 'New' }] },
+    ],
+    addedRelationships: [
+      { sourceId: 'file:src/added.ts', targetId: 'file:src/api.ts', type: 'import' },
+    ],
+    removedRelationships: [],
+    modifiedRelationships: [],
+    addedDomainIds: ['domain:new'],
+    removedDomainIds: [],
+    modifiedDomains: [],
+    addedRiskIds: ['risk:new'],
+    resolvedRiskIds: [],
+    modifiedRisks: [],
+    domainMembershipChanges: [],
+    architectureMembershipChanges: [
+      { entityId: 'file:src/added.ts', from: null, to: 'application' },
+    ],
+    unavailableCollections: ['domains'],
   };
 }
