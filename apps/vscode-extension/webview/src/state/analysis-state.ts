@@ -115,6 +115,7 @@ export function reduceAnalysisState(
     case 'impactResult':
     case 'workingTreeImpactResult':
     case 'commitImpactResult':
+    case 'pullRequestImpactResult':
       return state;
   }
 }

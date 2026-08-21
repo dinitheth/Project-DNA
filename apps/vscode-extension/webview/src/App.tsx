@@ -12,6 +12,7 @@ import { ImpactView } from './views/impact-view';
 import type { NavigationFeedback } from './views/impact-view';
 import { WorkingTreeImpactView } from './views/working-tree-impact-view';
 import { CommitImpactView } from './views/commit-impact-view';
+import { PullRequestImpactView } from './views/pull-request-impact-view';
 import { SidebarNavigationController, type NavigationState } from './state/navigation-state';
 import {
   reduceEntityDetailState,
@@ -24,6 +25,10 @@ import {
   restoreWorkingTreeImpactState,
 } from './state/working-tree-impact-state';
 import { reduceCommitImpactState, restoreCommitImpactState } from './state/commit-impact-state';
+import {
+  reducePullRequestImpactState,
+  restorePullRequestImpactState,
+} from './state/pull-request-impact-state';
 import {
   reduceEvolutionComparisonState,
   restoreEvolutionComparisonState,
@@ -55,6 +60,7 @@ export default function App() {
   const restoredImpact = useRef(restoreImpactState(vscode.getState()));
   const restoredWorkingTreeImpact = useRef(restoreWorkingTreeImpactState(vscode.getState()));
   const restoredCommitImpact = useRef(restoreCommitImpactState(vscode.getState()));
+  const restoredPullRequestImpact = useRef(restorePullRequestImpactState(vscode.getState()));
   const impactRequestId = useRef(
     restoredImpact.current.requestId === Number.MAX_SAFE_INTEGER
       ? 0
@@ -78,6 +84,15 @@ export default function App() {
   const [commitImpact, dispatchCommitImpact] = useReducer(
     reduceCommitImpactState,
     restoredCommitImpact.current,
+  );
+  const pullRequestImpactRequestId = useRef(
+    restoredPullRequestImpact.current.requestId === Number.MAX_SAFE_INTEGER
+      ? 0
+      : restoredPullRequestImpact.current.requestId + 1,
+  );
+  const [pullRequestImpact, dispatchPullRequestImpact] = useReducer(
+    reducePullRequestImpactState,
+    restoredPullRequestImpact.current,
   );
   const [evolutionComparison, dispatchEvolutionComparison] = useReducer(
     reduceEvolutionComparisonState,
@@ -123,6 +138,7 @@ export default function App() {
     dispatchImpact({ type: 'message', message });
     dispatchWorkingTreeImpact({ type: 'message', message });
     dispatchCommitImpact({ type: 'message', message });
+    dispatchPullRequestImpact({ type: 'message', message });
     dispatchAnalysis(message);
   }, []);
   useMessage(handleMessage);
@@ -175,12 +191,34 @@ export default function App() {
   }, [commitImpact, vscode]);
 
   useEffect(() => {
+    const current = vscode.getState();
+    vscode.setState({
+      ...(current && typeof current === 'object' ? current : {}),
+      pullRequestImpact,
+    });
+  }, [pullRequestImpact, vscode]);
+
+  useEffect(() => {
     if (entityDetail.status !== 'loading' || !entityDetail.entityId) return;
     vscode.postMessage({
       type: 'requestEntityDetail',
       requestId: entityDetail.requestId,
       analysisVersion: entityDetail.analysisVersion,
       entityId: entityDetail.entityId,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (
+      pullRequestImpact.status !== 'loading' ||
+      !pullRequestImpact.baseSha ||
+      !pullRequestImpact.headSha
+    ) return;
+    vscode.postMessage({
+      type: 'requestPullRequestImpact',
+      requestId: pullRequestImpact.requestId,
+      baseSha: pullRequestImpact.baseSha,
+      headSha: pullRequestImpact.headSha,
     });
   }, []);
 
@@ -342,6 +380,26 @@ export default function App() {
   const openCommitImpact = useCallback(() => {
     dispatchCommitImpact({ type: 'open' });
   }, []);
+  const openPullRequestImpact = useCallback(() => {
+    dispatchPullRequestImpact({ type: 'open' });
+  }, []);
+  const requestPullRequestImpact = useCallback((baseSha: string, headSha: string) => {
+    const requestId = pullRequestImpactRequestId.current;
+    pullRequestImpactRequestId.current = requestId === Number.MAX_SAFE_INTEGER ? 0 : requestId + 1;
+    dispatchPullRequestImpact({ type: 'request', requestId, baseSha, headSha });
+    vscode.postMessage({ type: 'requestPullRequestImpact', requestId, baseSha, headSha });
+  }, [vscode]);
+  const cancelPullRequestImpact = useCallback(() => {
+    if (pullRequestImpact.status !== 'loading') return;
+    vscode.postMessage({ type: 'cancelPullRequestImpact', requestId: pullRequestImpact.requestId });
+    dispatchPullRequestImpact({ type: 'cancel', requestId: pullRequestImpact.requestId });
+  }, [pullRequestImpact, vscode]);
+  const closePullRequestImpact = useCallback(() => {
+    if (pullRequestImpact.status === 'loading') {
+      vscode.postMessage({ type: 'cancelPullRequestImpact', requestId: pullRequestImpact.requestId });
+    }
+    dispatchPullRequestImpact({ type: 'close' });
+  }, [pullRequestImpact, vscode]);
   const requestCommitImpact = useCallback(
     (commitSha: string, selectedParentSha: string | null) => {
       const requestId = commitImpactRequestId.current;
@@ -418,6 +476,7 @@ export default function App() {
             onCompareEvolution={compareEvolution}
             onRequestWorkingTreeImpact={requestWorkingTreeImpact}
             onRequestCommitImpact={openCommitImpact}
+            onRequestPullRequestImpact={openPullRequestImpact}
             onRefresh={refresh}
           />
         );
@@ -477,6 +536,13 @@ export default function App() {
           onCancel={cancelCommitImpact}
           onClose={closeCommitImpact}
           onRequest={requestCommitImpact}
+        />
+        <PullRequestImpactView
+          repositoryName={repository?.name ?? workspaceLabel(workspaceRoot) ?? 'Current repository'}
+          state={pullRequestImpact}
+          onCancel={cancelPullRequestImpact}
+          onClose={closePullRequestImpact}
+          onRequest={requestPullRequestImpact}
         />
         {renderView()}
         <EntityDetailPanel
