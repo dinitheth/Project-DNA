@@ -158,6 +158,15 @@ describe('webview message protocol', () => {
         ...result,
         result: {
           ...result.result,
+          provenance: { ...result.result.provenance, headCommit: 'b'.repeat(40) },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      ExtensionMessageSchema.safeParse({
+        ...result,
+        result: {
+          ...result.result,
           provenance: {
             ...result.result.provenance,
             changeSetFingerprint: 'not-a-fingerprint',

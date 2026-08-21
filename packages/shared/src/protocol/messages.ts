@@ -702,7 +702,16 @@ export const WorkingTreeImpactDataSchema = z
       )
       .max(100),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (value.provenance.headCommit !== value.headCommit) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['provenance', 'headCommit'],
+        message: 'Working-tree provenance must match the result HEAD commit',
+      });
+    }
+  });
 export type WorkingTreeImpactData = z.infer<typeof WorkingTreeImpactDataSchema>;
 
 export const CommitImpactEntryDataSchema = z.object({
