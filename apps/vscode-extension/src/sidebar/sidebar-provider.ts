@@ -1359,6 +1359,38 @@ function toWorkingTreeImpactData(
     })),
     changedEntityIds: result.changedEntityIds,
     impactedEntityIds: result.impactedEntityIds,
+    provenance: result.provenance,
+    changeSet: result.changeSet
+      ? {
+          addedEntityIds: result.changeSet.addedEntityIds,
+          removedEntityIds: result.changeSet.removedEntityIds,
+          modifiedEntities: result.changeSet.modifiedEntities.map(toIdentifiedChangeData),
+          addedRelationships: result.changeSet.addedRelationships.map((relationship) => ({
+            sourceId: relationship.sourceId,
+            targetId: relationship.targetId,
+            type: relationship.attributes.type,
+          })),
+          removedRelationships: result.changeSet.removedRelationships.map((relationship) => ({
+            sourceId: relationship.sourceId,
+            targetId: relationship.targetId,
+            type: relationship.attributes.type,
+          })),
+          modifiedRelationships: result.changeSet.modifiedRelationships.map((relationship) => ({
+            sourceId: relationship.sourceId,
+            targetId: relationship.targetId,
+            changes: relationship.changes.map(toFieldChangeData),
+          })),
+          addedDomainIds: result.changeSet.addedDomainIds,
+          removedDomainIds: result.changeSet.removedDomainIds,
+          modifiedDomains: result.changeSet.modifiedDomains.map(toIdentifiedChangeData),
+          addedRiskIds: result.changeSet.addedRiskIds,
+          resolvedRiskIds: result.changeSet.resolvedRiskIds,
+          modifiedRisks: result.changeSet.modifiedRisks.map(toIdentifiedChangeData),
+          domainMembershipChanges: result.changeSet.domainMembershipChanges,
+          architectureMembershipChanges: result.changeSet.architectureMembershipChanges,
+          unavailableCollections: result.changeSet.unavailableCollections,
+        }
+      : null,
     beforeAnalysisVersion: result.beforeAnalysisVersion,
     afterAnalysisVersion: result.afterAnalysisVersion,
     warnings: hasUnsupportedLegacyState

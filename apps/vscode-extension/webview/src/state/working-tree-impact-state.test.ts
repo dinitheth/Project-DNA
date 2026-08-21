@@ -76,6 +76,26 @@ describe('working-tree impact state', () => {
     ).toEqual(initialWorkingTreeImpactState);
   });
 
+  it('preserves immutable provenance and semantic changes across recreation', () => {
+    const loading = request(5, 3);
+    const ready = reduceWorkingTreeImpactState(loading, {
+      type: 'message',
+      message: result(5, 3, {
+        provenance: {
+          headCommit: 'c'.repeat(40),
+          gitVersion: '2.51.0',
+          changeSetFingerprint: 'c'.repeat(64),
+          contentFingerprint: 'd'.repeat(64),
+        },
+        changeSet: changeSet(),
+      }),
+    });
+    const restored = restoreWorkingTreeImpactState({ workingTreeImpact: ready });
+    expect(restored).toEqual(ready);
+    expect(restored.result?.provenance.changeSetFingerprint).toBe('c'.repeat(64));
+    expect(restored.result?.changeSet?.addedEntityIds).toEqual(['file:new']);
+  });
+
   it('keeps errors explicit', () => {
     const selected = request(1, 3);
     const errored = reduceWorkingTreeImpactState(selected, {
@@ -129,7 +149,11 @@ function request(requestId: number, analysisVersion: number) {
   });
 }
 
-function result(requestId: number, analysisVersion: number) {
+function result(
+  requestId: number,
+  analysisVersion: number,
+  overrides: Record<string, unknown> = {},
+) {
   return ExtensionMessageSchema.parse({
     type: 'workingTreeImpactResult',
     requestId,
@@ -143,13 +167,41 @@ function result(requestId: number, analysisVersion: number) {
       impacts: [],
       changedEntityIds: [],
       impactedEntityIds: [],
+      provenance: {
+        headCommit: 'a'.repeat(40),
+        gitVersion: '2.50.0',
+        changeSetFingerprint: 'a'.repeat(64),
+        contentFingerprint: 'b'.repeat(64),
+      },
+      changeSet: null,
       beforeAnalysisVersion: 2,
       afterAnalysisVersion: 3,
       warnings: [],
       complete: true,
       truncations: [],
+      ...overrides,
     },
   });
+}
+
+function changeSet() {
+  return {
+    addedEntityIds: ['file:new'],
+    removedEntityIds: [],
+    modifiedEntities: [],
+    addedRelationships: [],
+    removedRelationships: [],
+    modifiedRelationships: [],
+    addedDomainIds: [],
+    removedDomainIds: [],
+    modifiedDomains: [],
+    addedRiskIds: [],
+    resolvedRiskIds: [],
+    modifiedRisks: [],
+    domainMembershipChanges: [],
+    architectureMembershipChanges: [],
+    unavailableCollections: [],
+  };
 }
 
 function snapshot(version: number) {

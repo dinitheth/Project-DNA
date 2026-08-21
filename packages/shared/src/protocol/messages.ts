@@ -578,31 +578,13 @@ export const WorkingTreeImpactEntryDataSchema = z.object({
 });
 export type WorkingTreeImpactEntryData = z.infer<typeof WorkingTreeImpactEntryDataSchema>;
 
-export const WorkingTreeImpactDataSchema = z
-  .object({
-    repositoryId: z.string().min(1).max(512),
-    headCommit: z.string().regex(/^[0-9a-f]{4,}$/u),
-    changedPaths: z.array(WorkingTreeChangedPathDataSchema).max(500),
-    resolvedTargets: z.array(WorkingTreeResolvedTargetDataSchema).max(500),
-    unresolvedPaths: z.array(WorkingTreeUnresolvedPathDataSchema).max(500),
-    impacts: z.array(WorkingTreeImpactEntryDataSchema).max(500),
-    changedEntityIds: z.array(z.string().min(1).max(512)).max(5000),
-    impactedEntityIds: z.array(z.string().min(1).max(512)).max(5000),
-    beforeAnalysisVersion: SafeNonnegativeIntegerSchema.nullable(),
-    afterAnalysisVersion: SafeNonnegativeIntegerSchema.nullable(),
-    warnings: z.array(z.string().max(1000)).max(100),
-    complete: z.boolean(),
-    truncations: z
-      .array(
-        z.object({
-          kind: z.enum(['max-changed-paths', 'max-targets', 'max-impacted-entities']),
-          limit: z.number().int().positive(),
-        }),
-      )
-      .max(100),
-  })
-  .strict();
-export type WorkingTreeImpactData = z.infer<typeof WorkingTreeImpactDataSchema>;
+export const WorkingTreeImpactProvenanceDataSchema = z.object({
+  headCommit: z.string().regex(/^[0-9a-f]{4,}$/u),
+  gitVersion: z.string().min(1).max(256),
+  changeSetFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
+  contentFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
+});
+export type WorkingTreeImpactProvenanceData = z.infer<typeof WorkingTreeImpactProvenanceDataSchema>;
 
 const FullCommitShaDataSchema = z
   .string()
@@ -694,6 +676,34 @@ export const CommitAnalysisChangeSetDataSchema = z.object({
   unavailableCollections: z.array(z.enum(['domains', 'risks', 'architecture'])).max(3),
 });
 export type CommitAnalysisChangeSetData = z.infer<typeof CommitAnalysisChangeSetDataSchema>;
+
+export const WorkingTreeImpactDataSchema = z
+  .object({
+    repositoryId: z.string().min(1).max(512),
+    headCommit: z.string().regex(/^[0-9a-f]{4,}$/u),
+    changedPaths: z.array(WorkingTreeChangedPathDataSchema).max(500),
+    resolvedTargets: z.array(WorkingTreeResolvedTargetDataSchema).max(500),
+    unresolvedPaths: z.array(WorkingTreeUnresolvedPathDataSchema).max(500),
+    impacts: z.array(WorkingTreeImpactEntryDataSchema).max(500),
+    changedEntityIds: z.array(z.string().min(1).max(512)).max(5000),
+    impactedEntityIds: z.array(z.string().min(1).max(512)).max(5000),
+    provenance: WorkingTreeImpactProvenanceDataSchema,
+    changeSet: CommitAnalysisChangeSetDataSchema.nullable(),
+    beforeAnalysisVersion: SafeNonnegativeIntegerSchema.nullable(),
+    afterAnalysisVersion: SafeNonnegativeIntegerSchema.nullable(),
+    warnings: z.array(z.string().max(1000)).max(100),
+    complete: z.boolean(),
+    truncations: z
+      .array(
+        z.object({
+          kind: z.enum(['max-changed-paths', 'max-targets', 'max-impacted-entities']),
+          limit: z.number().int().positive(),
+        }),
+      )
+      .max(100),
+  })
+  .strict();
+export type WorkingTreeImpactData = z.infer<typeof WorkingTreeImpactDataSchema>;
 
 export const CommitImpactEntryDataSchema = z.object({
   side: z.enum(['before', 'after']),

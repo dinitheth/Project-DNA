@@ -95,6 +95,16 @@ export const WorkingTreeImpactEntrySchema = z.object({
 });
 export type WorkingTreeImpactEntry = Readonly<z.infer<typeof WorkingTreeImpactEntrySchema>>;
 
+export const WorkingTreeImpactProvenanceSchema = z.object({
+  headCommit: z.string().regex(/^[0-9a-f]{4,}$/u),
+  gitVersion: z.string().min(1),
+  changeSetFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
+  contentFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
+});
+export type WorkingTreeImpactProvenance = Readonly<
+  z.infer<typeof WorkingTreeImpactProvenanceSchema>
+>;
+
 export const WorkingTreeImpactResultSchema = z.object({
   repositoryId: z.string().min(1),
   headCommit: z.string().regex(/^[0-9a-f]{4,}$/u),
@@ -105,6 +115,7 @@ export const WorkingTreeImpactResultSchema = z.object({
   changedEntityIds: z.array(z.string()),
   impactedEntityIds: z.array(z.string()),
   changeSet: AnalysisChangeSetSchema.nullable(),
+  provenance: WorkingTreeImpactProvenanceSchema,
   beforeAnalysisVersion: z.number().int().nonnegative().nullable(),
   afterAnalysisVersion: z.number().int().nonnegative().nullable(),
   warnings: z.array(z.string()),

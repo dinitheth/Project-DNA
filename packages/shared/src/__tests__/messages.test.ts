@@ -138,6 +138,13 @@ describe('webview message protocol', () => {
         impacts: [],
         changedEntityIds: [],
         impactedEntityIds: [],
+        provenance: {
+          headCommit: 'a'.repeat(40),
+          gitVersion: '2.50.0',
+          changeSetFingerprint: 'a'.repeat(64),
+          contentFingerprint: 'b'.repeat(64),
+        },
+        changeSet: null,
         beforeAnalysisVersion: 2,
         afterAnalysisVersion: null,
         warnings: ['analysis-refresh-required'],
@@ -146,6 +153,18 @@ describe('webview message protocol', () => {
       },
     };
     expect(ExtensionMessageSchema.safeParse(result).success).toBe(true);
+    expect(
+      ExtensionMessageSchema.safeParse({
+        ...result,
+        result: {
+          ...result.result,
+          provenance: {
+            ...result.result.provenance,
+            changeSetFingerprint: 'not-a-fingerprint',
+          },
+        },
+      }).success,
+    ).toBe(false);
     expect(
       WebviewMessageSchema.safeParse({
         type: 'requestWorkingTreeImpact',

@@ -158,6 +158,7 @@ export {
   WorkingTreeUnresolvedPathSchema,
   WorkingTreeImpactEntrySchema,
   WorkingTreeImpactResultSchema,
+  WorkingTreeImpactProvenanceSchema,
 } from './working-tree-impact.js';
 export type {
   WorkingTreeChangeKind,
@@ -170,6 +171,7 @@ export type {
   WorkingTreeUnresolvedPath,
   WorkingTreeImpactEntry,
   WorkingTreeImpactResult,
+  WorkingTreeImpactProvenance,
 } from './working-tree-impact.js';
 
 export { RepositoryStorySchema } from './repository-story.js';

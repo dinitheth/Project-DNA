@@ -957,6 +957,12 @@ export class ProjectDNAService implements IProjectDNAService {
       changedEntityIds: [...changedEntityIds].sort(),
       impactedEntityIds: orderedImpactedEntityIds.slice(0, parsedOptions.data.maxImpactedEntities),
       changeSet,
+      provenance: {
+        headCommit: finalChangeSet.value.headCommit,
+        gitVersion: finalChangeSet.value.gitVersion,
+        changeSetFingerprint: finalChangeSet.value.changeSetFingerprint,
+        contentFingerprint: finalChangeSet.value.contentFingerprint,
+      },
       beforeAnalysisVersion: beforeVersion,
       afterAnalysisVersion: afterVersion,
       warnings: [...new Set(warnings)].sort(),

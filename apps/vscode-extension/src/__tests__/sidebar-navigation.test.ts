@@ -233,6 +233,11 @@ describe('SidebarProvider navigation', () => {
       analysisVersion: 3,
       result: {
         headCommit: 'a'.repeat(40),
+        provenance: {
+          gitVersion: '2.50.0',
+          changeSetFingerprint: 'a'.repeat(64),
+          contentFingerprint: 'b'.repeat(64),
+        },
         changedPaths: [expect.objectContaining({ path: 'src/changed.ts', staged: true })],
       },
     });
@@ -1359,6 +1364,12 @@ function workingTreeImpactResult(analysisVersion: number) {
     impacts: [],
     changedEntityIds: [],
     impactedEntityIds: [],
+    provenance: {
+      headCommit: 'a'.repeat(40),
+      gitVersion: '2.50.0',
+      changeSetFingerprint: 'a'.repeat(64),
+      contentFingerprint: 'b'.repeat(64),
+    },
     changeSet: null,
     beforeAnalysisVersion: analysisVersion,
     afterAnalysisVersion: null,
