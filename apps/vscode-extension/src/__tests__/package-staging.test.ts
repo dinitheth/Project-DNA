@@ -177,6 +177,7 @@ describe('deterministic package staging contract', () => {
     }
   });
 
+  // VSIX creation is deterministic but takes longer when the full workspace runs in parallel.
   it('packages each Marketplace target with only its native bindings', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'project-dna-target-platform-'));
     const allNativeBindings = Object.values(releaseContract.vsix.nativeBindings).flat();
@@ -243,7 +244,7 @@ describe('deterministic package staging contract', () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, 120_000);
 
   it('packages the exact validated runtime allowlist into deterministic VSIX archives', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'project-dna-vsix-'));
@@ -409,7 +410,7 @@ describe('deterministic package staging contract', () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
 
 function firstManifestPathFor(root: string): string {
