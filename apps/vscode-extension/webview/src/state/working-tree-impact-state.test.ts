@@ -77,12 +77,14 @@ describe('working-tree impact state', () => {
   });
 
   it('preserves immutable provenance and semantic changes across recreation', () => {
+    const canonicalHeadCommit = 'c'.repeat(40);
     const loading = request(5, 3);
     const ready = reduceWorkingTreeImpactState(loading, {
       type: 'message',
       message: result(5, 3, {
+        headCommit: canonicalHeadCommit,
         provenance: {
-          headCommit: 'c'.repeat(40),
+          headCommit: canonicalHeadCommit,
           gitVersion: '2.51.0',
           changeSetFingerprint: 'c'.repeat(64),
           contentFingerprint: 'd'.repeat(64),
@@ -94,6 +96,19 @@ describe('working-tree impact state', () => {
     expect(restored).toEqual(ready);
     expect(restored.result?.provenance.changeSetFingerprint).toBe('c'.repeat(64));
     expect(restored.result?.changeSet?.addedEntityIds).toEqual(['file:new']);
+  });
+
+  it('rejects mismatched working-tree provenance identities', () => {
+    expect(() =>
+      result(5, 3, {
+        provenance: {
+          headCommit: 'c'.repeat(40),
+          gitVersion: '2.51.0',
+          changeSetFingerprint: 'c'.repeat(64),
+          contentFingerprint: 'd'.repeat(64),
+        },
+      }),
+    ).toThrow(/provenance must match/i);
   });
 
   it('keeps errors explicit', () => {
