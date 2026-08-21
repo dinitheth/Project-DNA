@@ -6,6 +6,7 @@ import {
   WorkspaceRelativePathSchema,
   ImpactResultDataSchema,
   CommitImpactDataSchema,
+  PullRequestImpactDataSchema,
   WorkingTreeImpactDataSchema,
   isErr,
   type ExtensionMessage,
@@ -57,6 +58,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         readonly requestId: number;
         readonly commitSha: string;
         readonly selectedParentSha: string | null;
+        readonly controller: AbortController;
+      }
+    | undefined;
+  private activePullRequestImpact:
+    | {
+        readonly view: vscode.WebviewView;
+        readonly requestId: number;
+        readonly baseSha: string;
+        readonly headSha: string;
         readonly controller: AbortController;
       }
     | undefined;
@@ -114,6 +124,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     this.cancelActiveImpact();
     this.cancelActiveWorkingTreeImpact();
     this.cancelActiveCommitImpact();
+    this.cancelActivePullRequestImpact();
+    this.cancelActivePullRequestImpact();
     this.publicationEpoch++;
     this.analysisInProgress = false;
     this.activeRootPath = null;
@@ -145,6 +157,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         this.cancelActiveImpact();
         this.cancelActiveWorkingTreeImpact();
         this.cancelActiveCommitImpact();
+        this.cancelActivePullRequestImpact();
         this.webviewView = undefined;
         this.webviewReady = false;
       }
@@ -167,6 +180,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     this.cancelActiveImpact();
     this.cancelActiveWorkingTreeImpact();
     this.cancelActiveCommitImpact();
+    this.cancelActivePullRequestImpact();
     this.publicationEpoch++;
     this.unsubscribeProgress();
     this.unsubscribeReady();
@@ -226,6 +240,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
           message.selectedParentSha ?? null,
         );
         return;
+      case 'requestPullRequestImpact':
+        await this.publishPullRequestImpact(
+          sourceView,
+          message.requestId,
+          message.baseSha,
+          message.headSha,
+        );
+        return;
       case 'cancelImpact':
         if (
           this.activeImpact?.view === sourceView &&
@@ -248,6 +270,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
           this.activeCommitImpact.requestId === message.requestId
         ) {
           this.cancelActiveCommitImpact();
+        }
+        return;
+      case 'cancelPullRequestImpact':
+        if (
+          this.activePullRequestImpact?.view === sourceView &&
+          this.activePullRequestImpact.requestId === message.requestId
+        ) {
+          this.cancelActivePullRequestImpact();
         }
         return;
       case 'requestAnalysis':
@@ -944,6 +974,83 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     );
   }
 
+  private async publishPullRequestImpact(
+    sourceView: vscode.WebviewView,
+    requestId: number,
+    baseSha: string,
+    headSha: string,
+  ): Promise<void> {
+    if (this.webviewView !== sourceView || this.disposed) return;
+    this.cancelActivePullRequestImpact();
+    const current = this.service.getCurrent();
+    const repositoryId = !isErr(current) && current.value ? current.value.id : null;
+    const controller = new AbortController();
+    const operation = { view: sourceView, requestId, baseSha, headSha, controller };
+    this.activePullRequestImpact = operation;
+    if (!repositoryId) {
+      await this.postPullRequestImpact(
+        sourceView,
+        requestId,
+        baseSha,
+        headSha,
+        null,
+        null,
+        'No Project DNA repository is currently loaded.',
+      );
+      return;
+    }
+    const result = await this.service.getPullRequestImpact(
+      { baseSha, headSha },
+      undefined,
+      controller.signal,
+    );
+    if (!this.isActivePullRequestOperation(operation)) return;
+    this.activePullRequestImpact = undefined;
+    if (isErr(result)) {
+      await this.postPullRequestImpact(
+        sourceView,
+        requestId,
+        baseSha,
+        headSha,
+        null,
+        null,
+        result.error.message,
+      );
+      return;
+    }
+    const serialized = PullRequestImpactDataSchema.safeParse(toPullRequestImpactData(result.value));
+    if (!serialized.success) {
+      await this.postPullRequestImpact(
+        sourceView,
+        requestId,
+        baseSha,
+        headSha,
+        result.value.mergeBaseSha,
+        null,
+        `PR impact could not cross the webview boundary: ${serialized.error.message}`,
+      );
+      return;
+    }
+    await this.postPullRequestImpact(
+      sourceView,
+      requestId,
+      baseSha,
+      headSha,
+      serialized.data.mergeBaseSha,
+      serialized.data,
+    );
+  }
+
+  private isActivePullRequestOperation(
+    operation: NonNullable<SidebarProvider['activePullRequestImpact']>,
+  ) {
+    return (
+      this.activePullRequestImpact === operation &&
+      this.webviewView === operation.view &&
+      !this.disposed
+    );
+  }
+
   private async postCommitImpact(
     sourceView: vscode.WebviewView,
     requestId: number,
@@ -969,6 +1076,27 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     });
   }
 
+  private async postPullRequestImpact(
+    sourceView: vscode.WebviewView,
+    requestId: number,
+    baseSha: string,
+    headSha: string,
+    mergeBaseSha: string | null,
+    result: import('@project-dna/shared').PullRequestImpactData | null,
+    error?: string,
+  ): Promise<void> {
+    if (this.webviewView !== sourceView) return;
+    await safePostMessage(sourceView, {
+      type: 'pullRequestImpactResult',
+      requestId,
+      baseSha,
+      headSha,
+      mergeBaseSha,
+      result,
+      error,
+    });
+  }
+
   private cancelActiveImpact(): void {
     this.activeImpact?.controller.abort();
     this.activeImpact = undefined;
@@ -982,6 +1110,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
   private cancelActiveCommitImpact(): void {
     this.activeCommitImpact?.controller.abort();
     this.activeCommitImpact = undefined;
+  }
+
+  private cancelActivePullRequestImpact(): void {
+    this.activePullRequestImpact?.controller.abort();
+    this.activePullRequestImpact = undefined;
   }
 
   private requestPublication(): void {
@@ -1294,6 +1427,66 @@ function toCommitImpactData(
     unresolved: result.unresolved,
     warnings: result.warnings,
     complete: result.complete,
+    truncations: result.truncations,
+  };
+}
+
+function toPullRequestImpactData(
+  result: import('@project-dna/dna-core').PullRequestImpactResult,
+): import('@project-dna/shared').PullRequestImpactData {
+  return {
+    repositoryId: result.repositoryId,
+    baseCommitSha: result.baseCommitSha,
+    headCommitSha: result.headCommitSha,
+    baseTreeSha: result.baseTreeSha,
+    headTreeSha: result.headTreeSha,
+    mergeBaseSha: result.mergeBaseSha,
+    changedFiles: [...result.changedFiles],
+    beforeProvenance: { ...result.beforeProvenance },
+    afterProvenance: { ...result.afterProvenance },
+    changeSet: result.changeSet
+      ? {
+          addedEntityIds: result.changeSet.addedEntityIds,
+          removedEntityIds: result.changeSet.removedEntityIds,
+          modifiedEntities: result.changeSet.modifiedEntities.map(toIdentifiedChangeData),
+          addedRelationships: result.changeSet.addedRelationships.map((relationship) => ({
+            sourceId: relationship.sourceId,
+            targetId: relationship.targetId,
+            type: relationship.attributes.type,
+          })),
+          removedRelationships: result.changeSet.removedRelationships.map((relationship) => ({
+            sourceId: relationship.sourceId,
+            targetId: relationship.targetId,
+            type: relationship.attributes.type,
+          })),
+          modifiedRelationships: result.changeSet.modifiedRelationships.map((relationship) => ({
+            sourceId: relationship.sourceId,
+            targetId: relationship.targetId,
+            changes: relationship.changes.map(toFieldChangeData),
+          })),
+          addedDomainIds: result.changeSet.addedDomainIds,
+          removedDomainIds: result.changeSet.removedDomainIds,
+          modifiedDomains: result.changeSet.modifiedDomains.map(toIdentifiedChangeData),
+          addedRiskIds: result.changeSet.addedRiskIds,
+          resolvedRiskIds: result.changeSet.resolvedRiskIds,
+          modifiedRisks: result.changeSet.modifiedRisks.map(toIdentifiedChangeData),
+          domainMembershipChanges: result.changeSet.domainMembershipChanges,
+          architectureMembershipChanges: result.changeSet.architectureMembershipChanges,
+          unavailableCollections: result.changeSet.unavailableCollections,
+        }
+      : null,
+    impacts: result.impacts.map((impact) => ({
+      side: impact.side,
+      path: impact.path,
+      ...(impact.previousPath ? { previousPath: impact.previousPath } : {}),
+      entityId: impact.entityId,
+      sourceAvailable: impact.sourceAvailable,
+      result: toImpactResultData(impact.result),
+    })),
+    summary: result.summary,
+    warnings: result.warnings,
+    complete: result.complete,
+    unresolved: result.unresolved,
     truncations: result.truncations,
   };
 }

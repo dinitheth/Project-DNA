@@ -385,6 +385,38 @@ describe('SidebarProvider navigation', () => {
     expect(harness.commitImpactResults()).toHaveLength(0);
   });
 
+  it('publishes only the latest historical PR range and suppresses cancelled results', async () => {
+    const first = createDeferred<ReturnType<typeof Ok<never>>>();
+    const second = createDeferred<ReturnType<typeof Ok<never>>>();
+    const signals: AbortSignal[] = [];
+    const service = createService({ currentVersion: 3 });
+    service.getPullRequestImpact = vi.fn((_request, _options, signal) => {
+      signals.push(signal!);
+      return (signals.length === 1 ? first.promise : second.promise) as never;
+    });
+    const harness = createHarness({ service });
+    harness.resolve();
+    const baseA = 'a'.repeat(40);
+    const headA = 'b'.repeat(40);
+    const baseB = 'c'.repeat(40);
+    const headB = 'd'.repeat(40);
+    harness.receive({ type: 'requestPullRequestImpact', requestId: 1, baseSha: baseA, headSha: headA });
+    harness.receive({ type: 'requestPullRequestImpact', requestId: 2, baseSha: baseB, headSha: headB });
+    expect(signals[0]?.aborted).toBe(true);
+    first.resolve(Ok(pullRequestImpactResult(baseA, headA)) as never);
+    second.resolve(Ok(pullRequestImpactResult(baseB, headB)) as never);
+    await harness.waitForPullRequestImpactResultCount(1);
+    expect(harness.pullRequestImpactResults()[0]).toMatchObject({ requestId: 2, baseSha: baseB, headSha: headB, result: { baseCommitSha: baseB, headCommitSha: headB } });
+
+    const pending = createDeferred<ReturnType<typeof Ok<never>>>();
+    service.getPullRequestImpact = vi.fn(() => pending.promise as never);
+    harness.receive({ type: 'requestPullRequestImpact', requestId: 3, baseSha: baseA, headSha: headA });
+    harness.receive({ type: 'cancelPullRequestImpact', requestId: 3 });
+    pending.resolve(Ok(pullRequestImpactResult(baseA, headA)) as never);
+    await Promise.resolve();
+    expect(harness.pullRequestImpactResults()).toHaveLength(1);
+  });
+
   it('rejects stale impact versions and suppresses disposed or failed deliveries', async () => {
     const service = createService({ currentVersion: 4 });
     service.getImpact = vi.fn(async () => Ok(impactResult('src/a.ts', 4)) as never);
@@ -1021,6 +1053,11 @@ function createHarness(
         .map((message) => ExtensionMessageSchema.parse(message))
         .filter((message) => message.type === 'commitImpactResult');
     },
+    pullRequestImpactResults() {
+      return messages
+        .map((message) => ExtensionMessageSchema.parse(message))
+        .filter((message) => message.type === 'pullRequestImpactResult');
+    },
     async waitForNavigationCount(count: number) {
       if (count === 0) {
         await this.waitForUnavailableCount(1);
@@ -1052,6 +1089,9 @@ function createHarness(
     async waitForCommitImpactResultCount(count: number) {
       await vi.waitFor(() => expect(this.commitImpactResults()).toHaveLength(count));
     },
+    async waitForPullRequestImpactResultCount(count: number) {
+      await vi.waitFor(() => expect(this.pullRequestImpactResults()).toHaveLength(count));
+    },
   };
 }
 
@@ -1071,6 +1111,9 @@ function createService(options: { currentVersion?: number; entity?: unknown } = 
     },
     async getWorkingTreeImpact() {
       return Ok(workingTreeImpactResult(options.currentVersion ?? 3));
+    },
+    async getPullRequestImpact(request: { baseSha: string; headSha: string }) {
+      return Ok(pullRequestImpactResult(request.baseSha, request.headSha));
     },
   } as unknown as IProjectDNAService;
 }
@@ -1162,6 +1205,28 @@ function commitImpactResult(commitSha: string, parentSha: string | null) {
     warnings: [],
     complete: true,
     truncations: [],
+  };
+}
+
+function pullRequestImpactResult(baseSha: string, headSha: string) {
+  const digest = 'd'.repeat(64);
+  const provenance = {
+    kind: 'git-pull-request' as const,
+    repositoryId: 'repo', baseCommitSha: baseSha, headCommitSha: headSha,
+    baseTreeSha: baseSha, headTreeSha: headSha, mergeBaseSha: null,
+    analysisConfigFingerprint: digest, baseContentFingerprint: digest,
+    headContentFingerprint: digest, gitVersion: '2.50.0',
+    renameDetectionPolicy: 'find-renames', beforeSource: 'materialized' as const,
+    afterSource: 'materialized' as const, changedFileFingerprint: digest,
+    requestFingerprint: digest,
+  };
+  return {
+    repositoryId: 'repo', baseCommitSha: baseSha, headCommitSha: headSha,
+    baseTreeSha: baseSha, headTreeSha: headSha, mergeBaseSha: null,
+    changedFiles: [], beforeProvenance: provenance, afterProvenance: provenance,
+    changeSet: null, impacts: [],
+    summary: { changedEntityIds: [], impactedEntityIds: [], directDependentIds: [], transitiveDependentIds: [], domainIds: [], capabilityIds: [], criticalComponentIds: [], riskIds: [], architectureLayers: [], boundaryEvidence: [], highestScore: null },
+    warnings: [], complete: true, unresolved: [], truncations: [],
   };
 }
 
