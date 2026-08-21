@@ -764,6 +764,91 @@ export const CommitImpactDataSchema = z
   .strict();
 export type CommitImpactData = z.infer<typeof CommitImpactDataSchema>;
 
+const PullRequestProvenanceDataSchema = z.object({
+  kind: z.literal('git-pull-request'),
+  repositoryId: z.string().min(1).max(512),
+  baseCommitSha: FullCommitShaDataSchema,
+  headCommitSha: FullCommitShaDataSchema,
+  baseTreeSha: FullCommitShaDataSchema,
+  headTreeSha: FullCommitShaDataSchema,
+  mergeBaseSha: FullCommitShaDataSchema.nullable(),
+  analysisConfigFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
+  baseContentFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
+  headContentFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
+  gitVersion: z.string().min(1).max(256),
+  renameDetectionPolicy: z.string().min(1).max(512),
+  beforeSource: z.enum(['persisted', 'materialized']),
+  afterSource: z.enum(['persisted', 'materialized']),
+  changedFileFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
+  requestFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
+});
+
+export const PullRequestImpactEntryDataSchema = z.object({
+  side: z.enum(['before', 'after']),
+  path: WorkspaceRelativePathSchema,
+  previousPath: WorkspaceRelativePathSchema.optional(),
+  entityId: z.string().min(1).max(512),
+  sourceAvailable: z.boolean(),
+  result: ImpactResultDataSchema,
+});
+export type PullRequestImpactEntryData = z.infer<typeof PullRequestImpactEntryDataSchema>;
+
+export const PullRequestImpactDataSchema = z
+  .object({
+    repositoryId: z.string().min(1).max(512),
+    baseCommitSha: FullCommitShaDataSchema,
+    headCommitSha: FullCommitShaDataSchema,
+    baseTreeSha: FullCommitShaDataSchema,
+    headTreeSha: FullCommitShaDataSchema,
+    mergeBaseSha: FullCommitShaDataSchema.nullable(),
+    changedFiles: z.array(CommitChangedFileDataSchema).max(500),
+    beforeProvenance: PullRequestProvenanceDataSchema,
+    afterProvenance: PullRequestProvenanceDataSchema,
+    changeSet: CommitAnalysisChangeSetDataSchema.nullable(),
+    impacts: z.array(PullRequestImpactEntryDataSchema).max(500),
+    summary: z.object({
+      changedEntityIds: z.array(z.string().min(1).max(512)).max(5_000),
+      impactedEntityIds: z.array(z.string().min(1).max(512)).max(5_000),
+      directDependentIds: z.array(z.string().min(1).max(512)).max(5_000),
+      transitiveDependentIds: z.array(z.string().min(1).max(512)).max(5_000),
+      domainIds: z.array(z.string().min(1).max(512)).max(5_000),
+      capabilityIds: z.array(z.string().min(1).max(512)).max(5_000),
+      criticalComponentIds: z.array(z.string().min(1).max(512)).max(5_000),
+      riskIds: z.array(z.string().min(1).max(512)).max(5_000),
+      architectureLayers: z.array(z.string().min(1).max(512)).max(5_000),
+      boundaryEvidence: z.array(z.string().min(1).max(2_000)).max(5_000),
+      highestScore: z.number().min(0).max(100).nullable(),
+    }),
+    warnings: z.array(z.string().max(1_000)).max(100),
+    complete: z.boolean(),
+    unresolved: z
+      .array(
+        z.object({
+          side: z.enum(['before', 'after']),
+          path: WorkspaceRelativePathSchema,
+          previousPath: WorkspaceRelativePathSchema.optional(),
+          reason: z.enum([
+            'analysis-unavailable',
+            'binary-not-analyzable',
+            'symlink-not-analyzable',
+            'submodule-not-analyzable',
+            'missing-entity',
+          ]),
+        }),
+      )
+      .max(1_000),
+    truncations: z
+      .array(
+        z.object({
+          kind: z.enum(['max-changed-files', 'max-targets', 'max-impacted-entities']),
+          limit: z.number().int().positive(),
+        }),
+      )
+      .max(20),
+  })
+  .strict();
+export type PullRequestImpactData = z.infer<typeof PullRequestImpactDataSchema>;
+
 export const ExtensionMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('analysisUnavailable'),
@@ -884,6 +969,15 @@ export const ExtensionMessageSchema = z.discriminatedUnion('type', [
     result: CommitImpactDataSchema.nullable(),
     error: z.string().max(2_000).optional(),
   }),
+  z.object({
+    type: z.literal('pullRequestImpactResult'),
+    requestId: SafeNonnegativeIntegerSchema,
+    baseSha: FullCommitShaDataSchema,
+    headSha: FullCommitShaDataSchema,
+    mergeBaseSha: FullCommitShaDataSchema.nullable(),
+    result: PullRequestImpactDataSchema.nullable(),
+    error: z.string().max(2_000).optional(),
+  }),
 ]);
 
 export type ExtensionMessage = z.infer<typeof ExtensionMessageSchema>;
@@ -957,6 +1051,16 @@ export const WebviewMessageSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('cancelCommitImpact'),
+    requestId: SafeNonnegativeIntegerSchema,
+  }),
+  z.object({
+    type: z.literal('requestPullRequestImpact'),
+    requestId: SafeNonnegativeIntegerSchema,
+    baseSha: FullCommitShaDataSchema,
+    headSha: FullCommitShaDataSchema,
+  }),
+  z.object({
+    type: z.literal('cancelPullRequestImpact'),
     requestId: SafeNonnegativeIntegerSchema,
   }),
 ]);

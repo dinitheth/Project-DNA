@@ -198,6 +198,49 @@ describe('webview message protocol', () => {
     ).toBe(false);
   });
 
+  it('validates pull request impact identities and bounded results', () => {
+    const baseSha = 'a'.repeat(40);
+    const headSha = 'b'.repeat(40);
+    expect(
+      WebviewMessageSchema.safeParse({
+        type: 'requestPullRequestImpact',
+        requestId: 7,
+        baseSha,
+        headSha,
+      }).success,
+    ).toBe(true);
+    expect(
+      WebviewMessageSchema.safeParse({
+        type: 'requestPullRequestImpact',
+        requestId: 7,
+        baseSha: baseSha.slice(0, 8),
+        headSha,
+      }).success,
+    ).toBe(false);
+    expect(
+      WebviewMessageSchema.safeParse({
+        type: 'requestPullRequestImpact',
+        requestId: 7,
+        baseSha,
+        headSha: headSha.toUpperCase(),
+      }).success,
+    ).toBe(false);
+    expect(
+      WebviewMessageSchema.safeParse({ type: 'cancelPullRequestImpact', requestId: 7 }).success,
+    ).toBe(true);
+    expect(
+      ExtensionMessageSchema.safeParse({
+        type: 'pullRequestImpactResult',
+        requestId: 7,
+        baseSha,
+        headSha,
+        mergeBaseSha: null,
+        result: null,
+        error: 'Historical analysis unavailable.',
+      }).success,
+    ).toBe(true);
+  });
+
   it('validates bounded historical commit impact requests and parent selection', () => {
     const commitSha = 'a'.repeat(40);
     const parentSha = 'b'.repeat(40);
