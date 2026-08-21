@@ -400,17 +400,37 @@ describe('SidebarProvider navigation', () => {
     const headA = 'b'.repeat(40);
     const baseB = 'c'.repeat(40);
     const headB = 'd'.repeat(40);
-    harness.receive({ type: 'requestPullRequestImpact', requestId: 1, baseSha: baseA, headSha: headA });
-    harness.receive({ type: 'requestPullRequestImpact', requestId: 2, baseSha: baseB, headSha: headB });
+    harness.receive({
+      type: 'requestPullRequestImpact',
+      requestId: 1,
+      baseSha: baseA,
+      headSha: headA,
+    });
+    harness.receive({
+      type: 'requestPullRequestImpact',
+      requestId: 2,
+      baseSha: baseB,
+      headSha: headB,
+    });
     expect(signals[0]?.aborted).toBe(true);
     first.resolve(Ok(pullRequestImpactResult(baseA, headA)) as never);
     second.resolve(Ok(pullRequestImpactResult(baseB, headB)) as never);
     await harness.waitForPullRequestImpactResultCount(1);
-    expect(harness.pullRequestImpactResults()[0]).toMatchObject({ requestId: 2, baseSha: baseB, headSha: headB, result: { baseCommitSha: baseB, headCommitSha: headB } });
+    expect(harness.pullRequestImpactResults()[0]).toMatchObject({
+      requestId: 2,
+      baseSha: baseB,
+      headSha: headB,
+      result: { baseCommitSha: baseB, headCommitSha: headB },
+    });
 
     const pending = createDeferred<ReturnType<typeof Ok<never>>>();
     service.getPullRequestImpact = vi.fn(() => pending.promise as never);
-    harness.receive({ type: 'requestPullRequestImpact', requestId: 3, baseSha: baseA, headSha: headA });
+    harness.receive({
+      type: 'requestPullRequestImpact',
+      requestId: 3,
+      baseSha: baseA,
+      headSha: headA,
+    });
     harness.receive({ type: 'cancelPullRequestImpact', requestId: 3 });
     pending.resolve(Ok(pullRequestImpactResult(baseA, headA)) as never);
     await Promise.resolve();
@@ -1212,21 +1232,51 @@ function pullRequestImpactResult(baseSha: string, headSha: string) {
   const digest = 'd'.repeat(64);
   const provenance = {
     kind: 'git-pull-request' as const,
-    repositoryId: 'repo', baseCommitSha: baseSha, headCommitSha: headSha,
-    baseTreeSha: baseSha, headTreeSha: headSha, mergeBaseSha: null,
-    analysisConfigFingerprint: digest, baseContentFingerprint: digest,
-    headContentFingerprint: digest, gitVersion: '2.50.0',
-    renameDetectionPolicy: 'find-renames', beforeSource: 'materialized' as const,
-    afterSource: 'materialized' as const, changedFileFingerprint: digest,
+    repositoryId: 'repo',
+    baseCommitSha: baseSha,
+    headCommitSha: headSha,
+    baseTreeSha: baseSha,
+    headTreeSha: headSha,
+    mergeBaseSha: null,
+    analysisConfigFingerprint: digest,
+    baseContentFingerprint: digest,
+    headContentFingerprint: digest,
+    gitVersion: '2.50.0',
+    renameDetectionPolicy: 'find-renames',
+    beforeSource: 'materialized' as const,
+    afterSource: 'materialized' as const,
+    changedFileFingerprint: digest,
     requestFingerprint: digest,
   };
   return {
-    repositoryId: 'repo', baseCommitSha: baseSha, headCommitSha: headSha,
-    baseTreeSha: baseSha, headTreeSha: headSha, mergeBaseSha: null,
-    changedFiles: [], beforeProvenance: provenance, afterProvenance: provenance,
-    changeSet: null, impacts: [],
-    summary: { changedEntityIds: [], impactedEntityIds: [], directDependentIds: [], transitiveDependentIds: [], domainIds: [], capabilityIds: [], criticalComponentIds: [], riskIds: [], architectureLayers: [], boundaryEvidence: [], highestScore: null },
-    warnings: [], complete: true, unresolved: [], truncations: [],
+    repositoryId: 'repo',
+    baseCommitSha: baseSha,
+    headCommitSha: headSha,
+    baseTreeSha: baseSha,
+    headTreeSha: headSha,
+    mergeBaseSha: null,
+    changedFiles: [],
+    beforeProvenance: provenance,
+    afterProvenance: provenance,
+    changeSet: null,
+    impacts: [],
+    summary: {
+      changedEntityIds: [],
+      impactedEntityIds: [],
+      directDependentIds: [],
+      transitiveDependentIds: [],
+      domainIds: [],
+      capabilityIds: [],
+      criticalComponentIds: [],
+      riskIds: [],
+      architectureLayers: [],
+      boundaryEvidence: [],
+      highestScore: null,
+    },
+    warnings: [],
+    complete: true,
+    unresolved: [],
+    truncations: [],
   };
 }
 

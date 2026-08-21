@@ -213,7 +213,8 @@ export default function App() {
       pullRequestImpact.status !== 'loading' ||
       !pullRequestImpact.baseSha ||
       !pullRequestImpact.headSha
-    ) return;
+    )
+      return;
     vscode.postMessage({
       type: 'requestPullRequestImpact',
       requestId: pullRequestImpact.requestId,
@@ -383,12 +384,16 @@ export default function App() {
   const openPullRequestImpact = useCallback(() => {
     dispatchPullRequestImpact({ type: 'open' });
   }, []);
-  const requestPullRequestImpact = useCallback((baseSha: string, headSha: string) => {
-    const requestId = pullRequestImpactRequestId.current;
-    pullRequestImpactRequestId.current = requestId === Number.MAX_SAFE_INTEGER ? 0 : requestId + 1;
-    dispatchPullRequestImpact({ type: 'request', requestId, baseSha, headSha });
-    vscode.postMessage({ type: 'requestPullRequestImpact', requestId, baseSha, headSha });
-  }, [vscode]);
+  const requestPullRequestImpact = useCallback(
+    (baseSha: string, headSha: string) => {
+      const requestId = pullRequestImpactRequestId.current;
+      pullRequestImpactRequestId.current =
+        requestId === Number.MAX_SAFE_INTEGER ? 0 : requestId + 1;
+      dispatchPullRequestImpact({ type: 'request', requestId, baseSha, headSha });
+      vscode.postMessage({ type: 'requestPullRequestImpact', requestId, baseSha, headSha });
+    },
+    [vscode],
+  );
   const cancelPullRequestImpact = useCallback(() => {
     if (pullRequestImpact.status !== 'loading') return;
     vscode.postMessage({ type: 'cancelPullRequestImpact', requestId: pullRequestImpact.requestId });
@@ -396,7 +401,10 @@ export default function App() {
   }, [pullRequestImpact, vscode]);
   const closePullRequestImpact = useCallback(() => {
     if (pullRequestImpact.status === 'loading') {
-      vscode.postMessage({ type: 'cancelPullRequestImpact', requestId: pullRequestImpact.requestId });
+      vscode.postMessage({
+        type: 'cancelPullRequestImpact',
+        requestId: pullRequestImpact.requestId,
+      });
     }
     dispatchPullRequestImpact({ type: 'close' });
   }, [pullRequestImpact, vscode]);
