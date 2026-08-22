@@ -194,16 +194,17 @@ describe('M5 release contract', () => {
     expect(contract.extension.vscodeEngine).toBe('>=1.132.0');
     expect(contract.compatibilityValidation).toEqual({
       manifestEngine: '>=1.132.0',
-      validatedRange: '>=1.132.0 <1.133.1',
-      desktopVersions: ['1.132.0', '1.132.1', '1.133.0'],
-      remoteServerVersions: ['1.132.0', '1.132.1', '1.133.0'],
-      candidateDesktopVersions: ['1.134.0'],
-      candidateRemoteServerVersions: ['1.134.0'],
+      validatedRange: '>=1.132.0 <1.134.1',
+      desktopVersions: ['1.132.0', '1.132.1', '1.133.0', '1.134.0'],
+      remoteServerVersions: ['1.132.0', '1.132.1', '1.133.0', '1.134.0'],
+      candidateDesktopVersions: [],
+      candidateRemoteServerVersions: [],
       electronRuntimes: [
         { version: '42.7.1', abi: '146' },
         { version: '42.8.0', abi: '146' },
+        { version: '42.8.1', abi: '146' },
       ],
-      candidateElectronRuntimes: [{ version: '42.8.1', abi: '146' }],
+      candidateElectronRuntimes: [],
     });
     expect(extensionPackage.devDependencies['@types/vscode']).toBe(contract.extension.typesPackage);
     expect(contract.extension.apiFloor).toBe('1.100.0');
@@ -238,7 +239,7 @@ describe('M5 release contract', () => {
     expect(contract.runtime.electron).toEqual({ version: '42.7.1', abi: '146' });
     expect(contract.runtime.electronCompatibility).toEqual({
       strategy: 'certified-family',
-      certificationStatus: 'candidate',
+      certificationStatus: 'certified',
       abi: '146',
       families: [
         {
@@ -250,10 +251,10 @@ describe('M5 release contract', () => {
         },
         {
           family: '42.8',
-          certifiedElectronVersions: ['42.8.0'],
-          certifiedVscodeVersions: ['1.133.0'],
-          pendingElectronVersions: ['42.8.1'],
-          pendingVscodeVersions: ['1.134.0'],
+          certifiedElectronVersions: ['42.8.0', '42.8.1'],
+          certifiedVscodeVersions: ['1.133.0', '1.134.0'],
+          pendingElectronVersions: [],
+          pendingVscodeVersions: [],
         },
       ],
     });
@@ -383,7 +384,8 @@ describe('M5 release contract', () => {
     });
     expect(nativeRuntimeSource).toContain('process.versions.modules');
     expect(nativeRuntimeSource).toContain('process.versions.electron');
-    expect(nativeRuntimeSource).toContain("new Set(['42.7', '42.8'])");
+    expect(nativeRuntimeSource).toContain("['42.8', new Set(['42.8.0', '42.8.1'])]");
+    expect(nativeRuntimeSource).not.toContain('PROJECT_DNA_CERTIFICATION_CANDIDATE');
     expect(nativeRuntimeSource).toContain("const ELECTRON_ABI = '146'");
     expect(nativeRuntimeSource).toContain("const NODE_ABI = '137'");
     expect(extensionSource.indexOf('resolveNativeBinding(')).toBeLessThan(
@@ -759,7 +761,6 @@ describe('M5 release contract', () => {
       'PROJECT_DNA_EXPECTED_VSCODE_VERSION',
       'PROJECT_DNA_VSCODE_ARCHIVE_SHA256',
       'PROJECT_DNA_EXPECTED_ELECTRON_VERSION',
-      'PROJECT_DNA_CERTIFICATION_CANDIDATE',
       'pnpm validate:installed-desktop',
       'pnpm validate:installed-server',
       '98bd4a4721a5bd8534dbad8eaf9801f001ee36703a278c5d52d6036df8c7e503',
@@ -782,6 +783,7 @@ describe('M5 release contract', () => {
     expect(nativeWorkflow.match(/vscode_version: 1\.132\.0/gu)).toHaveLength(4);
     expect(nativeWorkflow.match(/vscode_version: 1\.132\.1/gu)).toHaveLength(5);
     expect(nativeWorkflow.match(/vscode_version: 1\.133\.0/gu)).toHaveLength(5);
+    expect(nativeWorkflow.match(/vscode_version: 1\.134\.0/gu)).toHaveLength(5);
   });
 
   it('keeps unspecified Marketplace metadata deferred', () => {
