@@ -19,7 +19,7 @@
     "electron": { "version": "42.7.1", "abi": "146" },
     "electronCompatibility": {
       "strategy": "certified-family",
-      "certificationStatus": "candidate",
+      "certificationStatus": "certified",
       "abi": "146",
       "families": [
         {
@@ -31,10 +31,10 @@
         },
         {
           "family": "42.8",
-          "certifiedElectronVersions": ["42.8.0"],
-          "certifiedVscodeVersions": ["1.133.0"],
-          "pendingElectronVersions": ["42.8.1"],
-          "pendingVscodeVersions": ["1.134.0"]
+          "certifiedElectronVersions": ["42.8.0", "42.8.1"],
+          "certifiedVscodeVersions": ["1.133.0", "1.134.0"],
+          "pendingElectronVersions": [],
+          "pendingVscodeVersions": []
         }
       ]
     },
@@ -85,16 +85,17 @@
   },
   "compatibilityValidation": {
     "manifestEngine": ">=1.132.0",
-    "validatedRange": ">=1.132.0 <1.133.1",
-    "desktopVersions": ["1.132.0", "1.132.1", "1.133.0"],
-    "remoteServerVersions": ["1.132.0", "1.132.1", "1.133.0"],
-    "candidateDesktopVersions": ["1.134.0"],
-    "candidateRemoteServerVersions": ["1.134.0"],
+    "validatedRange": ">=1.132.0 <1.134.1",
+    "desktopVersions": ["1.132.0", "1.132.1", "1.133.0", "1.134.0"],
+    "remoteServerVersions": ["1.132.0", "1.132.1", "1.133.0", "1.134.0"],
+    "candidateDesktopVersions": [],
+    "candidateRemoteServerVersions": [],
     "electronRuntimes": [
       { "version": "42.7.1", "abi": "146" },
-      { "version": "42.8.0", "abi": "146" }
+      { "version": "42.8.0", "abi": "146" },
+      { "version": "42.8.1", "abi": "146" }
     ],
-    "candidateElectronRuntimes": [{ "version": "42.8.1", "abi": "146" }]
+    "candidateElectronRuntimes": []
   },
   "vsix": {
     "dependencies": false,

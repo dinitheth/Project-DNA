@@ -32,10 +32,9 @@ export class UnsupportedNativeRuntimeError extends Error {
 
 const ELECTRON_ABI = '146';
 const NODE_ABI = '137';
-const CERTIFICATION_CANDIDATE_ELECTRON_FAMILIES = new Set(['42.7', '42.8']);
 const CERTIFIED_ELECTRON_FAMILY_PATCHES = new Map([
   ['42.7', new Set(['42.7.1'])],
-  ['42.8', new Set(['42.8.0'])],
+  ['42.8', new Set(['42.8.0', '42.8.1'])],
 ]);
 
 const ELECTRON_TARGETS = new Map<string, NativeRuntimeSelection['target']>([
@@ -62,9 +61,7 @@ export function resolveNativeRuntime(tuple: NativeRuntimeTuple): NativeRuntimeSe
     const family = electronFamily(tuple.electron);
     if (
       family &&
-      (CERTIFIED_ELECTRON_FAMILY_PATCHES.get(family)?.has(tuple.electron) ||
-        (process.env.PROJECT_DNA_CERTIFICATION_CANDIDATE === '1' &&
-          CERTIFICATION_CANDIDATE_ELECTRON_FAMILIES.has(family))) &&
+      CERTIFIED_ELECTRON_FAMILY_PATCHES.get(family)?.has(tuple.electron) &&
       tuple.modules === ELECTRON_ABI &&
       target
     ) {

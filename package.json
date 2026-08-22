@@ -9,10 +9,10 @@
     "node": ">=22.23.2 <23"
   },
   "scripts": {
-    "build": "turbo run build",
+    "build": "node init && turbo run build",
     "benchmark": "pnpm --filter vscode-extension benchmark",
     "check:workspace": "node scripts/validate-workspace.mjs",
-    "dev": "turbo run dev",
+    "dev": "node init && turbo run dev",
     "test": "turbo run test",
     "test:watch": "turbo run test:watch",
     "typecheck": "pnpm --recursive --if-present run typecheck",
