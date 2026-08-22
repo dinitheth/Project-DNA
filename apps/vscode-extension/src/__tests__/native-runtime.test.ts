@@ -12,7 +12,7 @@ describe('native runtime resolution', () => {
     vi.unstubAllEnvs();
   });
 
-  it.each(['42.7.1', '42.8.0'] as const)(
+  it.each(['42.7.1', '42.8.0', '42.8.1'] as const)(
     'selects the Electron ABI 146 binding for certified-family Electron %s',
     (electron) => {
       expect(resolveNativeRuntime({ ...tuple(), electron })).toEqual({
@@ -65,8 +65,8 @@ describe('native runtime resolution', () => {
     },
   );
 
-  it('allows a pending patch only for the certification workflow', () => {
-    vi.stubEnv('PROJECT_DNA_CERTIFICATION_CANDIDATE', '1');
+  it('accepts the certified Electron 42.8.1 patch without certification-only environment state', () => {
+    vi.stubEnv('PROJECT_DNA_CERTIFICATION_CANDIDATE', undefined);
     expect(resolveNativeRuntime(tuple({ electron: '42.8.1' }))).toMatchObject({
       runtime: 'electron',
       abi: '146',
