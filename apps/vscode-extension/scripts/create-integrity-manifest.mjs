@@ -36,12 +36,18 @@ export function createIntegrityManifest({ stagingRoot, metadata, outputPath, pac
 if (isMain(import.meta.url)) {
   const stagingRoot = process.env.STAGING_DIR ?? path.resolve('release', 'staging');
   const outputPath = process.env.INTEGRITY_PATH ?? path.resolve('release', 'integrity.json');
+  const extensionManifest = JSON.parse(
+    readFileSync(
+      path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json'),
+      'utf8',
+    ),
+  );
   createIntegrityManifest({
     stagingRoot,
     outputPath,
     metadata: {
       extensionId: 'project-dna.vscode-extension',
-      version: '1.0.0',
+      version: extensionManifest.version,
       target: process.env.NATIVE_TARGET ?? `${process.platform}-${process.arch}`,
       platform: process.platform,
       architecture: process.arch,

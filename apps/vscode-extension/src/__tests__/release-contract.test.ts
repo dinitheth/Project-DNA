@@ -22,7 +22,18 @@ interface ReleaseContract {
     readonly toolchainNodeRange: string;
     readonly packageManager: string;
     readonly electron: { readonly version: string; readonly abi: string };
-    readonly electronCompatibility: { readonly versions: readonly string[]; readonly abi: string };
+    readonly electronCompatibility: {
+      readonly strategy: string;
+      readonly certificationStatus: string;
+      readonly abi: string;
+      readonly families: ReadonlyArray<{
+        readonly family: string;
+        readonly certifiedElectronVersions: readonly string[];
+        readonly certifiedVscodeVersions: readonly string[];
+        readonly pendingElectronVersions: readonly string[];
+        readonly pendingVscodeVersions: readonly string[];
+      }>;
+    };
     readonly remoteNode: { readonly version: string; readonly abi: string };
     readonly nativeBuild: {
       readonly betterSqlite3: string;
@@ -56,7 +67,13 @@ interface ReleaseContract {
     readonly validatedRange: string;
     readonly desktopVersions: readonly string[];
     readonly remoteServerVersions: readonly string[];
+    readonly candidateDesktopVersions: readonly string[];
+    readonly candidateRemoteServerVersions: readonly string[];
     readonly electronRuntimes: ReadonlyArray<{ readonly version: string; readonly abi: string }>;
+    readonly candidateElectronRuntimes: ReadonlyArray<{
+      readonly version: string;
+      readonly abi: string;
+    }>;
   };
   readonly vsix: {
     readonly dependencies: boolean;
@@ -165,6 +182,7 @@ describe('M5 release contract', () => {
     expect(extensionPackage.name).toBe(contract.extension.name);
     expect(`${extensionPackage.publisher}.${extensionPackage.name}`).toBe(contract.extension.id);
     expect(extensionPackage.version).toBe(contract.extension.version);
+    expect(contract.extension.version).toBe('1.0.1');
     expect(extensionPackage.activationEvents).toEqual(contract.extension.activationEvents);
   });
 
@@ -176,10 +194,13 @@ describe('M5 release contract', () => {
       validatedRange: '>=1.132.0 <1.133.1',
       desktopVersions: ['1.132.0', '1.132.1', '1.133.0'],
       remoteServerVersions: ['1.132.0', '1.132.1', '1.133.0'],
+      candidateDesktopVersions: ['1.134.0'],
+      candidateRemoteServerVersions: ['1.134.0'],
       electronRuntimes: [
         { version: '42.7.1', abi: '146' },
         { version: '42.8.0', abi: '146' },
       ],
+      candidateElectronRuntimes: [{ version: '42.8.1', abi: '146' }],
     });
     expect(extensionPackage.devDependencies['@types/vscode']).toBe(contract.extension.typesPackage);
     expect(contract.extension.apiFloor).toBe('1.100.0');
@@ -213,8 +234,25 @@ describe('M5 release contract', () => {
     expect(contract.platforms.linuxMinimumGlibc).toBe('2.35');
     expect(contract.runtime.electron).toEqual({ version: '42.7.1', abi: '146' });
     expect(contract.runtime.electronCompatibility).toEqual({
-      versions: ['42.7.1', '42.8.0'],
+      strategy: 'certified-family',
+      certificationStatus: 'candidate',
       abi: '146',
+      families: [
+        {
+          family: '42.7',
+          certifiedElectronVersions: ['42.7.1'],
+          certifiedVscodeVersions: ['1.132.0', '1.132.1'],
+          pendingElectronVersions: [],
+          pendingVscodeVersions: [],
+        },
+        {
+          family: '42.8',
+          certifiedElectronVersions: ['42.8.0'],
+          certifiedVscodeVersions: ['1.133.0'],
+          pendingElectronVersions: ['42.8.1'],
+          pendingVscodeVersions: ['1.134.0'],
+        },
+      ],
     });
     expect(contract.runtime.remoteNode).toEqual({ version: '24.19.0', abi: '137' });
     expect(contract.runtime.nativeBuild).toEqual({
@@ -342,7 +380,7 @@ describe('M5 release contract', () => {
     });
     expect(nativeRuntimeSource).toContain('process.versions.modules');
     expect(nativeRuntimeSource).toContain('process.versions.electron');
-    expect(nativeRuntimeSource).toContain("new Set(['42.7.1', '42.8.0'])");
+    expect(nativeRuntimeSource).toContain("new Set(['42.7', '42.8'])");
     expect(nativeRuntimeSource).toContain("const ELECTRON_ABI = '146'");
     expect(nativeRuntimeSource).toContain("const NODE_ABI = '137'");
     expect(extensionSource.indexOf('resolveNativeBinding(')).toBeLessThan(
@@ -509,8 +547,8 @@ describe('M5 release contract', () => {
       "path.join(validationRoot, 'browser-profile')",
       "'--list-extensions'",
       "'--show-versions'",
-      '`${PROJECT_EXTENSION_ID}@1.0.0`',
-      '`${DRIVER_EXTENSION_ID}@1.0.0`',
+      '`${PROJECT_EXTENSION_ID}@${projectExtensionVersion}`',
+      '`${DRIVER_EXTENSION_ID}@${driverExtensionVersion}`',
       "'extensions.user.cache'",
       "'extensions.builtin.cache'",
       "'127.0.0.1'",
@@ -645,6 +683,7 @@ describe('M5 release contract', () => {
       'PROJECT_DNA_EXPECTED_VSCODE_VERSION',
       'PROJECT_DNA_VSCODE_ARCHIVE_SHA256',
       'PROJECT_DNA_EXPECTED_ELECTRON_VERSION',
+      'PROJECT_DNA_CERTIFICATION_CANDIDATE',
       'pnpm validate:installed-desktop',
       'pnpm validate:installed-server',
       '98bd4a4721a5bd8534dbad8eaf9801f001ee36703a278c5d52d6036df8c7e503',

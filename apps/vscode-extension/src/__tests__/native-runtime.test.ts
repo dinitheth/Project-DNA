@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   UnsupportedNativeRuntimeError,
   resolveNativeBinding,
@@ -8,8 +8,12 @@ import {
 } from '../runtime/native-runtime.js';
 
 describe('native runtime resolution', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it.each(['42.7.1', '42.8.0'] as const)(
-    'selects the Electron ABI 146 binding for Electron %s',
+    'selects the Electron ABI 146 binding for certified-family Electron %s',
     (electron) => {
       expect(resolveNativeRuntime({ ...tuple(), electron })).toEqual({
         target: 'linux-x64',
@@ -43,12 +47,38 @@ describe('native runtime resolution', () => {
     });
   });
 
+  it.each(['41.9.9', '42.9.0', '43.0.0'])(
+    'rejects Electron %s because its family is not certified even when ABI 146 matches',
+    (electron) => {
+      expect(() => resolveNativeRuntime(tuple({ electron }))).toThrow(
+        `Electron ${electron} is within ABI 146 but is not part of a certified Project DNA runtime family`,
+      );
+    },
+  );
+
+  it.each(['42.8', '42.8.1-beta.1', 'not-a-version'])(
+    'rejects malformed or non-release Electron version %s',
+    (electron) => {
+      expect(() => resolveNativeRuntime(tuple({ electron }))).toThrow(
+        UnsupportedNativeRuntimeError,
+      );
+    },
+  );
+
+  it('allows a pending patch only for the certification workflow', () => {
+    vi.stubEnv('PROJECT_DNA_CERTIFICATION_CANDIDATE', '1');
+    expect(resolveNativeRuntime(tuple({ electron: '42.8.1' }))).toMatchObject({
+      runtime: 'electron',
+      abi: '146',
+    });
+  });
+
   it.each([
     tuple({ modules: '145', electron: '42.7.1' }),
     tuple({ platform: 'win32', modules: '137' }),
     tuple({ platform: 'linux', arch: 'arm64', modules: '137' }),
-    tuple({ electron: '41.0.0', modules: '146' }),
     tuple({ electron: '42.8.0', modules: '148' }),
+    tuple({ platform: 'freebsd', electron: '42.8.1', modules: '146' }),
   ])('rejects unsupported tuples without fallback or substitution', (runtimeTuple) => {
     expect(() => resolveNativeRuntime(runtimeTuple)).toThrow(UnsupportedNativeRuntimeError);
   });

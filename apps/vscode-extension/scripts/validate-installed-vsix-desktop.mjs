@@ -45,6 +45,12 @@ const SQLITE_HEADER_HEX = '53514c69746520666f726d6174203300';
 const scriptRoot = path.dirname(fileURLToPath(import.meta.url));
 const extensionRoot = path.resolve(scriptRoot, '..');
 const driverRoot = path.join(extensionRoot, 'test', 'installed-vsix-driver');
+const projectExtensionVersion = JSON.parse(
+  readFileSync(path.join(extensionRoot, 'package.json'), 'utf8'),
+).version;
+const driverExtensionVersion = JSON.parse(
+  readFileSync(path.join(driverRoot, 'package.json'), 'utf8'),
+).version;
 const require = createRequire(import.meta.url);
 const vsceExecutable = require.resolve('@vscode/vsce/vsce');
 
@@ -416,7 +422,10 @@ async function verifyInstalledExtensions(executables, paths, signal, logger) {
       .map((line) => line.trim())
       .filter(Boolean),
   );
-  for (const extension of [`${PROJECT_EXTENSION_ID}@1.0.0`, `${DRIVER_EXTENSION_ID}@1.0.0`]) {
+  for (const extension of [
+    `${PROJECT_EXTENSION_ID}@${projectExtensionVersion}`,
+    `${DRIVER_EXTENSION_ID}@${driverExtensionVersion}`,
+  ]) {
     assert(installed.has(extension), `isolated extension profile is missing ${extension}`);
   }
 }

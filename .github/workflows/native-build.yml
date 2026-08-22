@@ -345,6 +345,12 @@ jobs:
             archive_channel: win32-x64-archive
             archive_sha256: 2073ae64f09564ab76c583c5553e2c76de96e4d78efc27e4e9aaec8430bf5229
             electron_version: 42.8.0
+          - runner: windows-2025
+            target: win32-x64
+            vscode_version: 1.134.0
+            archive_channel: win32-x64-archive
+            archive_sha256: 59d3e1816961abb53d3bcc264083ee7e3f2282a6ff1004c4a1a8411b92a7a45d
+            electron_version: 42.8.1
           - runner: ubuntu-22.04
             target: linux-x64
             vscode_version: 1.132.0
@@ -363,6 +369,12 @@ jobs:
             archive_channel: linux-x64
             archive_sha256: 2bf1a90d2f008af009eb3c4a7bd0849b9247a0588cd39a404a0b1e691be68161
             electron_version: 42.8.0
+          - runner: ubuntu-22.04
+            target: linux-x64
+            vscode_version: 1.134.0
+            archive_channel: linux-x64
+            archive_sha256: 9336170079f527f1ca62dad39947b020db06bd3e8cae7e1e6097bea594f37733
+            electron_version: 42.8.1
           - runner: macos-15-intel
             target: darwin-x64
             vscode_version: 1.132.0
@@ -381,6 +393,12 @@ jobs:
             archive_channel: darwin
             archive_sha256: 8fa12ce73e5c3ea5fe3927227047ac483a0ced4f9048cdc8bae7332761c3e415
             electron_version: 42.8.0
+          - runner: macos-15-intel
+            target: darwin-x64
+            vscode_version: 1.134.0
+            archive_channel: darwin
+            archive_sha256: 406c77667b14b4ee7252be317fb14973cca4ba587f96536bebec36b8c3ffdfb4
+            electron_version: 42.8.1
           - runner: macos-15
             target: darwin-arm64
             vscode_version: 1.132.0
@@ -399,6 +417,12 @@ jobs:
             archive_channel: darwin-arm64
             archive_sha256: 2b13ff21f640af3b1be9cf2c267fd5f0175f67004ec6e1263535600f382bf42d
             electron_version: 42.8.0
+          - runner: macos-15
+            target: darwin-arm64
+            vscode_version: 1.134.0
+            archive_channel: darwin-arm64
+            archive_sha256: 6df181646588f0132339d19f5bdfb20bd0d6db05e5801061f12e0dc93c85fa70
+            electron_version: 42.8.1
 
     steps:
       - name: Configure deterministic line endings
@@ -441,6 +465,7 @@ jobs:
           PROJECT_DNA_VSCODE_ARCHIVE_CHANNEL: ${{ matrix.archive_channel }}
           PROJECT_DNA_VSCODE_ARCHIVE_SHA256: ${{ matrix.archive_sha256 }}
           PROJECT_DNA_EXPECTED_ELECTRON_VERSION: ${{ matrix.electron_version }}
+          PROJECT_DNA_CERTIFICATION_CANDIDATE: '1'
         run: pnpm validate:installed-desktop
 
       - name: Upload desktop compatibility logs on failure
@@ -467,6 +492,9 @@ jobs:
           - vscode_version: 1.133.0
             vscode_commit: a5b500951314efd502d07465bd138dfbd714a960
             archive_sha256: afdfd9868c417e9df7df4bc50ea87663fcd22bdbfab4e930357be8b49b5a5c20
+          - vscode_version: 1.134.0
+            vscode_commit: 110a328ea54b42367b803ec53ee0bf52ef26b419
+            archive_sha256: 56536bd3501423b618e2795525c0c6d61817a844a3c6abd38613e231327feb65
 
     steps:
       - name: Configure deterministic line endings
