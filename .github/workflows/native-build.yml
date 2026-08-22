@@ -500,7 +500,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Download canonical compatibility-candidate VSIX
+      - name: Download canonical compatibility VSIX
         uses: actions/download-artifact@v4
         with:
           name: project-dna-vsix-${{ matrix.target }}
@@ -511,7 +511,7 @@ jobs:
         shell: bash
         run: command -v xvfb-run
 
-      - name: Validate installed compatibility-candidate VSIX in official VS Code Desktop
+      - name: Validate installed compatibility VSIX in official VS Code Desktop
         working-directory: apps/vscode-extension
         env:
           PROJECT_DNA_EXPECTED_TARGET: ${{ matrix.target }}
@@ -519,7 +519,6 @@ jobs:
           PROJECT_DNA_VSCODE_ARCHIVE_CHANNEL: ${{ matrix.archive_channel }}
           PROJECT_DNA_VSCODE_ARCHIVE_SHA256: ${{ matrix.archive_sha256 }}
           PROJECT_DNA_EXPECTED_ELECTRON_VERSION: ${{ matrix.electron_version }}
-          PROJECT_DNA_CERTIFICATION_CANDIDATE: '1'
         run: pnpm validate:installed-desktop
 
       - name: Upload desktop compatibility logs on failure
@@ -572,7 +571,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Download canonical compatibility-candidate VSIX
+      - name: Download canonical compatibility VSIX
         uses: actions/download-artifact@v4
         with:
           name: project-dna-vsix-linux-x64
@@ -584,7 +583,7 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/project-dna-playwright-1.62.1
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Validate installed compatibility-candidate VSIX in official VS Code Server
+      - name: Validate installed compatibility VSIX in official VS Code Server
         working-directory: apps/vscode-extension
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/project-dna-playwright-1.62.1
