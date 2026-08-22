@@ -157,6 +157,9 @@ const nativeWorkflow = readFileSync(
   path.resolve(extensionRoot, '../../.github/workflows/native-build.yml'),
   'utf8',
 ).replaceAll('\r\n', '\n');
+const impactPerformanceTest = readText(
+  '../../packages/impact-engine/src/__tests__/impact-performance.test.ts',
+);
 const thirdPartyNotices = readFileSync(path.resolve(extensionRoot, 'THIRD_PARTY_NOTICES.txt'));
 
 describe('M5 release contract', () => {
@@ -498,6 +501,79 @@ describe('M5 release contract', () => {
     );
   });
 
+  it('separates required performance evidence from release artifact generation', () => {
+    const nativeJob = workflowJob('native', 'impact-performance');
+    const performanceJob = workflowJob('impact-performance', 'package');
+    const packageJob = workflowJob('package', 'installed-extension-host-linux-x64');
+    const installedHostJob = workflowJob(
+      'installed-extension-host-linux-x64',
+      'compatibility-desktop',
+    );
+    const desktopCompatibilityJob = workflowJob(
+      'compatibility-desktop',
+      'compatibility-remote-linux-x64',
+    );
+    const remoteCompatibilityJob = workflowJob(
+      'compatibility-remote-linux-x64',
+      'release-validation-status',
+    );
+    const finalStatusJob = workflowJob('release-validation-status');
+
+    expect(nativeJob).toContain("pnpm exec turbo run test --filter='!@project-dna/impact-engine'");
+    expect(nativeJob).toContain(
+      "pnpm --filter @project-dna/impact-engine exec vitest run --exclude '**/impact-performance.test.ts'",
+    );
+    expect(nativeJob.match(/--exclude/gu)).toHaveLength(1);
+    expect(nativeJob).not.toContain('impact-performance.test.ts\n');
+    expect(nativeJob.indexOf('Run non-performance verification gates')).toBeLessThan(
+      nativeJob.indexOf('Upload native artifact'),
+    );
+
+    expect(performanceJob).toContain('name: impact-performance-${{ matrix.target }}');
+    expect(performanceJob).toContain('windows-2025');
+    expect(performanceJob).toContain('ubuntu-22.04');
+    expect(performanceJob).toContain('macos-15-intel');
+    expect(performanceJob).toContain('macos-15');
+    expect(performanceJob).toContain('node-version: 22.23.2');
+    expect(performanceJob).toContain('version: 9.15.4');
+    expect(performanceJob).toContain(
+      'pnpm --filter @project-dna/impact-engine exec vitest run src/__tests__/impact-performance.test.ts',
+    );
+    expect(performanceJob).not.toContain('continue-on-error');
+    expect(performanceJob).not.toMatch(/retry/iu);
+
+    expect(impactPerformanceTest).toContain(
+      '{ size: 10_000, durationMs: 50, rssGrowthBytes: 32 * MIB }',
+    );
+    expect(impactPerformanceTest).toContain(
+      '{ size: 50_000, durationMs: 200, rssGrowthBytes: 64 * MIB }',
+    );
+    expect(impactPerformanceTest).toContain(
+      '{ size: 100_000, durationMs: 500, rssGrowthBytes: 128 * MIB }',
+    );
+
+    expect(packageJob).toContain('needs: native');
+    expect(packageJob).not.toContain('impact-performance');
+    expect(installedHostJob).toContain('needs: package');
+    expect(desktopCompatibilityJob).toContain('needs: package');
+    expect(remoteCompatibilityJob).toContain('needs: package');
+    expect(desktopCompatibilityJob).toContain('name: project-dna-vsix-${{ matrix.target }}');
+    expect(remoteCompatibilityJob).toContain('name: project-dna-vsix-linux-x64');
+
+    expect(finalStatusJob).toContain('if: always()');
+    for (const requiredDependency of [
+      '- native',
+      '- impact-performance',
+      '- package',
+      '- installed-extension-host-linux-x64',
+      '- compatibility-desktop',
+      '- compatibility-remote-linux-x64',
+    ]) {
+      expect(finalStatusJob).toContain(requiredDependency);
+    }
+    expect(finalStatusJob).toContain('test "$failed" -eq 0');
+  });
+
   it('requires installed VSIX validation in the official remote Extension Host', () => {
     expect(extensionPackage.scripts['validate:installed-server']).toBe(
       'node scripts/validate-installed-vsix-server.mjs',
@@ -743,4 +819,13 @@ function readFileIfPresent(sourceRoot: string, relativePath: string): boolean {
   } catch {
     return false;
   }
+}
+
+function workflowJob(name: string, nextName?: string): string {
+  const start = nativeWorkflow.indexOf(`  ${name}:\n`);
+  expect(start).toBeGreaterThanOrEqual(0);
+  if (!nextName) return nativeWorkflow.slice(start);
+  const end = nativeWorkflow.indexOf(`  ${nextName}:\n`, start + name.length + 3);
+  expect(end).toBeGreaterThan(start);
+  return nativeWorkflow.slice(start, end);
 }

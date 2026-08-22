@@ -15,7 +15,6 @@ build/
 .nyc_output/
 
 # Editor and IDE state
-.vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
 .idea/
@@ -29,8 +28,6 @@ Thumbs.db
 Desktop.ini
 
 # Environment
-.env
-.env.*
 !.env.example
 
 # Test output
@@ -52,3 +49,4 @@ yarn-error.log*
 # Temporary files
 tmp/
 temp/
+config.bat
