@@ -2,7 +2,7 @@
   "name": "vscode-extension",
   "displayName": "Project DNA",
   "description": "Project DNA VS Code Extension",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "project-dna",
   "engines": {
     "vscode": ">=1.132.0"
@@ -107,9 +107,9 @@
   },
   "scripts": {
     "benchmark": "node esbuild.mjs --workers-only && vitest bench --run",
-    "build:extension": "node esbuild.mjs",
-    "build:webview": "tsc -p webview/tsconfig.json --noEmit && cd webview && vite build",
-    "build": "npm run build:extension && npm run build:webview",
+    "build:extension": "node init && node esbuild.mjs",
+    "build:webview": "node init && tsc -p webview/tsconfig.json --noEmit && cd webview && vite build",
+    "build": "node init && npm run build:extension && npm run build:webview",
     "watch:extension": "node esbuild.mjs --watch",
     "watch:webview": "cd webview && vite build --watch",
     "test": "node esbuild.mjs --workers-only && vitest run",
@@ -117,7 +117,7 @@
     "typecheck": "tsc --noEmit && tsc -p webview/tsconfig.json --noEmit",
     "lint": "eslint src/ webview/src/ --max-warnings=0",
     "lint:fix": "eslint src/ webview/src/ --max-warnings=0 --fix",
-    "build:native": "node scripts/build-native.mjs",
+    "build:native": "node init && node scripts/build-native.mjs",
     "stage": "node scripts/stage-extension.mjs",
     "integrity": "node scripts/create-integrity-manifest.mjs",
     "validate:package": "node scripts/validate-package.mjs",

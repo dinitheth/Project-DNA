@@ -106,7 +106,7 @@ export async function packageDeterministically({
     packagePath: vsixA,
     metadata: {
       extensionId: 'project-dna.vscode-extension',
-      version: '1.0.0',
+      version: contract.extension.version,
       target,
       platform: target.split('-')[0],
       architecture: target.split('-')[1],

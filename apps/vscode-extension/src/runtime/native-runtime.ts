@@ -32,7 +32,11 @@ export class UnsupportedNativeRuntimeError extends Error {
 
 const ELECTRON_ABI = '146';
 const NODE_ABI = '137';
-const SUPPORTED_ELECTRON_VERSIONS = new Set(['42.7.1', '42.8.0']);
+const CERTIFICATION_CANDIDATE_ELECTRON_FAMILIES = new Set(['42.7', '42.8']);
+const CERTIFIED_ELECTRON_FAMILY_PATCHES = new Map([
+  ['42.7', new Set(['42.7.1'])],
+  ['42.8', new Set(['42.8.0'])],
+]);
 
 const ELECTRON_TARGETS = new Map<string, NativeRuntimeSelection['target']>([
   ['win32-x64', 'win32-x64'],
@@ -55,8 +59,12 @@ export function resolveNativeRuntime(tuple: NativeRuntimeTuple): NativeRuntimeSe
   const platformTarget = `${tuple.platform}-${tuple.arch}`;
   if (tuple.electron !== undefined) {
     const target = ELECTRON_TARGETS.get(platformTarget);
+    const family = electronFamily(tuple.electron);
     if (
-      SUPPORTED_ELECTRON_VERSIONS.has(tuple.electron) &&
+      family &&
+      (CERTIFIED_ELECTRON_FAMILY_PATCHES.get(family)?.has(tuple.electron) ||
+        (process.env.PROJECT_DNA_CERTIFICATION_CANDIDATE === '1' &&
+          CERTIFICATION_CANDIDATE_ELECTRON_FAMILIES.has(family))) &&
       tuple.modules === ELECTRON_ABI &&
       target
     ) {
@@ -66,6 +74,12 @@ export function resolveNativeRuntime(tuple: NativeRuntimeTuple): NativeRuntimeSe
         abi: ELECTRON_ABI,
         relativeBindingPath: `native/${target}/electron-abi${ELECTRON_ABI}/better_sqlite3.node`,
       };
+    }
+    if (family && tuple.modules === ELECTRON_ABI && target) {
+      throw new UnsupportedNativeRuntimeError(
+        tuple,
+        `Electron ${tuple.electron} is within ABI ${tuple.modules} but is not part of a certified Project DNA runtime family`,
+      );
     }
     throw unsupported(tuple, `Electron ${tuple.electron} ABI ${tuple.modules}`);
   }
@@ -108,7 +122,12 @@ export function formatCompatibilityError(
   error: UnsupportedNativeRuntimeError,
   extensionVersion: string,
 ): string {
-  return `Project DNA cannot start on ${error.tuple.platform}-${error.tuple.arch}: ${formatRuntime(error.tuple)} is not supported by Project DNA ${extensionVersion}. Supported runtimes are Electron 42.7.1 or 42.8.0 ABI ${ELECTRON_ABI} on win32-x64, linux-x64, darwin-x64, or darwin-arm64, and Linux x64 Node ABI ${NODE_ABI}. Your existing Project DNA database was not modified. ${error.message}`;
+  return `Project DNA cannot start on ${error.tuple.platform}-${error.tuple.arch}: ${formatRuntime(error.tuple)} is not supported by Project DNA ${extensionVersion}. Supported runtimes are certified Electron 42.7.x or 42.8.x families with ABI ${ELECTRON_ABI} on win32-x64, linux-x64, darwin-x64, or darwin-arm64, and Linux x64 Node ABI ${NODE_ABI}. Your existing Project DNA database was not modified. ${error.message}`;
+}
+
+function electronFamily(version: string): string | undefined {
+  const match = /^(\d+)\.(\d+)\.\d+$/u.exec(version);
+  return match ? `${match[1]}.${match[2]}` : undefined;
 }
 
 function assertReadableFile(filePath: string): void {
