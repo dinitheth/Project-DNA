@@ -2,6 +2,8 @@
 
 **The Living Intelligence Layer for Software**
 
+<a href="https://ibb.co/5X7mc8ry"><img src="https://i.ibb.co/p6mcXzf8/projec-dna.png" alt="projec-dna" border="0"></a>
+
 Project DNA is a software intelligence engine that understands what a repository IS, not just what it contains. It transforms raw source code into structured, queryable, evolving knowledge through deterministic analysis -- no AI, no cloud dependencies, fully offline.
 
 ---
