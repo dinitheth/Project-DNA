@@ -35,6 +35,12 @@ const NATIVE_BINDING = 'native/linux-x64/node-abi137/better_sqlite3.node';
 const scriptRoot = path.dirname(fileURLToPath(import.meta.url));
 const extensionRoot = path.resolve(scriptRoot, '..');
 const driverRoot = path.join(extensionRoot, 'test', 'installed-vsix-driver');
+const projectExtensionVersion = JSON.parse(
+  readFileSync(path.join(extensionRoot, 'package.json'), 'utf8'),
+).version;
+const driverExtensionVersion = JSON.parse(
+  readFileSync(path.join(driverRoot, 'package.json'), 'utf8'),
+).version;
 const require = createRequire(import.meta.url);
 const vsceExecutable = require.resolve('@vscode/vsce/vsce');
 
@@ -344,7 +350,10 @@ async function verifyInstalledExtensions(serverExecutable, paths, signal) {
       .map((line) => line.trim())
       .filter(Boolean),
   );
-  for (const expected of [`${PROJECT_EXTENSION_ID}@1.0.0`, `${DRIVER_EXTENSION_ID}@1.0.0`]) {
+  for (const expected of [
+    `${PROJECT_EXTENSION_ID}@${projectExtensionVersion}`,
+    `${DRIVER_EXTENSION_ID}@${driverExtensionVersion}`,
+  ]) {
     assert(
       installedExtensions.has(expected),
       `isolated extension profile is missing ${expected}:\n${result.stdout}\n${result.stderr}`,
